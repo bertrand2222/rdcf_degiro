@@ -10,6 +10,33 @@ from datetime import datetime
 
 ERROR_QUERRY_PRICE = 2
 
+
+INC_CODE = [
+    'RTLR', # 'TotalRevenue'
+    "NINC", # "NetIncome", 
+
+]
+
+BAL_CODE = [
+
+    "STLD", # 'TotalDebt',
+    "ACAE", # "Cash & Equivalents" 
+    "QTLE", # "Total Equity"
+    "QTCO", # "Total Common Shares Outstanding"
+]
+
+CASH_CODE = [
+    "OTLO", # "Cash from Operating Activities",
+    "SCEX", # Capital Expenditures,
+    "FCDP", # Total Cash Dividends Paid
+    "FPSS", # Issuance (Retirement) of Stock, Net,
+
+            ]
+
+
+FINANCIAL_ST_CODE =   INC_CODE + BAL_CODE + CASH_CODE
+
+
 class ShareComputedInfos():
 
     """
@@ -65,6 +92,7 @@ class Share():
         self.product_type :str = None
         self.vwd_id : str = None
         self.current_price : float = None
+        self.financial_currency : str = None
         self.__dict__.update(s_dict)
 
         self.session_model : SessionModelDCF = session_model
@@ -115,28 +143,84 @@ class Share():
             self.current_price = df['close'][-1]
             self.history = df['month', 'close']
             self.history_expires = chart.series[0].expires
-            
         
-    def eval_beta(self) :
+
+    def retrieve_financials(self) -> None:
         """
-        Compute the share beta value regarding the evolution of share price with reference market
+        Retrieve financial data from degiro api
         """
-        regular_history = self.history['adjclose'].iloc[:-1].copy()
 
-        if self.price_currency != MARKET_CURRENCY :
-            self.market_infos.update_rate_dic(self.price_currency, MARKET_CURRENCY)
-            change_rate = self.price_currency + MARKET_CURRENCY + "=X"
-            regular_history = regular_history * self.market_infos.rate_history_dic[change_rate]
+        financial_st = self.session_model.trading_api.get_financial_statements(
+                        product_isin= self.isin,
+                        raw= False
+                    )
+        
+        self.financial_currency = financial_st.currency
+        #                  'CommonStockEquity', "InvestedCapital",  "BasicAverageShares"]
 
-        month_change_share = regular_history.pct_change().rename("share")
+    
+       
+        
+        data = []
+        for y in financial_st.annual :
+            y_dict = {"fiscalYear" : y['fiscalYear']}
+            for statement in y['statements']:
+                for  item in  statement['items'] :
+                    if item['code'] in FINANCIAL_ST_CODE:
+                        y_dict[item["meaning"]] = item["value"]
+            data.append(y_dict)
+        
+        y_financial_data = pd.DataFrame.from_records(data)
+        
+        int_data = []
+        for q in financial_st.interim :
+            for statement in q['statements']:
+                q_dict = {"fiscalYear" : q['fiscalYear'],
+                        "endDate"  :  q['endDate']
+                        }
+                for k, v in statement.items():
+                    if k != "items" :
+                        q_dict[k] = v
+                 
+                for  item in  statement['items'] :
+                    if item['code'] in FINANCIAL_ST_CODE:
+                        q_dict[item["meaning"]] = item["value"]
+             
 
-        cov_df = pd.concat([self.market_infos.month_change_rate,
-                            month_change_share], axis = 1, join= 'inner',).dropna(how = 'any')
-        cov = cov_df.cov()['rm'].loc['share']
-        beta = cov/ self.market_infos.var_rm
-        self.beta = beta
+                int_data.append(q_dict)
+         
+        
+        gb = pd.DataFrame.from_records(int_data).groupby('type')
 
-        return beta
+
+        q_inc_financial_data = gb.get_group('INC').dropna(axis=1)
+        q_bal_financial_data = gb.get_group('BAL').dropna(axis=1)
+        q_cas_financial_data = gb.get_group('CAS').dropna(axis=1)
+
+        print(q_inc_financial_data)
+        print(q_bal_financial_data)
+        print(q_cas_financial_data)
+
+    # def eval_beta(self) :
+    #     """
+    #     Compute the share beta value regarding the evolution of share price with reference market
+    #     """
+    #     regular_history = self.history['adjclose'].iloc[:-1].copy()
+
+    #     if self.price_currency != MARKET_CURRENCY :
+    #         self.market_infos.update_rate_dic(self.price_currency, MARKET_CURRENCY)
+    #         change_rate = self.price_currency + MARKET_CURRENCY + "=X"
+    #         regular_history = regular_history * self.market_infos.rate_history_dic[change_rate]
+
+    #     month_change_share = regular_history.pct_change().rename("share")
+
+    #     cov_df = pd.concat([self.market_infos.month_change_rate,
+    #                         month_change_share], axis = 1, join= 'inner',).dropna(how = 'any')
+    #     cov = cov_df.cov()['rm'].loc['share']
+    #     beta = cov/ self.market_infos.var_rm
+    #     self.beta = beta
+
+    #     return beta
     
 
     def querry_financial_info(self, pr = False):
