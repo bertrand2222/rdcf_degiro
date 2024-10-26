@@ -6,10 +6,11 @@ import polars as pl
 from pydantic import BaseModel
 from degiro_connector.quotecast.models.chart import ChartRequest, Interval
 from session_model_dcf import SessionModelDCF, MARKET_CURRENCY, ERROR_SYMBOL
-from datetime import datetime
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 
 ERROR_QUERRY_PRICE = 2
-
+OVERLAPING_DAYS_TOL = 5
 
 INC_CODE = [
     'RTLR', # 'TotalRevenue'
@@ -156,10 +157,6 @@ class Share():
                     )
         
         self.financial_currency = financial_st.currency
-        #                  'CommonStockEquity', "InvestedCapital",  "BasicAverageShares"]
-
-    
-       
         
         data = []
         for y in financial_st.annual :
@@ -170,7 +167,7 @@ class Share():
                         y_dict[item["meaning"]] = item["value"]
             data.append(y_dict)
         
-        y_financial_data = pd.DataFrame.from_records(data)
+        self.y_financial_data = pd.DataFrame.from_records(data)
         
         int_data = []
         for q in financial_st.interim :
@@ -184,22 +181,51 @@ class Share():
                  
                 for  item in  statement['items'] :
                     if item['code'] in FINANCIAL_ST_CODE:
-                        q_dict[item["meaning"]] = item["value"]
+                        # q_dict[item["meaning"]] = item["value"]
+                        q_dict[item["code"]] = item["value"]
              
 
                 int_data.append(q_dict)
          
-        
-        gb = pd.DataFrame.from_records(int_data).groupby('type')
+        df = pd.DataFrame.from_records(int_data).iloc[::-1]
+        df['endDate'] = pd.to_datetime(df['endDate'])
+        gb = df.groupby('type')
 
 
         q_inc_financial_data = gb.get_group('INC').dropna(axis=1)
         q_bal_financial_data = gb.get_group('BAL').dropna(axis=1)
         q_cas_financial_data = gb.get_group('CAS').dropna(axis=1)
+        
+        def get_date_shift_back(end_date : datetime, months : int):
+
+            return end_date - relativedelta(months= months )
+
+        # print(q_cas_financial_data)
+
+        for p_df in [q_inc_financial_data, q_cas_financial_data] :
+            init_cols = p_df.columns
+            value_cols = ["periodLength"] + [c for c in p_df.columns if c in FINANCIAL_ST_CODE]
+
+            ### mark as overlaping line for which the period cover the one of previous line
+
+            #### eval coresponding startDate from end date and periodLenght
+            p_df['startDate'] = p_df.apply(lambda x : get_date_shift_back(x.endDate, x.periodLength), axis = 1)
+            p_df['endDate_shift'] = p_df['endDate'].shift()
+            
+            #### apply overlaping tolerance of 5 days
+            p_df['endDate_shift'] = p_df['endDate_shift'].apply(lambda x : x - relativedelta(days= OVERLAPING_DAYS_TOL ) if not pd.isnull(x) else x,)
+
+            ### correct overlaping line by substracting from it periodLenght and values from previous line
+            p_df["overlaping"] = p_df['startDate'] < p_df['endDate_shift']
+            for i in range(len(p_df.index)) :
+                if p_df.iloc[i]["overlaping"] :
+                    p_df.iloc[i, p_df.columns.get_indexer(value_cols)] -=  p_df[value_cols].iloc[i-1]
+
+            p_df = p_df[init_cols]
 
         print(q_inc_financial_data)
-        print(q_bal_financial_data)
-        print(q_cas_financial_data)
+        # print(q_bal_financial_data)
+        # print(q_cas_financial_data)
 
     # def eval_beta(self) :
     #     """
