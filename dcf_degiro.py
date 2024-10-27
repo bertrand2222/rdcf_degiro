@@ -42,12 +42,7 @@ IS = 0.25
 NB_YEAR_DCF = 10
 
 YEAR_G = 0
-INCOME_INFOS = [ 'FreeCashFlow','TotalRevenue', "NetIncome",]
-PAYOUT_INFOS = [ 'RepurchaseOfCapitalStock', 'CashDividendsPaid', 'CommonStockIssuance']
-BALANCE_INFOS = ['currencyCode', 'TotalDebt', 'CashAndCashEquivalents',
-                 'CommonStockEquity', "InvestedCapital",  "BasicAverageShares"]
 
-TYPES = INCOME_INFOS + BALANCE_INFOS + PAYOUT_INFOS
 
 
 
@@ -98,7 +93,7 @@ class DCFAnal():
             product_list= self.ids,
             raw=False,
         )
-
+        
         self.share_list = [Share(s_id, s_dict.__dict__ ,
                                  session_model = self.session_model,
                                  )
@@ -123,6 +118,10 @@ class DCFAnal():
             flg = s.querry_financial_info()
             if flg == ERROR_SYMBOL :
                 continue
+            flg = s.compute_financial_info()
+            if flg == ERROR_SYMBOL :
+                continue
+
 
 
             s.eval_g(use_multiple= self.use_multiple)

@@ -11,8 +11,7 @@ from dcf_degiro import DCFAnal
 
 CASH_FLOW = 2
 
-EURONEXT_ID = '710'
-NASDAQ_ID = '663'
+
 
 # credentials_path = os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json")
 # credentials = build_credentials(location=credentials_path )
@@ -57,15 +56,6 @@ NASDAQ_ID = '663'
 #         offset=0,
 #          )
 
-# product_batch = trading_api.product_search(product_request=underl, raw=True)
-# pr = product_batch['products'][0]
-# for p in product_batch['products']:
-#     if p['exchangeId'] == EURONEXT_ID:
-#         pr = p
-#         break
-
-
-
 
     
 #     if 'products' in product_batch :
@@ -87,10 +77,15 @@ if __name__ == "__main__":
     # client_details_table = dcf_anal.trading_api.get_client_details()
 
     dcf_anal.retrieve_shares_from_favorites()
+    
     dcf_anal.process()
-    # for s in dcf_anal.share_list:
-    #     s.get_char()
-    #     break
+    for s in dcf_anal.share_list:
+        # print(s.__dict__)
+        # print(s.exchange_id)
+        print(s.name)
+        print(s.vwd_id)
+        s.retrieve_history()
+        # break
 #   # dcf_anal.load_df()
 
 #   dcf_anal.to_excel(outfile)
