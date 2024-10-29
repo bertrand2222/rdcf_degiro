@@ -1,11 +1,11 @@
 import numpy as np
 import pandas as pd
+import json
 import yahooquery as yq
 from scipy.optimize import minimize_scalar
-import polars as pl
 from pydantic import BaseModel
 from degiro_connector.quotecast.models.chart import ChartRequest, Interval
-from session_model_dcf import SessionModelDCF, MARKET_CURRENCY, ERROR_SYMBOL
+from session_model_dcf import SessionModelDCF, MARKET_CURRENCY, ERROR_SYMBOL, IS, MarketInfos
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
@@ -15,47 +15,63 @@ OVERLAPING_DAYS_TOL = 5
 EURONEXT_ID = '710'
 NASDAQ_ID = '663'
 
-INC_CODE = [
+INC_CODES = [
     'RTLR', # 'TotalRevenue'
     "NINC", # "NetIncome", 
-
 ]
 
-BAL_CODE = [
-
+BAL_CODES = [
     "STLD", # 'TotalDebt',
     "ACAE", # "Cash & Equivalents" 
     "QTLE", # "Total Equity"
     "QTCO", # "Total Common Shares Outstanding"
 ]
 
-CASH_CODE = [
+CASH_CODES = [
     "OTLO", # "Cash from Operating Activities",
     "SCEX", # Capital Expenditures,
     "FCDP", # Total Cash Dividends Paid
     "FPSS", # Issuance (Retirement) of Stock, Net,
 
             ]
+FINANCIAL_ST_CODES =   INC_CODES + BAL_CODES + CASH_CODES
 
+RATIO_CODES = [
+    'BETA',
+    "PEEXCLXOR",  # "P/E excluding extraordinary items - TTM",
+    # "APRFCFPS", # "Price to Free Cash Flow per Share - most recent fiscal year",
+    "TTMROIPCT" # "Return on investment - trailing 12 month",
+    ] 
 
-FINANCIAL_ST_CODE =   INC_CODE + BAL_CODE + CASH_CODE
+PAYOUT_INFOS = ["FCDP", "FPSS" ]
+
+def last_day_of_month(any_day):
+    # The day 28 exists in every month. 4 days later, it's always next month
+    next_month = any_day.replace(day=28) + timedelta(days=4)
+    # subtracting the number of the current day brings us back one month
+    return next_month - timedelta(days=next_month.day)
 
 class ShareFinancialStatements():
     """
     Share financial statement from degiro
     
     """
+    y_financial_statements : pd.DataFrame = None
+    q_inc_financial_statements = pd.DataFrame = None
+    q_bal_financial_statements = pd.DataFrame = None     
+    q_cas_financial_statements = pd.DataFrame = None
+    last_bal_financial_statements : pd.DataFrame = None
+    financial_currency : str = None
 
-    def __init__(self, session_model : SessionModelDCF):
-
-        self.y_financial_statements : pd.DataFrame = None
-        self.q_financial_statements : pd.DataFrame = None
-        self.last_bal_financial_statements : pd.DataFrame = None
-        self.financial_currency : str = None
+    def __init__(self, session_model : SessionModelDCF, isin : str):
+        
         self.session_model = session_model
+        self.isin = isin
 
     def retrieve(self):
-
+        """
+        Retrieve financial statements from degiro api
+        """
         financial_st = self.session_model.trading_api.get_financial_statements(
                         product_isin= self.isin,
                         raw= False
@@ -71,14 +87,21 @@ class ShareFinancialStatements():
                       "endDate"  :  y['endDate']}
             for statement in y['statements']:
                 for  item in  statement['items'] :
-                    if item['code'] in FINANCIAL_ST_CODE:
+                    if item['code'] in FINANCIAL_ST_CODES:
                         # y_dict[item["meaning"]] = item["value"]
                         y_dict[item["code"]] = item["value"]
             data.append(y_dict)
+
+        y_financial_statements = pd.DataFrame.from_records(
+            data).iloc[::-1]
+        y_financial_statements['endDate'] = pd.to_datetime(y_financial_statements['endDate'])
+        y_financial_statements = y_financial_statements.set_index('endDate')[FINANCIAL_ST_CODES]
         
-        self.y_financial_statements = pd.DataFrame.from_records(
-            data).iloc[::-1].set_index('endDate')[FINANCIAL_ST_CODE]
-        
+        # free cash flow            = Cash from Operating Activities - Capital Expenditures, 
+        y_financial_statements['FCFL'] = y_financial_statements["OTLO"] - y_financial_statements["SCEX"]
+
+        self.y_financial_statements = y_financial_statements
+
         ### Retrive interim data
         int_data = []
         for q in financial_st.interim :
@@ -92,7 +115,7 @@ class ShareFinancialStatements():
                         q_dict[k] = v
                  
                 for  item in  statement['items'] :
-                    if item['code'] in FINANCIAL_ST_CODE:
+                    if item['code'] in FINANCIAL_ST_CODES:
                         # q_dict[item["meaning"]] = item["value"]
                         q_dict[item["code"]] = item["value"]             
 
@@ -102,17 +125,17 @@ class ShareFinancialStatements():
         df['endDate'] = pd.to_datetime(df['endDate'])
         gb = df.groupby('type')
 
-        q_inc_financial_data = gb.get_group('INC').dropna(axis=1)
-        q_bal_financial_data = gb.get_group('BAL').dropna(axis=1)
-        q_cas_financial_data = gb.get_group('CAS').dropna(axis=1)
+        q_inc_financial_statements = gb.get_group('INC').dropna(axis=1)
+        q_bal_financial_statements = gb.get_group('BAL').dropna(axis=1)
+        q_cas_financial_statements = gb.get_group('CAS').dropna(axis=1)
         
         def get_date_shift_back(end_date : datetime, months : int):
 
             return end_date - relativedelta(months= months )
 
         ### correct interim data corresponding to period lenght if period is overlapping previous
-        for p_df in [q_inc_financial_data, q_cas_financial_data] :
-            value_cols = ["periodLength"] + [c for c in p_df.columns if c in FINANCIAL_ST_CODE]
+        for p_df in [q_inc_financial_statements, q_cas_financial_statements] :
+            value_cols = ["periodLength"] + [c for c in p_df.columns if c in FINANCIAL_ST_CODES]
 
             #### eval coresponding startDate from end date and periodLenght
             p_df['startDate'] = p_df.apply(lambda x : get_date_shift_back(x.endDate, x.periodLength), axis = 1)
@@ -131,254 +154,135 @@ class ShareFinancialStatements():
 
             p_df.drop(['startDate', 'startDate_shift', 'overlaping'], inplace = True, axis = 1)
 
-        q_financial_statements = pd.concat([df.set_index('endDate') for df in [
-                q_inc_financial_data,
-                q_bal_financial_data,
-                q_cas_financial_data
-        ]], axis = 1)[FINANCIAL_ST_CODE]
+        # q_financial_statements = pd.concat([df.set_index('endDate') for df in [
+        #         q_inc_financial_statements,
+        #         q_bal_financial_statements,
+        #         q_cas_financial_statements
+        # ]], axis = 1)[FINANCIAL_ST_CODES]
 
-        self.q_financial_statements = q_financial_statements     
-        self.last_bal_financial_statements = q_financial_statements.iloc[-1][BAL_CODE]
+        # free cash flow            = Cash from Operating Activities - Capital Expenditures, 
+        q_cas_financial_statements['FCFL'] = q_cas_financial_statements["OTLO"] - q_cas_financial_statements["SCEX"]
+        # q_cas_financial_statements['annualised_FCFL'] = q_cas_financial_statements['FCFL'] * q_cas_financial_statements['periodLength'] / 12
+
+        self.q_inc_financial_statements = q_inc_financial_statements.set_index('endDate')
+        self.q_bal_financial_statements = q_bal_financial_statements.set_index('endDate')
+        self.q_cas_financial_statements = q_cas_financial_statements.set_index('endDate')
+
+        self.last_bal_financial_statements = q_bal_financial_statements.iloc[-1]
 
 
-class ShareRatios():
-
-    def __init__(self):
-        pass
-
-
-class ShareFinancialComputer():
-
+class ShareValues():
     """
-    Cumputed infos
+    Data retrieved from degiro api with get_company_ratio
     """
+    current_price : float = None
+    market_cap : float = None
+    nb_shares : int = None
+    history : pd.DataFrame = None
+    history_expires : datetime = None
+    roic: float = None
+    beta : float = None
+    per : float = None
+    price_to_fcf : float = None
+    cmpc : float = None
+    net_debt : float = None
+    net_market_cap : float = None
+    debt_to_equity : float = None
+    price_to_book :float = None
+    total_payout_ratio : float = None
+    fcf : float = None
+    fcf_ttm : float = None
 
-    def __init__(self, 
-                 session_model : SessionModelDCF  = None,
-                 ratios : ShareRatios = None,
-                 financial_statements : ShareFinancialStatements = None,
-                 ) :
-
+    def __init__(self, session_model : SessionModelDCF,
+                 financial_statements : ShareFinancialStatements, 
+        isin : str,
+        vwd_id : str,
+        vwd_id_secondary : str
+        ):
         self.session_model = session_model
         self.financial_statements = financial_statements
-        self.fcf : float = None
-        self.fcf_last : float = None
-        self.cmpc :float = None
-        self.mean_g_fcf : float = None
-        self.net_debt : float = None
+        self.isin = isin
 
-        self.price_to_fcf :float = None
-        self.per : float = np.nan
-        self.debt_to_equity : float = np.nan
-        self.price_to_book : float = np.nan
-        self.mean_g_tr = None
-        self.mean_g_netinc = None
-        self.capital_cost : float = None
-        self.roic :float = np.nan
-        
-        self.beta : float = None
-        self.unknown_last_fcf = None
-        self.price_currency : str = None
-        self.q_financial_data = None
-        self.nb_shares : float = None
-        self.market_cap : float = None
-        self.net_market_cap : float = None
-        self.g :float = np.nan
-        self.g_last :float = np.nan
-        self.financial_currency_price_history = None
-        self.df_multiple = None
-        
-        self.total_payout_ratio = None
-
-
-    def compute(self):
-        
-        market_infos = self.session_model.market_infos
-
-        free_risk_rate = market_infos.free_risk_rate
-        market_rate = market_infos.market_rate
-        y_financial_statements = self.financial_statements.y_financial_statements
-        y_financial_statements =  self.financial_statements.q_financial_statements
-        
-        stock_equity = self.last_bal_financial_statements['QTLE'] # CommonStockEquity
-        market_cap = self.market_cap
-
-        if self.capital_cost_equal_market :
-            capital_cost = market_rate
-        else : 
-            capital_cost = free_risk_rate + self.beta * (market_rate - free_risk_rate)
-        
-        total_debt = self.last_bal_financial_statements['STLD'] # 'TotalDebt',
-
-        self.cmpc = capital_cost * stock_equity/(total_debt + stock_equity) + \
-                    self.market_infos.debt_cost * (1-IS) * total_debt/(total_debt + stock_equity)
-        self.net_debt = total_debt - last_financial_info['CashAndCashEquivalents']
-
-
-        self.net_market_cap = market_cap + self.net_debt
-        if stock_equity >= 0 :
-            self.debt_to_equity = total_debt / stock_equity
-            self.price_to_book = market_cap / stock_equity
-
-
-
-        # net_income = y_financial_data['NetIncome'][-3:].mean()
-        net_income = y_financial_data['NetIncome'][-1]
-        last_delta_t = relativedelta(y_financial_data.index[-1], y_financial_data.index[-2],)
-
-        payout = 0
-        for info in PAYOUT_INFOS :
-            if info in y_financial_data:
-                payout -= y_financial_data[info][-3:].mean()
-        
-        self.total_payout_ratio = payout / y_financial_data['NetIncome'][-3:].mean()
-        self.per = market_cap / net_income
-
-        invested_capital = last_financial_info['InvestedCapital']
-        if invested_capital >= 0 :
-            self.roic = net_income / invested_capital
-
-        if last_delta_t.years < 1 and \
-            isinstance(q_financial_data, pd.DataFrame) and \
-            ('FreeCashFlow' in q_financial_data.columns) and \
-            (self.q_financial_statements.index[-1] > y_financial_data.index[-2]) :
-
-            complement_q_financial_infos = self.q_financial_statements[self.q_financial_statements.index
-                                                                > y_financial_data.index[-2]]
-            complement_time = relativedelta(complement_q_financial_infos.index[-1],
-                                            y_financial_data.index[-2]).months / 12
-            self.fcf = (y_financial_data['FreeCashFlow'][-4:-1].sum() \
-                        + complement_q_financial_infos['FreeCashFlow'].sum()
-                        ) / (3 + complement_time)
-
-        elif self.unknown_last_fcf :
-            print(f"unknown last free cash flow  for {self.name}")
-            self.fcf = y_financial_data['FreeCashFlow'][-4:-1].mean()
-
-        else :
-            self.fcf = y_financial_data['FreeCashFlow'][-3:].mean()
-
-        if self.fcf < 0 :
-            self.fcf = y_financial_data['FreeCashFlow'].mean()
-
-        self.fcf_last = y_financial_data['FreeCashFlow'][-1]
-
-        ### price to fcf multiple
-        df_multiple = y_financial_data[['BasicAverageShares', 'FreeCashFlow' ]].copy()
-        df_multiple.index = df_multiple.index.date
-        df_multiple = pd.concat([self.financial_currency_price_history, 
-                                df_multiple], axis = 1).sort_index().ffill().dropna()
-        df_multiple['price_to_fcf'] = df_multiple['BasicAverageShares'] * df_multiple['close'] / df_multiple['FreeCashFlow']
-        self.df_multiple = df_multiple
-        self.price_to_fcf = df_multiple.loc[df_multiple['FreeCashFlow'] > 0 , 'price_to_fcf'].median()
-
-        # print(self.df_multiple)
-        # stop
-        # if self.price_to_fcf < 0 :
-        #     self.price_to_fcf = df_multiple['price_to_fcf'].max()
-        
-        # if self.price_to_fcf < 0 :
-        #     print(f"negative price_to_fcf mean for {self.short_name} can not compute DCF")
-        #     return(1)
-
-        ### calculation of fcf growth
-        delta_t = relativedelta(y_financial_data.index[-1], y_financial_data.index[YEAR_G],)
-        nb_years_fcf = delta_t.years + delta_t.months / 12
-
-        fcf_se_ratio = y_financial_data['FreeCashFlow'].iloc[-1]\
-            /y_financial_data['FreeCashFlow'].iloc[YEAR_G]
-        
-        if fcf_se_ratio < 0:
-            self.mean_g_fcf = np.nan
-        else :
-            self.mean_g_fcf = (fcf_se_ratio)**(1/nb_years_fcf) - 1
-
-
-        nb_year_inc = delta_t.years + delta_t.months / 12
-        self.mean_g_tr = (y_financial_data['TotalRevenue'].iloc[-1]\
-                        /y_financial_data['TotalRevenue'].iloc[YEAR_G])**(1/nb_year_inc) - 1
-        # inc_se_ratio = y_financial_data['NetIncome'].iloc[-1]\
-        #                 /y_financial_data['NetIncome'].iloc[YEAR_G]
-        # if inc_se_ratio < 0 :
-        #     self.mean_g_netinc = np.nan
-        # else :
-        #     self.mean_g_netinc = inc_se_ratio**(1/nb_year_inc) - 1
-
-        if pr :
-            print("\r")
-            print(y_financial_data)
-            print(f"Prix courant: {self.close_price:.2f} {self.financial_currency:s}" )
-            print(f"Cout moyen pondere du capital: {self.cmpc*100:.2f}%")
-            print(f"Croissance moyenne du chiffre d'affaire sur {nb_year_inc:f} \
-                ans: {self.mean_g_tr*100:.2f}%")
-            print(f"Croissance moyenne du free cash flow sur {nb_year_inc:f} \
-                ans: {self.mean_g_fcf*100:.2f}%")
-        return(0)
-
-
-class Share():
-    """
-    Object containing a share and its financial informations
-    """
-    def __init__(self, s_id : int = None, s_dict : dict = None, session_model : SessionModelDCF  = None):
-        self.id : str = None
-        if s_id :
-            self.id  = str(s_id)
-        self.history : pl.DataFrame = None
-        self.history_expires : datetime = None
-        self.symbol : str = None
-        
-        self.name : str = None
-        self.isin :str = None
-        self.close_price : float = None
-        self.product_type :str = None
-        self.vwd_id : str = None
-        self.vwd_id_secondary : str = None
-        self.exchange_id : str = None
-        self.market_cap : float = None
-        self.nb_shares : int = None
-        self.current_price : float = None
-
-        self.capital_cost_equal_market : bool = False
-        self.__dict__.update(s_dict)
-
-        self.session_model : SessionModelDCF = session_model
-        self.market_infos = session_model.market_infos
-        self.computed_infos : ShareFinancialComputer = None
-        self.ratios : ShareRatios = None
-        self.financial_statements : ShareFinancialStatements = None
-
-
-        # import json
-        # with open("company_profile.json", "w", encoding= "utf8") as outfile: 
-        #     json.dump(company_profile['data'], outfile, indent = 4)
-
-    def retrieve_history(self) -> None :
-
-        """
-        Retrieve share history price dataframe
-        """
         try :
-            float(self.vwd_id)
-            serie_id = self.vwd_id
+            float(vwd_id)
+            self.serie_id = vwd_id
         except ValueError :
-            serie_id = self.vwd_id_secondary
+            self.serie_id = vwd_id_secondary
+    
+    def retrieve_ratios(self):
+        """
+        retrive company ratios fom degiro api
+        """
+        ratios = self.session_model.trading_api.get_company_ratios(
+            product_isin=self.isin, 
+            raw = True
+        )
+
+        self.nb_shares = float(ratios['data']['sharesOut'])
+        
+        ratio_dic = {}
+        for rg in ratios['data']['currentRatios']['ratiosGroups'] :
+            for item in rg['items']:
+                if item['id'] in RATIO_CODES:
+                    ratio_dic[item['id']] = item['value']
+
+        self.beta           = ratio_dic['BETA']
+        self.per            = ratio_dic["PEEXCLXOR"]  # "P/E excluding extraordinary items - TTM",
+        # self.price_to_fcf   = ratio_dic["APRFCFPS"] # "Price to Free Cash Flow per Share - most recent fiscal year",
+        self.roic = ratio_dic['TTMROIPCT']
+
+        if not self.current_price:
+            self.retrieve_current_price()
+
+        self.market_cap = self.nb_shares * self.current_price
+
+        # print(self.nb_shares)
+        # with open("company_ratio.json", "w", encoding= "utf8") as outfile: 
+        #     json.dump(ratios['data'], outfile, indent = 4)
+        # print(ratios)
+
+    def retrieve_current_price(self):
+
+        print("retrieve last price")
+
+        chart_request = ChartRequest(
+        culture="fr-FR",
+        # culture = "en-US",
+     
+        period=Interval.PT5M,
+        requestid="1",
+        resolution=Interval.PT5M,        
+        series=[
+            "price:issueid:"+ self.serie_id,
+        ],
+        tz="Europe/Paris",
+        )
+
+        chart = self.session_model.chart_fetcher.get_chart(
+            chart_request=chart_request,
+            raw=False,
+        )
+        if isinstance(chart, BaseModel):
+            # df = pl.DataFrame(data=chart.series[0].data, orient="row")
+            # df.columns = ['time', 'close']
+            self.current_price = chart.series[0].data[-1][-1]
+    
+    def retrieve_history(self):
+
+        print("retrieve history")
 
         chart_request = ChartRequest(
         culture="fr-FR",
         # culture = "en-US",
      
         period=Interval.P5Y,
-        # period=Interval.P1D,
         requestid="1",
         resolution=Interval.P1M,
-        # resolution=Interval.PT60M,
         
         series=[
             # "issueid:360148977"+ self.vwd_id ,
             # "ohlc:issueid:" + self.vwd_id,
-            "price:issueid:"+ serie_id,
-            # "dividend:issueid:"+ self.vwd_id,
+            "price:issueid:"+ self.serie_id,
             # "volume:issueid:360148977",
         ],
         tz="Europe/Paris",
@@ -389,42 +293,230 @@ class Share():
             raw=False,
         )
         if isinstance(chart, BaseModel):
-            df = pl.DataFrame(data=chart.series[0].data, orient="row")
-            df.columns = ['month', 'close']
+            history = pd.DataFrame(data=chart.series[0].data, columns = ['time', 'close'])
 
-            self.current_price = df['close'][-1]
-            self.history = df['month', 'close']
-            self.history_expires = chart.series[0].expires
-            # print(self.name)
-            # print(self.history)
-            # print(self.current_price)
-            # print(self.close_price)
-
-              
-    def retrieve_company_profile(self):
-        """
-        Retrive company gerneral infos
-        """
+            last_day_current_month = last_day_of_month(chart.series[0].expires)
+            for i in range(len(history)) :
+                history.iloc[-1-i,0] = last_day_current_month - relativedelta(months= i)
         
-        company_profile = self.session_model.trading_api.get_company_profile(
-        product_isin= self.isin,
-        raw=True,
-        )
-        
-        self.nb_shares = float(company_profile['data']['shrOutstanding'])
-        self.market_cap = self.nb_shares * self.close_price
+            self.history = history.set_index('time').tz_localize(None)
+            
 
-    def retrieve_financial_statements(self) -> None:
+    def compute(self, pr = False):
         """
-        Retrieve financial data from degiro api
+        compute value and ratios from financial statements and market infos 
         """
+        if self.session_model.market_infos is None:
+            self.session_model.market_infos = MarketInfos()
 
-        self.financial_statements = ShareFinancialStatements(self.session_model )
+        market_infos = self.session_model.market_infos
+        free_risk_rate = market_infos.free_risk_rate
 
-        self.financial_statements.retrieve()
+        if self.financial_statements.y_financial_statements is None:
+            self.financial_statements.retrieve()
 
+        y_financial_statements = self.financial_statements.y_financial_statements
+        q_cas_financial_statements =  self.financial_statements.q_cas_financial_statements
+        q_bal_financial_statements =  self.financial_statements.q_bal_financial_statements
+        last_bal_financial_statements =  self.financial_statements.last_bal_financial_statements
+        history_nb_year_avg = self.session_model.history_nb_year_avg
+
+        stock_equity = self.financial_statements.last_bal_financial_statements['QTLE'] # CommonStockEquity
+
+        if self.session_model.capital_cost_equal_market :
+            capital_cost = market_infos.market_rate
+        else : 
+            capital_cost = free_risk_rate + self.beta * (market_infos.market_rate - free_risk_rate)
+        
+        total_debt = last_bal_financial_statements['STLD'] # 'TotalDebt',
+
+        self.cmpc = capital_cost * stock_equity/(total_debt + stock_equity) + \
+                    market_infos.debt_cost * (1-IS) * total_debt/(total_debt + stock_equity)
+                        
+        #net debt     =  total_debt - cash and cash equivalent
+        self.net_debt = total_debt - last_bal_financial_statements['ACAE']
+
+        if self.market_cap is None:
+            self.retrieve_ratios()
+
+        self.net_market_cap = self.market_cap + self.net_debt
+        if stock_equity >= 0 :
+            self.debt_to_equity = total_debt / stock_equity
+            self.price_to_book = self.market_cap / stock_equity
+
+
+        # net_income = y_financial_statements['NINC'][-3:].mean()
+        # net_income = y_financial_statements['NetIncome'][-1]
+        # last_delta_t = relativedelta(y_financial_statements.index[-1], y_financial_statements.index[-2],)
+
+        payout = 0
+        for info in PAYOUT_INFOS :
+            payout -= y_financial_statements[info].iloc[-history_nb_year_avg:].mean()
+        
+        self.total_payout_ratio = payout / y_financial_statements['NINC'].iloc[-history_nb_year_avg:].mean()
+        # self.per = market_cap / net_income
+
+        # invested_capital = last_financial_info['InvestedCapital']
+        # if invested_capital >= 0 :
+        #     self.roic = net_income / invested_capital
+
+        complement_q_financial_infos = q_cas_financial_statements.loc[q_cas_financial_statements.index
+                                                            > y_financial_statements.index[-1]]
+        
+        complement_time = complement_q_financial_infos['periodLength'].sum() /12
+        self.fcf = (y_financial_statements['FCFL'].iloc[-history_nb_year_avg:].sum() \
+                    + complement_q_financial_infos['FCFL'].sum()
+                    ) / (history_nb_year_avg + complement_time)
+
+        # elif self.unknown_last_fcf :
+        #     print(f"unknown last free cash flow  for {self.name}")
+        #     self.fcf = y_financial_statements['FreeCashFlow'][-4:-1].mean()
+
+        # else :
+        #     self.fcf = y_financial_statements['FreeCashFlow'][-3:].mean()
+
+        # if self.fcf < 0 :
+        #     self.fcf = y_financial_statements['FreeCashFlow'].mean()
+
+        ttm_fcf_start_time = q_cas_financial_statements.index[-1] - relativedelta(years= 1)
+        ttm_fcf_infos = q_cas_financial_statements.loc[q_cas_financial_statements.index > ttm_fcf_start_time]
+        self.fcf_ttm = ttm_fcf_infos['FCFL'].sum() / ttm_fcf_infos['periodLength'].sum() * 12
+
+        ### price to fcf median calculation over all history
+        if self.history is None:
+            self.retrieve_history()
+
+        df_multiple = pd.concat([self.history, 
+                                y_financial_statements[["QTCO" , 'FCFL']]], axis = 0).sort_index().ffill().dropna()
+        
+        df_multiple['price_to_fcf'] = df_multiple['QTCO'] * df_multiple['close'] / df_multiple['FCFL']
+        # self.df_multiple = df_multiple
+        self.price_to_fcf = df_multiple.loc[df_multiple['FCFL'] > 0 , 'price_to_fcf'].median()
+
+        print(self.price_to_fcf)
+        exit(0)
+        # print(self.df_multiple)
+        # stop
+        # if self.price_to_fcf < 0 :
+        #     self.price_to_fcf = df_multiple['price_to_fcf'].max()
+        
+        # if self.price_to_fcf < 0 :
+        #     print(f"negative price_to_fcf mean for {self.short_name} can not compute DCF")
+        #     return(1)
+
+        ### calculation of fcf growth
+        delta_t = relativedelta(y_financial_statements.index[-1], y_financial_statements.index[YEAR_G],)
+        nb_years_fcf = delta_t.years + delta_t.months / 12
+
+        fcf_se_ratio = y_financial_statements['FCFL'].iloc[-1]\
+            /y_financial_statements['FCFL'].iloc[YEAR_G]
+        
+        if fcf_se_ratio < 0:
+            self.mean_g_fcf = np.nan
+        else :
+            self.mean_g_fcf = (fcf_se_ratio)**(1/nb_years_fcf) - 1
+
+
+        nb_year_inc = delta_t.years + delta_t.months / 12
+        self.mean_g_tr = (y_financial_statements['TotalRevenue'].iloc[-1]\
+                        /y_financial_statements['TotalRevenue'].iloc[YEAR_G])**(1/nb_year_inc) - 1
+        # inc_se_ratio = y_financial_statements['NetIncome'].iloc[-1]\
+        #                 /y_financial_statements['NetIncome'].iloc[YEAR_G]
+        # if inc_se_ratio < 0 :
+        #     self.mean_g_netinc = np.nan
+        # else :
+        #     self.mean_g_netinc = inc_se_ratio**(1/nb_year_inc) - 1
+
+        if pr :
+            print("\r")
+            print(y_financial_statements)
+            print(f"Prix courant: {self.close_price:.2f} {self.financial_currency:s}" )
+            print(f"Cout moyen pondere du capital: {self.cmpc*100:.2f}%")
+            print(f"Croissance moyenne du chiffre d'affaire sur {nb_year_inc:f} \
+                ans: {self.mean_g_tr*100:.2f}%")
+            print(f"Croissance moyenne du free cash flow sur {nb_year_inc:f} \
+                ans: {self.mean_g_fcf*100:.2f}%")
+        return(0)
 
         
+
+# class ShareFinancialComputer():
+
+    # self.mean_g_fcf : float = None
+
+    # self.price_to_fcf :float = None
+    # self.debt_to_equity : float = np.nan
+    # self.price_to_book : float = np.nan
+    # self.mean_g_tr = None
+    # self.mean_g_netinc = None
+    # self.capital_cost : float = None
+
+    # self.unknown_last_fcf = None
+    # self.price_currency : str = None
+    # self.net_market_cap : float = None
+    # self.g :float = np.nan
+    # self.g_last :float = np.nan
+    # self.financial_currency_price_history = None
+    # self.df_multiple = None
+
+
+
+class Share():
+    """
+    Object containing a share and its financial informations
+    """
+    name : str = None
+    isin :str = None
+    vwd_id : str = None
+    vwd_id_secondary : str = None
+    symbol : str = None
+    close_price : float = None
+    product_type :str = None
+    exchange_id : str = None
+
+    financial_statements : ShareFinancialStatements = None
+
+    def __init__(self, s_dict : dict = None,
+            session_model : SessionModelDCF  = None):
+
+        self.__dict__.update(s_dict)
+
+        self.session_model = session_model
+
+        self.financial_statements = ShareFinancialStatements(self.session_model,
+                                                             self.isin )
+        
+        self.values = ShareValues(
+            self.session_model,
+            self.financial_statements,
+            self.isin, 
+            self.vwd_id, 
+            self.vwd_id_secondary )
+        
+        self.retrieve_current_price = self.values.retrieve_current_price
+        self.retrieve_history = self.values.retrieve_history
+        self.retrieve_ratios = self.values.retrieve_ratios
+        self.retrieve_financial_statements = self.financial_statements.retrieve
+        self.compute_financial_info = self.values.compute
+        
+        # import json
+        # with open("company_profile.json", "w", encoding= "utf8") as outfile: 
+        #     json.dump(company_profile['data'], outfile, indent = 4)
+
+  
+    # def retrieve_company_profile(self):
+    #     """
+    #     Retrive company gerneral infos
+    #     """
+        
+    #     company_profile = self.session_model.trading_api.get_company_profile(
+    #     product_isin= self.isin,
+    #     raw=True,
+    #     )
+        
+    #     self.nb_shares = float(company_profile['data']['shrOutstanding'])
+    #     self.market_cap = self.nb_shares * self.current_price
+
 
     # def eval_beta(self) :
     #     """
@@ -456,7 +548,7 @@ class Share():
         print(f'\rquerry {self.name}    ', flush=True, end="")
   
         self.retrieve_history()
-        self.retrieve_company_profile()
+        self.retrieve_ratios()
         self.retrieve_financial_statements()
 
 
@@ -474,18 +566,6 @@ class Share():
 
         return 0
 
-    def compute_financial_info(self, pr = True,) :
-        """
-        Compute intermedate financial infos used as input for dcf calculation
-        """
-
-        self.computed_infos = ShareFinancialComputer(self.session_model,
-                                                self.ratios,
-                                                self.financial_statements)
-        
-        self.computed_infos.compute()
-
-        
 
     def get_dcf(self, g : float = None, start_fcf : float = None, pr = False) -> float :
         """

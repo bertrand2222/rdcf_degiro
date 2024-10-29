@@ -19,10 +19,11 @@ from typing import List
 from share import Share
 from session_model_dcf import SessionModelDCF, ERROR_SYMBOL
 import yahooquery as yq
+from importlib import reload
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-
+urllib3.disable_warnings()
 
 
 # import google.auth
@@ -32,7 +33,6 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 # from google.auth.transport.requests import Request
 # from google.oauth2.credentials import Credentials
 # from google_auth_oauthlib.flow import InstalledAppFlow
-urllib3.disable_warnings()
 
 # import pandas as pd
 # SCOPES =  ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
@@ -50,27 +50,23 @@ YEAR_G = 0
 SHARE_PROFILE_FILE = 'share_profile.json'
 
 
-
-
 class DCFAnal():
     """
     object containing a reverse dcf analysis and all its context
     """
-    
+
     def __init__(self,
-                 use_multiple = True,
-                 capital_cost_equal_market = False) -> None:
-
-        self.df : pd.DataFrame = None
+                 config_dict : dict = None,
+             ) -> None:
         
+        reload(pd)
+        self.__dict__.update(config_dict)
+        self.df : pd.DataFrame = None
         self.share_list : List[Share] = None
-
         self.trading_api : API = None
-
-        self.session_model : SessionModelDCF = SessionModelDCF()
         self.ids : List[int] = None
-        self.use_multiple = use_multiple
-        self.capital_cost_equal_market = capital_cost_equal_market
+
+        self.session_model = SessionModelDCF(config_dict)
 
         self.connect()
 
@@ -94,7 +90,7 @@ class DCFAnal():
             raw=False,
         )
         
-        self.share_list = [Share(s_id, s_dict.__dict__ ,
+        self.share_list = [Share( s_dict.__dict__ ,
                                  session_model = self.session_model,
                                  )
                                  for s_id, s_dict in product_info.data.items() if s_dict.product_type =='STOCK'
@@ -113,7 +109,6 @@ class DCFAnal():
 
         share_list = self.share_list
         for s in share_list :
-            s.capital_cost_equal_market = self.capital_cost_equal_market
 
             flg = s.querry_financial_info()
             if flg == ERROR_SYMBOL :

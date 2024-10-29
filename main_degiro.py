@@ -1,3 +1,4 @@
+import pandas as pd
 import os
 import json
 from degiro_connector.trading.api import API , Credentials
@@ -6,11 +7,11 @@ from degiro_connector.trading.models.product_search import LookupRequest, Stocks
 # from degiro_connector.quotecast.tools.ticker_fetcher import TickerFetcher
 import yahooquery as yq
 import polars as pl
+from importlib import reload
+
 from dcf_degiro import DCFAnal
 
-
 CASH_FLOW = 2
-
 
 
 # credentials_path = os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json")
@@ -68,24 +69,38 @@ CASH_FLOW = 2
 # with open("requested_shares.json", "w", encoding= "utf8") as outfile: 
 #     json.dump(requested_shares, outfile, indent = 4)
 
+config_dict = {
+    'capital_cost_equal_market' : True,
+    'use_multiple' : True,
+    'credential_file_path' : os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json"),
+    'history_nb_year_avg' : 3
+}
+
 
 if __name__ == "__main__":
     
 
-    dcf_anal = DCFAnal(  capital_cost_equal_market = True)
+    
+
+    
+    dcf_anal = DCFAnal(config_dict)
 
     # client_details_table = dcf_anal.trading_api.get_client_details()
 
     dcf_anal.retrieve_shares_from_favorites()
     
-    dcf_anal.process()
+    # dcf_anal.process()
     for s in dcf_anal.share_list:
+        # print(pd.DataFrame)
         # print(s.__dict__)
         # print(s.exchange_id)
-        print(s.name)
-        print(s.vwd_id)
-        s.retrieve_history()
-        # break
+        # print(s.name)
+        # print(s.close_price)
+        # print(s.vwd_id)
+        # s.retrieve_financial_statements()
+        s.compute_financial_info()
+        # print(s.values.current_price)
+        break
 #   # dcf_anal.load_df()
 
 #   dcf_anal.to_excel(outfile)

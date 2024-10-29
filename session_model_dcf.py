@@ -18,7 +18,7 @@ BROWSER_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)\
 ### get fed fund rate (debt cost)
 URL_FED_FUND_RATE = "https://ycharts.com/indicators/effective_federal_funds_rate"
 XPATH_FED_FUND_RATE = "/html/body/main/div/div[4]/div/div/div/div/div[2]/div[1]/div[3]/div[2]/div/div[1]/table/tbody/tr[1]/td[2]"
-
+IS = 0.25
 
 class MarketInfos():
     """
@@ -35,11 +35,14 @@ class MarketInfos():
 
         self.rate_history_dic = {}
         self.rate_current_dic = {}
+
+        self.update()
     
     def update(self) :
         """
         Querry market info from web sources and yahoo finance api
         """
+        print("querry market info from web sources and yahoo finance api")
         r = requests.get(URL_FED_FUND_RATE, verify= False, headers= BROWSER_HEADERS, timeout= 20)
         text_fed_fund_rate = html.fromstring(r.content).xpath(XPATH_FED_FUND_RATE)[0].text
 
@@ -91,23 +94,34 @@ class SessionModelDCF():
     """
     Oobject containing all global data
     """
-    def __init__(self):
-        self.market_infos : MarketInfos = MarketInfos()
+    credential_file_path : str = None
+    capital_cost_equal_market = False
+    use_multiple = True
+    history_nb_year_avg : int = 3
+    
+    def __init__(self, config_dict : dict):
+
+        self.market_infos : MarketInfos = None
         self.chart_fetcher : ChartFetcher = None
         self.trading_api : API = None
+
+        if "credential_file_path" not in config_dict :
+            raise KeyError("missing credential_file_path definition in input")
+        
+        self.__dict__.update(config_dict)
 
     def connect(self) :
         """
         Connexion
         """
-        config_path = os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json")
-        with open(config_path) as config_file:
+        # config_path = os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json")
+        with open(self.credential_file_path, encoding= "utf8") as config_file:
             config_dict = json.load(config_file)
 
         user_token = config_dict.get("user_token")
         self.chart_fetcher = ChartFetcher(user_token=user_token)
 
-        credentials = build_credentials(location=config_path )
+        credentials = build_credentials(location=self.credential_file_path )
         self.trading_api = API(credentials = credentials )
         self.trading_api.connect()
 
