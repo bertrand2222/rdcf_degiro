@@ -3,16 +3,13 @@ import os
 import json
 from degiro_connector.trading.api import API , Credentials
 from degiro_connector.trading.models.credentials import build_credentials
-from degiro_connector.trading.models.product_search import LookupRequest, StocksRequest
+from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
 # from degiro_connector.quotecast.tools.ticker_fetcher import TickerFetcher
 import yahooquery as yq
 import polars as pl
 from importlib import reload
 
-from dcf_degiro import DCFAnal
-
-CASH_FLOW = 2
-
+from dcf_degiro import RDCFAnal
 
 # credentials_path = os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json")
 # credentials = build_credentials(location=credentials_path )
@@ -23,94 +20,34 @@ CASH_FLOW = 2
 # client_details_table = trading_api.get_client_details()
 
 
-# financial statement
-
-# company_profile = trading_api.get_company_profile(
-#     product_isin='FR0000131906',
-# )
-# company_ratios = trading_api.get_company_ratios(
-#     product_isin='FR0000131906',
-# )
-
-# financial_st = trading_api.get_financial_statements(
-#     product_isin='FR0000131906',
-#     raw= True
-# )
-# with open("financial_statement.json", "w", encoding= "utf8") as outfile: 
-#     json.dump(financial_st, outfile, indent = 4)
-# num = 1
-# print(financial_st['data']['interim'][num]['fiscalYear'])
-# print(financial_st['data']['interim'][num]['statements'][CASH_FLOW])
-# trading_api.logout()
-
-
-
-# FETCH PRODUCTS
-
-# favorite_batch = trading_api.get_favorite(raw=False)
-
-
- # SETUP REQUEST
-# request = ProductsInfo.Request()
-# request.products.extend([96008, 1153605, 5462588])
-# underl = StocksRequest(search_text = 'US0378331005', limit=4,
-#         offset=0,
-#          )
-
-
-    
-#     if 'products' in product_batch :
-#         requested_shares[s] = {'name' : product_batch['products'][0]['name'], "isin" :product_batch['products'][0]['isin'] }
-#         print(product_batch['products'][0]['name'], product_batch['products'][0]['isin'] )
-#     else :
-#         requested_shares[s] = {'name' : "not found", "isin" : "not found" }
-#         print(f'{s} not found in degiro data' )
-
-# with open("requested_shares.json", "w", encoding= "utf8") as outfile: 
-#     json.dump(requested_shares, outfile, indent = 4)
-
 config_dict = {
-    'capital_cost_equal_market' : True,
-    'use_multiple' : True,
-    'credential_file_path' : os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json"),
-    'history_nb_year_avg' : 3
+    'credential_file_path'          : os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json"),
+    'capital_cost_equal_market'     : True,
+    'use_multiple'                  : True,
+    'fcf_history_multiple_method'   : 'mean', # mean or median
+    'terminal_price_to_fcf_bounds' : [1, 70],
+    'history_avg_nb_year'           : 3,
+    'save_data'                     : False,
+    'use_last_price_intraday'       : True,
 }
-
+outfile = os.path.join(os.environ["USERPROFILE"], r"Documents\rdcf.xlsx")
 
 if __name__ == "__main__":
     
 
-    
+    rdcf_anal = RDCFAnal(config_dict)
 
     
-    dcf_anal = DCFAnal(config_dict)
+    rdcf_anal.retrieve_shares_from_favorites()
+    rdcf_anal.retrieve_shares_from_portfolio()
+    rdcf_anal.process()
 
-    # client_details_table = dcf_anal.trading_api.get_client_details()
-
-    dcf_anal.retrieve_shares_from_favorites()
-    
-    # dcf_anal.process()
-    for s in dcf_anal.share_list:
-        # print(pd.DataFrame)
-        # print(s.__dict__)
-        # print(s.exchange_id)
-        # print(s.name)
-        # print(s.close_price)
-        # print(s.vwd_id)
-        # s.retrieve_financial_statements()
-        s.compute_financial_info()
-        # print(s.values.current_price)
-        break
+    # for s in dcf_anal.share_list:
+    #     # if s.identity.symbol == 'TM':
+    #     s.compute_financial_info()
+            # s.retrieve_history()
+        # break
 #   # dcf_anal.load_df()
 
-#   dcf_anal.to_excel(outfile)
+    rdcf_anal.to_excel(outfile)
   # upload_file(outfile)
-
-
-
-
-  # share = Share("ACA.PA")
-  # share.eval_g(2.6e9, True)
-  # share = Share("TTE.PA")
-  # share.eval_g( pr= True, )
-  # share.get_dcf( pr= True)

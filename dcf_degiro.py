@@ -1,24 +1,17 @@
 import os
 import sys
+import re
 from string import ascii_uppercase
-import json
-from datetime import date
 import subprocess
+from typing import List
 import warnings
-import numpy as np
-from tabulate import tabulate
 import urllib3
 import pandas as pd
 # from colorama import Fore
-import requests
-from lxml import html
-import urllib3
 from degiro_connector.trading.api import API
-
-from typing import List
+from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
 from share import Share
-from session_model_dcf import SessionModelDCF, ERROR_SYMBOL
-import yahooquery as yq
+from session_model_dcf import SessionModelDCF, MarketInfos
 from importlib import reload
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -41,56 +34,80 @@ PKL_PATH = "df_save.pkl"
 IS = 0.25
 NB_YEAR_DCF = 10
 
-YEAR_G = 0
 
-
-
-
-
-SHARE_PROFILE_FILE = 'share_profile.json'
-
-
-class DCFAnal():
+class RDCFAnal():
     """
     object containing a reverse dcf analysis and all its context
     """
-
+    
     def __init__(self,
                  config_dict : dict = None,
              ) -> None:
         
         reload(pd)
-        self.__dict__.update(config_dict)
         self.df : pd.DataFrame = None
-        self.share_list : List[Share] = None
+        self.share_list : List[Share] = []
         self.trading_api : API = None
-        self.ids : List[int] = None
+        # self.ids : List[int] = None
+        self.__dict__.update(config_dict)
 
         self.session_model = SessionModelDCF(config_dict)
 
-        self.connect()
-
-    def connect(self) :
-        """
-        Connexion
-        """
-        self.session_model.connect()
         self.trading_api = self.session_model.trading_api
+        self.get_client_details_table = self.trading_api.get_client_details
+       
      
     def retrieve_shares_from_favorites(self):
         """
         Retrieve stock and fund ids recorded in Degiro account favorite list
         """
         favorite_batch = self.trading_api.get_favorite(raw=False)
-        self.ids = favorite_batch.data[0].product_ids
+        ids = favorite_batch.data[0].product_ids
 
         # FETCH PRODUCT INFO
         product_info = self.trading_api.get_products_info(
-            product_list= self.ids,
+            product_list= ids,
             raw=False,
         )
         
-        self.share_list = [Share( s_dict.__dict__ ,
+        self.share_list += [Share( s_dict.__dict__ ,
+                                 session_model = self.session_model,
+                                 )
+                                 for s_id, s_dict in product_info.data.items() if s_dict.product_type =='STOCK'
+                                 ]
+        
+    def retrieve_shares_from_portfolio(self):
+        """
+        Retrieve stock and fund ids recorded in Degiro account portfolio
+        """
+        
+        account_update = self.trading_api.get_update(
+        request_list=[
+            UpdateRequest(
+                option=UpdateOption.PORTFOLIO,
+                last_updated=0,
+            ),
+        ],
+        raw=False,
+    )
+        ids = []
+
+
+        for p in account_update.portfolio['value']:
+            if is_int(p['id']) :
+                # select only portfolio value wich position size != 0
+                for value in p['value']:
+                    if value['name']  == "size" and value['value'] != 0:
+                        ids.append(int(p['id']))
+                        break
+        
+        # FETCH PRODUCT INFO
+        product_info = self.trading_api.get_products_info(
+            product_list= ids,
+            raw=False,
+        )
+
+        self.share_list += [Share( s_dict.__dict__ ,
                                  session_model = self.session_model,
                                  )
                                  for s_id, s_dict in product_info.data.items() if s_dict.product_type =='STOCK'
@@ -105,46 +122,58 @@ class DCFAnal():
             print('No product to process, retrieve products before')
             return
         
-        # self.session_model.market_infos.update()
+        self.session_model.market_infos = MarketInfos()
 
-        share_list = self.share_list
-        for s in share_list :
-
-            flg = s.querry_financial_info()
-            if flg == ERROR_SYMBOL :
+        valid_share_list : List[Share] = []
+        for s in self.share_list :
+            
+            print(f'{s.identity.name} : retrieves all values                    ', flush= True, end = "\r")
+            try:
+                s.retrieves_all_values()
+            except (KeyError, TypeError) as e:
+                print(f"{s.identity.name} : error while retrieving values {e}           ")
                 continue
-            flg = s.compute_financial_info()
-            if flg == ERROR_SYMBOL :
+            
+            print(f'{s.identity.name} : compute complementary values            ', flush= True, end='\r')
+            try:
+                s.compute_complementary_values()
+            except (KeyError, TypeError) as e:
+                print(f"{s.identity.name} : error while computing complementary values \n   {e}           ")
                 continue
 
+            print(f'{s.identity.name} : eval assumed growth                     ', )
+            s.eval_g()
+
+            valid_share_list.append(s)
+
+        print("generate summary table")
 
 
-            s.eval_g(use_multiple= self.use_multiple)
-
- 
-        df = pd.DataFrame(index= self.ids,
-                          data= {
-                                'short_name' : [s.short_name for s in share_list] ,
-                                'current_price' : [s.close_price for s in share_list],
-                                'currency' : [s.financial_currency for s in share_list],
-                                'beta' : [s.beta for s in share_list],
-                                'price_to_fcf' : [s.price_to_fcf for s in share_list],
-                                'capital_cost' : [s.capital_cost for s in share_list],
-                                'cmpc' : [s.cmpc for s in share_list],
-                                'assumed_g' : [s.g for s in share_list],  
-                                'assumed_g_last' : [s.g_last for s in share_list],  
-                                'per' :  [s.per for s in share_list ],
-                                'roic' : [s.roic for s in share_list], 
-                                'debt_to_equity' : [s.debt_to_equity for s in share_list],
-                                'price_to_book' : [s.price_to_book for s in share_list] ,
-                                'total_payout_ratio' : [s.total_payout_ratio for s in share_list] ,
-                                # 'mean_g_fcf': [s.mean_g_fcf for s in share_list] ,
-                                # 'mean_g_tr' : [s.mean_g_tr for s in share_list],
-                                # 'mean_g_inc' : [s.mean_g_netinc for s in share_list]
-                                    })
+        df = pd.DataFrame.from_records(index = [s.identity.symbol for s in valid_share_list],
+                          data= [
+                              {
+                                'short_name' :          s.identity.name  ,
+                                'current_price' :       s.values.current_price ,
+                                'currency' :            s.currency ,
+                                'beta' :                s.values.beta ,
+                                'price_to_fcf' :        s.values.price_to_fcf,
+                                'capital_cost' :        s.values.capital_cost,
+                                'cmpc' :                s.values.cmpc ,
+                                'assumed_g' :           s.values.g ,  
+                                'assumed_g_ttm' :      s.values.g_from_ttm,  
+                                'per' :                 s.values.per,
+                                'roic' :                s.values.roic , 
+                                'debt_to_equity' :      s.values.debt_to_equity,
+                                'price_to_book' :       s.values.price_to_book ,
+                                'total_payout_ratio' :  s.values.total_payout_ratio,
+                                # 'mean_g_fcf':     s.mean_g_fcf ,
+                                # 'mean_g_tr' :     s.mean_g_tr,
+                                # 'mean_g_inc' :    s.mean_g_netinc 
+                                    } for s in valid_share_list])
 
 
-        # df["diff_g"] = df['mean_g_tr'] - df['assumed_g']
+        self.trading_api.logout()
+
         df.sort_values(by = ['assumed_g', 'debt_to_equity']  , inplace= True, ascending= True)
 
         self.df = df
@@ -161,12 +190,16 @@ class DCFAnal():
 
         """
         Export in Excel format the analysis dataframe 
-        
         """
 
         letters = list(ascii_uppercase)
-        # self.xl_outfile = xl_outfile
-        writer = pd.ExcelWriter(xl_outfile,  engine="xlsxwriter")
+        while True:
+            try :
+                writer = pd.ExcelWriter(xl_outfile,  engine="xlsxwriter")
+                break
+            except PermissionError:
+                xl_outfile = re.sub(".xlsx$","_1.xlsx", xl_outfile)
+
         df = self.df
         col_letter = {c : letters[i+1] for i, c in enumerate(df.columns)}
         df.to_excel(writer, sheet_name= "rdcf")
@@ -184,7 +217,7 @@ class DCFAnal():
 
         # add hyperlink
         for i, s in enumerate(df.index):
-            worksheet.write_url(f'B{i+2}', fr'https://finance.yahoo.com/quote/{s}/', string= df.loc[s, 'short_name'] )
+            worksheet.write_url(f'B{i+2}', fr'https://www.tradingview.com/symbols/{s}/', string= df.loc[s, 'short_name'] )
 
         worksheet.add_table(0,0,len(df.index),len(df.columns) ,
                             {"columns" : [{'header' : 'symbol'}]
@@ -195,7 +228,7 @@ class DCFAnal():
             f"{col_letter['current_price']}:{col_letter['current_price']}", 13, number)
         worksheet.set_column(
             f"{col_letter['beta']}:{col_letter['price_to_fcf']}", 8, number)
-        worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_last']}", 11, percent)
+        worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_ttm']}", 11, percent)
         worksheet.set_column(f"{col_letter['per']}:{col_letter['price_to_book']}", 13, number)
         worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}", 11, percent )
         worksheet.set_column(f"{col_letter['roic']}:{col_letter['roic']}", 13, percent )
@@ -203,7 +236,7 @@ class DCFAnal():
 
         # format assumed g
         worksheet.conditional_format(
-            f"{col_letter['assumed_g']}2:{col_letter['assumed_g_last']}{len(df.index)+1}",
+            f"{col_letter['assumed_g']}2:{col_letter['assumed_g_ttm']}{len(df.index)+1}",
             {"type": "3_color_scale", 'min_type': 'num',
             'max_type': 'max', 'mid_type' : 'percentile',
             'min_value' : -0.2, 'mid_value' : 50,  
@@ -312,3 +345,10 @@ class DCFAnal():
 #         file = None
 
 #     return file.get("id")
+
+def is_int(x):
+    try:
+        int(x)
+        return True
+    except ValueError:
+        return False

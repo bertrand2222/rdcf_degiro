@@ -42,7 +42,7 @@ class MarketInfos():
         """
         Querry market info from web sources and yahoo finance api
         """
-        print("querry market info from web sources and yahoo finance api")
+        print("querry market info from degiro and yahoo finance api")
         r = requests.get(URL_FED_FUND_RATE, verify= False, headers= BROWSER_HEADERS, timeout= 20)
         text_fed_fund_rate = html.fromstring(r.content).xpath(XPATH_FED_FUND_RATE)[0].text
 
@@ -75,18 +75,25 @@ class MarketInfos():
         self.var_rm = self.month_change_rate.var()
 
 
-    def update_rate_dic(self, currency_1, currency_2):
+    def update_rate_dic(self, currency_1, currency_2, ):
         """
         Record change rate hystory and curent value for one currency pair
         """
         if currency_1 == currency_2 :
             return
-        change_rate = currency_1 + currency_2 + "=X"
-        if change_rate not in self.rate_history_dic :
-            currency_history = yq.Ticker(change_rate).history(period= '5y',
-                                                                interval= "1mo").loc[change_rate]
-            self.rate_history_dic[change_rate] = currency_history["close"].iloc[:-1]
-            self.rate_current_dic[change_rate] = currency_history["close"].iloc[-1]
+        rate_symb = currency_1 + currency_2 + "=X"
+        if rate_symb not in self.rate_history_dic :
+            try :
+                currency_history = yq.Ticker(rate_symb).history(period= '5y',
+                                                                interval= "1mo", 
+                                                                ).loc[rate_symb]
+            except KeyError as e:
+                raise KeyError(f'rate symbol {rate_symb} not found in yahoofinance database') from e
+            
+            self.rate_history_dic[rate_symb] = currency_history[["close"]].iloc[:-1].rename(
+                columns = {'close' : 'change_rate'}).reindex(
+                    pd.to_datetime(currency_history.index[:-1]))
+            self.rate_current_dic[rate_symb] = currency_history["close"].iloc[-1]
 
 
 class SessionModelDCF():
@@ -97,7 +104,12 @@ class SessionModelDCF():
     credential_file_path : str = None
     capital_cost_equal_market = False
     use_multiple = True
-    history_nb_year_avg : int = 3
+    fcf_history_multiple_method = 'median'
+    history_avg_nb_year : int = 3
+    nb_year_dcf : int = 10
+    save_data : bool = False
+    use_last_price_intraday : bool = False
+    terminal_price_to_fcf_bounds = [1, 100]
     
     def __init__(self, config_dict : dict):
 
@@ -110,11 +122,14 @@ class SessionModelDCF():
         
         self.__dict__.update(config_dict)
 
+        self.connect()
+
     def connect(self) :
         """
         Connexion
         """
-        # config_path = os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json")
+        print("connect to degiro trading API")
+
         with open(self.credential_file_path, encoding= "utf8") as config_file:
             config_dict = json.load(config_file)
 
