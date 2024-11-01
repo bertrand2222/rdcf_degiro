@@ -1,12 +1,10 @@
 import numpy as np
 import pandas as pd
-import json
-import yahooquery as yq
+import json, os
 from scipy.optimize import minimize_scalar
-from pydantic import BaseModel
 from degiro_connector.quotecast.models.chart import ChartRequest, Interval
 from dateutil.relativedelta import relativedelta
-from session_model_dcf import SessionModelDCF, MARKET_CURRENCY, ERROR_SYMBOL, IS, MarketInfos
+from rdcf_degiro.session_model_dcf import SessionModelDCF, MarketInfos
 from datetime import datetime, timedelta
 from typing import Any, Callable
 from tabulate import tabulate
@@ -114,9 +112,12 @@ class ShareFinancialStatements():
                     )['data']
         except KeyError as e:
             raise KeyError(f'{self.identity.name} : no financial statement found for isin {self.identity.isin}') from e
-        
-        if self.session_model.save_data :
-            with open(f"data/{self.identity.symbol}_company_financial.json", "w", encoding= "utf8") as outfile:
+                
+        if self.session_model.save_data:
+            with open(os.path.join(self.session_model.data_folder_path, 
+                                   f"{self.identity.symbol}_company_financial.json"), 
+                        "w", 
+                        encoding= "utf8") as outfile: 
                 json.dump(financial_st, outfile, indent = 4)
 
         self.financial_currency = financial_st['currency']
@@ -268,8 +269,13 @@ class ShareValues():
 
         elif self.identity.vwd_identifier_type =='vwdkey':
             series_id_name = "vwdkey"
-       
-        self.price_series_str = f"price:{series_id_name}:{serie_id}"
+
+        try :
+            self.price_series_str = f"price:{series_id_name}:{serie_id}"
+        except TypeError as e:
+            raise TypeError(
+            f"not valid {series_id_name} type : {type(serie_id)}  history\
+                             chart not available for the quote") from e
         self.retrieve_values()
     
         self.retrieve_history()
@@ -309,7 +315,10 @@ class ShareValues():
         
 
         if self.session_model.save_data:
-            with open(f"data/{self.identity.symbol}_company_ratio.json", "w", encoding= "utf8") as outfile: 
+            with open(os.path.join(self.session_model.data_folder_path, 
+                                   f"{self.identity.symbol}_company_ratio.json"), 
+                        "w", 
+                        encoding= "utf8") as outfile: 
                 json.dump(ratios['data'], outfile, indent = 4)
 
     def retrieve_intra_day_price(self):
@@ -333,9 +342,11 @@ class ShareValues():
             chart_request=chart_request,
             raw=False,
         )
-        # if isinstance(chart, BaseModel):
-        self.current_price = chart.series[0].data[-1][-1]
-    
+        try :
+            self.current_price = chart.series[0].data[-1][-1]
+        except IndexError :
+            print(f'{self.identity.name} : warning, not enought data to retrieve intra day price')
+            
     def retrieve_history(self):
         """
         retrive current history from charts
@@ -361,13 +372,11 @@ class ShareValues():
             raw=False,
         )
 
-        
         history = pd.DataFrame(data=chart.series[0].data, columns = ['time', 'close'])
+        self.current_price = history['close'].iloc[-1]
 
         if self.session_model.use_last_price_intraday:
-            self.retrieve_intra_day_price()
-        else :
-            self.current_price = history['close'].iloc[-1]
+                self.retrieve_intra_day_price()
 
         self.market_cap = self.nb_shares * self.current_price / 1e6
 
@@ -445,7 +454,7 @@ class ShareValues():
         total_debt = last_bal_financial_statements['STLD'] # 'TotalDebt',
 
         self.cmpc = self.capital_cost * stock_equity/(total_debt + stock_equity) + \
-                    market_infos.debt_cost * (1-IS) * total_debt/(total_debt + stock_equity)
+                    market_infos.debt_cost * (1-self.session_model.taxe_rate) * total_debt/(total_debt + stock_equity)
                         
         #net debt     =  total_debt - cash and cash equivalent
         self.net_debt = total_debt - last_bal_financial_statements[self.financial_statements.cash_code]

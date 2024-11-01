@@ -18,7 +18,6 @@ BROWSER_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)\
 ### get fed fund rate (debt cost)
 URL_FED_FUND_RATE = "https://ycharts.com/indicators/effective_federal_funds_rate"
 XPATH_FED_FUND_RATE = "/html/body/main/div/div[4]/div/div/div/div/div[2]/div[1]/div[3]/div[2]/div/div[1]/table/tbody/tr[1]/td[2]"
-IS = 0.25
 
 class MarketInfos():
     """
@@ -101,6 +100,7 @@ class SessionModelDCF():
     """
     Oobject containing all global data
     """
+    
     credential_file_path : str = None
     capital_cost_equal_market = False
     use_multiple = True
@@ -110,8 +110,13 @@ class SessionModelDCF():
     save_data : bool = False
     use_last_price_intraday : bool = False
     terminal_price_to_fcf_bounds = [1, 100]
+    data_folder_path = 'data'
+    taxe_rate = 0.25
     
     def __init__(self, config_dict : dict):
+
+        self.__dict__.update(config_dict)
+        self.config_dict = self.__dict__.copy()
 
         self.market_infos : MarketInfos = None
         self.chart_fetcher : ChartFetcher = None
@@ -120,7 +125,6 @@ class SessionModelDCF():
         if "credential_file_path" not in config_dict :
             raise KeyError("missing credential_file_path definition in input")
         
-        self.__dict__.update(config_dict)
 
         self.connect()
 

@@ -10,8 +10,8 @@ import pandas as pd
 # from colorama import Fore
 from degiro_connector.trading.api import API
 from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
-from share import Share
-from session_model_dcf import SessionModelDCF, MarketInfos
+from rdcf_degiro.share import Share
+from rdcf_degiro.session_model_dcf import SessionModelDCF, MarketInfos
 from importlib import reload
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -30,7 +30,7 @@ urllib3.disable_warnings()
 # import pandas as pd
 # SCOPES =  ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 
-PKL_PATH = "df_save.pkl"
+PKL_NAME = "df_save.pkl"
 IS = 0.25
 NB_YEAR_DCF = 10
 
@@ -131,14 +131,14 @@ class RDCFAnal():
             try:
                 s.retrieves_all_values()
             except (KeyError, TypeError) as e:
-                print(f"{s.identity.name} : error while retrieving values {e}           ")
+                print(f"{s.identity.name} : error while retrieving values \n {type(e).__name__} : {e}   ")
                 continue
             
             print(f'{s.identity.name} : compute complementary values            ', flush= True, end='\r')
             try:
                 s.compute_complementary_values()
             except (KeyError, TypeError) as e:
-                print(f"{s.identity.name} : error while computing complementary values \n   {e}           ")
+                print(f"{s.identity.name} : error while computing complementary values \n {type(e).__name__} : {e}")
                 continue
 
             print(f'{s.identity.name} : eval assumed growth                     ', )
@@ -160,7 +160,7 @@ class RDCFAnal():
                                 'capital_cost' :        s.values.capital_cost,
                                 'cmpc' :                s.values.cmpc ,
                                 'assumed_g' :           s.values.g ,  
-                                'assumed_g_ttm' :      s.values.g_from_ttm,  
+                                'assumed_g_ttm' :       s.values.g_from_ttm,  
                                 'per' :                 s.values.per,
                                 'roic' :                s.values.roic , 
                                 'debt_to_equity' :      s.values.debt_to_equity,
@@ -177,13 +177,13 @@ class RDCFAnal():
         df.sort_values(by = ['assumed_g', 'debt_to_equity']  , inplace= True, ascending= True)
 
         self.df = df
-        df.to_pickle(PKL_PATH)
+        df.to_pickle(os.path.join(self.session_model.data_folder_path,PKL_NAME))
 
     def load_df(self):
         """
         Loads previously saved analysis dataframe
         """
-        self.df = pd.read_pickle(PKL_PATH)
+        self.df = pd.read_pickle(os.path.join(self.session_model.data_folder_path,PKL_NAME))
         self.share_list = self.df.index
 
     def to_excel(self, xl_outfile : str = None):
@@ -206,6 +206,8 @@ class RDCFAnal():
         wb = writer.book
         number = wb.add_format({'num_format': '0.00'})
         percent = wb.add_format({'num_format': '0.00%'})
+        l_align =  wb.add_format()
+        l_align.set_align('left')
         # Add a format. Light red fill with dark red text.
         # format1 = wb.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
         # Add a format. Green fill with dark green text.
@@ -286,9 +288,18 @@ class RDCFAnal():
                                     'min_color' : '#63BE7B', "max_color" : '#F8696B',
                                     "mid_color" : "#FFFFFF"})
         
+
+        
         #
         # worksheet.conditional_format(f"{col_letter['mean_g_fcf']}2:{col_letter['diff_g']}{len(df.index)+1}", {"type": "cell", "criteria": "<", "value": 0, "format": format1})
         # worksheet.conditional_format(f"{col_letter['mean_g_fcf']}2:{col_letter['diff_g']}{len(df.index)+1}", {"type": "cell", "criteria": ">", "value": 0, "format": format2})
+        
+        ##### save config
+        df_config = pd.DataFrame.from_dict(self.session_model.config_dict, orient= 'index')
+        df_config.to_excel(writer, sheet_name= "config")
+        worksheet = writer.sheets["config"]
+        worksheet.set_column('A:A', 30, l_align)
+        
         writer.close()
 
         if sys.platform == "linux" :
