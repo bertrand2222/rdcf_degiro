@@ -113,8 +113,8 @@ class ShareFinancialStatements():
         except KeyError as e:
             raise KeyError(f'{self.identity.name} : no financial statement found for isin {self.identity.isin}') from e
                 
-        if self.session_model.save_data:
-            with open(os.path.join(self.session_model.data_folder_path, 
+        if self.session_model.output_value_files:
+            with open(os.path.join(self.session_model.output_folder, 
                                    f"{self.identity.symbol}_company_financial.json"), 
                         "w", 
                         encoding= "utf8") as outfile: 
@@ -314,8 +314,8 @@ class ShareValues():
 
         
 
-        if self.session_model.save_data:
-            with open(os.path.join(self.session_model.data_folder_path, 
+        if self.session_model.output_value_files:
+            with open(os.path.join(self.session_model.output_folder, 
                                    f"{self.identity.symbol}_company_ratio.json"), 
                         "w", 
                         encoding= "utf8") as outfile: 

@@ -177,13 +177,13 @@ class RDCFAnal():
         df.sort_values(by = ['assumed_g', 'debt_to_equity']  , inplace= True, ascending= True)
 
         self.df = df
-        df.to_pickle(os.path.join(self.session_model.data_folder_path,PKL_NAME))
+        df.to_pickle(os.path.join(self.session_model.output_folder,PKL_NAME))
 
     def load_df(self):
         """
         Loads previously saved analysis dataframe
         """
-        self.df = pd.read_pickle(os.path.join(self.session_model.data_folder_path,PKL_NAME))
+        self.df = pd.read_pickle(os.path.join(self.session_model.output_folder,PKL_NAME))
         self.share_list = self.df.index
 
     def to_excel(self, xl_outfile : str = None):
@@ -193,6 +193,8 @@ class RDCFAnal():
         """
 
         letters = list(ascii_uppercase)
+        if not xl_outfile:
+            xl_outfile = os.path.join(self.session_model.output_folder , "rdcf.xlsx")
         while True:
             try :
                 writer = pd.ExcelWriter(xl_outfile,  engine="xlsxwriter")

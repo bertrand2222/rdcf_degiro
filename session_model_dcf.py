@@ -107,10 +107,10 @@ class SessionModelDCF():
     fcf_history_multiple_method = 'median'
     history_avg_nb_year : int = 3
     nb_year_dcf : int = 10
-    save_data : bool = False
+    output_value_files : bool = False
     use_last_price_intraday : bool = False
     terminal_price_to_fcf_bounds = [1, 100]
-    data_folder_path = 'data'
+    output_folder = 'data'
     taxe_rate = 0.25
     
     def __init__(self, config_dict : dict):
