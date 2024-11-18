@@ -104,14 +104,15 @@ class SessionModelDCF():
     credential_file_path : str = None
     capital_cost_equal_market = False
     use_multiple = True
-    fcf_history_multiple_method = 'median'
+    price_to_fcf_avg_method = 'harmonic'
     history_avg_nb_year : int = 3
     nb_year_dcf : int = 10
     output_value_files : bool = False
-    use_last_price_intraday : bool = False
+    use_last_intraday_price : bool = False
     terminal_price_to_fcf_bounds = [1, 100]
-    output_folder = 'data'
+    output_folder = os.getenv("TEMP")
     taxe_rate = 0.25
+    output_name = "rdcf"
     
     def __init__(self, config_dict : dict):
 
@@ -122,8 +123,11 @@ class SessionModelDCF():
         self.chart_fetcher : ChartFetcher = None
         self.trading_api : API = None
 
+        if not os.path.isdir(self.output_folder):
+            raise FileNotFoundError(f"The specified output folder does not exist {self.output_folder}")
+        
         if "credential_file_path" not in config_dict :
-            raise KeyError("missing credential_file_path definition in input")
+            raise KeyError("Missing credential_file_path definition in input")
         
 
         self.connect()
