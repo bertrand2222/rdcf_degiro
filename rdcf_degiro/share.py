@@ -10,7 +10,7 @@ from typing import Any, Callable
 from tabulate import tabulate
 
 ERROR_QUERRY_PRICE = 2
-OVERLAPING_DAYS_TOL = 5
+OVERLAPING_DAYS_TOL = 7
 
 EURONEXT_ID = '710'
 NASDAQ_ID = '663'
@@ -179,16 +179,20 @@ class ShareFinancialStatements():
             if key  in q_bal_financial_statements.columns:
                 self.cash_code = key
 
-        def get_date_shift_back(end_date : datetime, months : int):
+        def get_date_shift_back(end_date : datetime, months : int = 0, weeks :int = 0):
 
-            return end_date - relativedelta(months= months )
+            return end_date - relativedelta(months= months, weeks= weeks )
 
         ### correct interim data corresponding to period lenght if period is overlapping previous
         for p_df in [q_inc_financial_statements, q_cas_financial_statements] :
             value_cols = ["periodLength"] + [c for c in p_df.columns if c in FINANCIAL_ST_CODES]
 
             #### eval coresponding startDate from end date and periodLenght
-            p_df['startDate'] = p_df.apply(lambda x : get_date_shift_back(x.endDate, x.periodLength), axis = 1)
+
+            p_df['startDate'] = p_df.apply(lambda x : get_date_shift_back(x.endDate,
+                                                                         months = (x.periodType == 'M') * x.periodLength,
+                                                                         weeks = (x.periodType == 'W') * x.periodLength,
+                                                                           ), axis = 1)
             p_df['startDate_shift'] = p_df['startDate'].shift()
             
             #### apply overlaping tolerance of 5 days
@@ -301,7 +305,9 @@ class ShareValues():
                     else:
                         print(f"{self.identity.name} : Warning {item['id']} value not found")
 
-        self.beta           = float(ratio_dic['BETA'])
+
+        if 'BETA' in ratio_dic:
+            self.beta           = float(ratio_dic['BETA'])
 
         if "PEEXCLXOR" in ratio_dic : 
             self.per     = float(ratio_dic["PEEXCLXOR"])  # "P/E excluding extraordinary items - TTM",
@@ -375,7 +381,7 @@ class ShareValues():
         history = pd.DataFrame(data=chart.series[0].data, columns = ['time', 'close'])
         self.current_price = history['close'].iloc[-1]
 
-        if self.session_model.use_last_price_intraday:
+        if self.session_model.use_last_intraday_price:
                 self.retrieve_intra_day_price()
 
         self.market_cap = self.nb_shares * self.current_price / 1e6
@@ -391,35 +397,37 @@ class ShareValues():
         ### convert price history in financial statement currency  if needed
 
         if self.identity.currency != self.financial_statements.financial_currency:
-            if self.session_model.market_infos is None:
-                self.session_model.market_infos = MarketInfos()
             
             rate_factor = 1
             share_currency = self.identity.currency
             if self.identity.currency in  SPECIAL_CURRENCIES :
                 share_currency = SPECIAL_CURRENCIES[self.identity.currency]['real']
                 rate_factor = SPECIAL_CURRENCIES[self.identity.currency]['rate_factor']
-                
-            self.session_model.market_infos.update_rate_dic(share_currency,
-                                                            self.financial_statements.financial_currency,
-                                                            )
-            rate_symb = share_currency + self.financial_statements.financial_currency + "=X"
-   
-            rate = self.session_model.market_infos.rate_current_dic[rate_symb] * rate_factor
+            if self.session_model.market_infos is None:
+                self.session_model.market_infos = MarketInfos()
+            
+            if share_currency != self.financial_statements.financial_currency:
+                self.session_model.market_infos.update_rate_dic(share_currency,
+                                                                self.financial_statements.financial_currency,
+                                                                )
+                rate_symb = share_currency + self.financial_statements.financial_currency + "=X"
+    
+                rate = self.session_model.market_infos.rate_current_dic[rate_symb] * rate_factor
 
-            # if not self.market_cap:
-            #     self.retrieve_values()
-            self.market_cap *= rate
+                self.market_cap *= rate
 
-            history_in_financial_currency  = pd.concat(
-                [
-                self.history_in_financial_currency,
-                    self.session_model.market_infos.rate_history_dic[rate_symb] * rate_factor
-                    ], axis = 0
-                    ).sort_index().ffill().dropna()
-                    
-            history_in_financial_currency['close'] *= history_in_financial_currency['change_rate']
-            self.history_in_financial_currency = history_in_financial_currency
+                history_in_financial_currency  = pd.concat(
+                    [
+                    self.history_in_financial_currency,
+                        self.session_model.market_infos.rate_history_dic[rate_symb] * rate_factor
+                        ], axis = 0
+                        ).sort_index().ffill().dropna()
+                        
+                history_in_financial_currency['close'] *= history_in_financial_currency['change_rate']
+                self.history_in_financial_currency = history_in_financial_currency
+            else :
+                self.market_cap *= rate_factor
+                self.history_in_financial_currency  *= rate_factor
             
 
     def compute_complementary_values(self, pr = False):
@@ -481,7 +489,10 @@ class ShareValues():
         complement_q_financial_infos = q_cas_financial_statements.loc[q_cas_financial_statements.index
                                                             > y_financial_statements.index[-1]]
         
-        complement_time = complement_q_financial_infos['periodLength'].sum() /12
+        complement_time =  ((complement_q_financial_infos['periodType'] == 'M') * complement_q_financial_infos['periodLength']).sum() /12 + \
+                            ((complement_q_financial_infos['periodType'] == 'W') * complement_q_financial_infos['periodLength']).sum() /53
+
+            
         nb_year_avg = history_avg_nb_year + complement_time
         self.fcf = (y_financial_statements['FCFL'].iloc[-history_avg_nb_year:].sum() \
                     + complement_q_financial_infos['FCFL'].sum()
@@ -492,7 +503,8 @@ class ShareValues():
 
         ttm_fcf_start_time = q_cas_financial_statements.index[-1] - relativedelta(years= 1)
         ttm_fcf_infos = q_cas_financial_statements.loc[q_cas_financial_statements.index > ttm_fcf_start_time]
-        self.fcf_ttm = ttm_fcf_infos['FCFL'].sum() / ttm_fcf_infos['periodLength'].sum() * 12
+        self.fcf_ttm = ttm_fcf_infos['FCFL'].sum() / (((ttm_fcf_infos['periodType'] == 'M') * ttm_fcf_infos['periodLength']).sum() /12 + \
+                            ((ttm_fcf_infos['periodType'] == 'W') * ttm_fcf_infos['periodLength']).sum() /53)
 
         ### terminal price to fcf calculation from  history
         if self.history is None:
@@ -503,13 +515,15 @@ class ShareValues():
 
         df_multiple['price_to_fcf'] = df_multiple['QTCO'] * df_multiple['close'] / df_multiple['FCFL']
 
-        if self.session_model.fcf_history_multiple_method == 'median':
-            self.price_to_fcf = df_multiple.loc[df_multiple['FCFL'] > 0 , 'price_to_fcf'].median()
-        else:
+        if self.session_model.price_to_fcf_avg_method == 'harmonic':
+            self.price_to_fcf = len(df_multiple) / (1 / df_multiple['price_to_fcf']).sum()
+        elif self.session_model.price_to_fcf_avg_method == 'median':
+            self.price_to_fcf = df_multiple['price_to_fcf'].median()
+        else: # arithmetic
             self.price_to_fcf = df_multiple['price_to_fcf'].mean()
         
-        self.price_to_fcf_terminal = max(self.price_to_fcf, self.session_model.terminal_price_to_fcf_bounds[0])
-        self.price_to_fcf_terminal = min(self.price_to_fcf_terminal, self.session_model.terminal_price_to_fcf_bounds[1])
+        self.price_to_fcf_terminal = min(max(self.price_to_fcf, self.session_model.terminal_price_to_fcf_bounds[0]),
+                                          self.session_model.terminal_price_to_fcf_bounds[1])
 
 
         ### calculation of fcf growth
@@ -552,7 +566,7 @@ class ShareValues():
         
         if self.cmpc < 0:
             print(f"{self.identity.name} : negative cmpc can not compute DCF")
-            return np.nan
+            return 
         if not start_fcf is None :
             self.fcf = start_fcf
         if self.session_model.use_multiple:
@@ -561,15 +575,24 @@ class ShareValues():
             up_bound = self.cmpc
 
         # compute g from mean fcf
+        
         if self.fcf < 0 :
-            print(f"{self.identity.name} : negative free cash flow mean can not compute DCF")
+            print(f"{self.identity.name} : negative free cash flow mean can not compute RDCF")
         else :
             res_mean = minimize_scalar(eval_dcf_, args=(self, self.fcf, False),
                                 method= 'bounded', bounds = (-1, up_bound))
             self.g = res_mean.x
 
         # compute g_from_ttm from last fcf
-        if self.fcf_ttm >= 0:
+
+        if self.session_model.use_multiple :
+            if self.price_to_fcf_terminal < 0:
+                print(f"{self.identity.name} negative terminal price to fcf multiple, can not compute RDCF")
+                return
+            
+        if self.fcf_ttm < 0:
+            print(f"{self.identity.name} : negative TTM free cash flow mean can not compute TTM RDCF")
+        else :
             res_last = minimize_scalar(eval_dcf_, args=(self, self.fcf_ttm, False),
                                 method= 'bounded', bounds = (-1, up_bound))
             self.g_from_ttm = res_last.x

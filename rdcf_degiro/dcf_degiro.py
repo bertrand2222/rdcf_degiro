@@ -128,6 +128,7 @@ class RDCFAnal():
         for s in self.share_list :
             
             print(f'{s.identity.name} : retrieves all values                    ', flush= True, end = "\r")
+            # s.retrieves_all_values()
             try:
                 s.retrieves_all_values()
             except (KeyError, TypeError) as e:
@@ -177,7 +178,10 @@ class RDCFAnal():
         df.sort_values(by = ['assumed_g', 'debt_to_equity']  , inplace= True, ascending= True)
 
         self.df = df
-        df.to_pickle(os.path.join(self.session_model.output_folder,PKL_NAME))
+        try:
+            df.to_pickle(os.path.join(self.session_model.output_folder,PKL_NAME))
+        except OSError as e:
+            raise OSError(f"Error while recording dataframe {e}  ") from e
 
     def load_df(self):
         """
@@ -194,7 +198,8 @@ class RDCFAnal():
 
         letters = list(ascii_uppercase)
         if not xl_outfile:
-            xl_outfile = os.path.join(self.session_model.output_folder , "rdcf.xlsx")
+            xl_outfile = os.path.join(self.session_model.output_folder,
+                                      self.session_model.output_name + ".xlsx")
         while True:
             try :
                 writer = pd.ExcelWriter(xl_outfile,  engine="xlsxwriter")
