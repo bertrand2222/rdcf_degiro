@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 import json, os
@@ -5,42 +6,16 @@ from scipy.optimize import minimize_scalar
 from degiro_connector.quotecast.models.chart import ChartRequest, Interval
 from dateutil.relativedelta import relativedelta
 from rdcf_degiro.session_model_dcf import SessionModelDCF, MarketInfos
-from datetime import datetime, timedelta
+from rdcf_degiro.share_financial_statements import ShareFinancialStatements
+from rdcf_degiro.share_identity import ShareIdentity
 from typing import Any, Callable
 from tabulate import tabulate
 
 ERROR_QUERRY_PRICE = 2
-OVERLAPING_DAYS_TOL = 7
 
 EURONEXT_ID = '710'
 NASDAQ_ID = '663'
 
-INC_CODES = [
-    'RTLR', # 'TotalRevenue'
-    'SIIB', # 'Total revenue (Bank)
-    "SGRP", # Gross profit
-    "NINC", # "NetIncome", 
-]
-
-BAL_CASH_CODES = [
-    "ACAE", # "Cash & Equivalents" 
-    "ACDB", # "Cash and due from bank"
-    "ACSH", # "Cash"
-]
-BAL_CODES = BAL_CASH_CODES + [
-    "STLD", # 'TotalDebt',
-    "QTLE", # "Total Equity"
-    "QTCO", # "Total Common Shares Outstanding"
-]
-
-CASH_CODES = [
-    "OTLO", # "Cash from Operating Activities",
-    "SCEX", # Capital Expenditures,
-    "FCDP", # Total Cash Dividends Paid
-    "FPSS", # Issuance (Retirement) of Stock, Net,
-
-            ]
-FINANCIAL_ST_CODES =   INC_CODES + BAL_CODES + CASH_CODES
 
 RATIO_CODES = [
     'BETA',
@@ -55,174 +30,12 @@ SPECIAL_CURRENCIES = {
     'GBX' : {'real' : 'GBP', 'rate_factor' : 0.01}
 }
 
-class ShareIdentity():
-
-    name : str = None
-    isin :str = None
-    vwd_id : str = None
-    vwd_id_secondary : str = None
-    symbol : str = None
-    currency : str = None
-    vwd_identifier_type : str = None
-    vwd_identifier_type_secondary : str = None
-
-    def __init__(self, s_dict : dict):
-
-        self.__dict__.update(s_dict)
-
-
 def last_day_of_month(any_day):
     # The day 28 exists in every month. 4 days later, it's always next month
     next_month = any_day.replace(day=28) + timedelta(days=4)
     # subtracting the number of the current day brings us back one month
     return next_month - timedelta(days=next_month.day)
 
-
-class ShareFinancialStatements():
-    """
-    Share financial statement from degiro
-    
-    """
-    y_financial_statements : pd.DataFrame = None
-    q_inc_financial_statements = pd.DataFrame = None
-    q_bal_financial_statements = pd.DataFrame = None     
-    q_cas_financial_statements = pd.DataFrame = None
-    last_bal_financial_statements : pd.DataFrame = None
-    financial_currency : str = None
-    cash_code : str = 'ACAE'
-    total_revenue_key : str = 'RTLR'
-
-    def __init__(self, session_model : SessionModelDCF, identity : ShareIdentity):
-        
-        self.session_model = session_model
-        self.identity = identity
-
-        self.retrieve()
-
-    def retrieve(self):
-        """
-        Retrieve financial statements from degiro api
-        """
-        try:
-            financial_st = self.session_model.trading_api.get_financial_statements(
-                        product_isin= self.identity.isin,
-                        raw= True
-                    )['data']
-        except KeyError as e:
-            raise KeyError(f'{self.identity.name} : no financial statement found for isin {self.identity.isin}') from e
-                
-        if self.session_model.output_value_files:
-            with open(os.path.join(self.session_model.output_folder, 
-                                   f"{self.identity.symbol}_company_financial.json"), 
-                        "w", 
-                        encoding= "utf8") as outfile: 
-                json.dump(financial_st, outfile, indent = 4)
-
-        self.financial_currency = financial_st['currency']
-
-        ### Retrive annual data
-        data = []
-        for y in financial_st['annual'] :
-            y_dict = {
-                      "endDate"  :  y['endDate']}
-            for statement in y['statements']:
-                for  item in  statement['items'] :
-                    if item['code'] in FINANCIAL_ST_CODES:
-                        # y_dict[item["meaning"]] = item["value"]
-                        y_dict[item["code"]] = item["value"]
-            data.append(y_dict)
-
-        y_financial_statements = pd.DataFrame.from_records(
-            data).iloc[::-1]
-        y_financial_statements['endDate'] = pd.to_datetime(y_financial_statements['endDate'])
-        y_financial_statements = y_financial_statements.set_index('endDate')[list(
-            set(FINANCIAL_ST_CODES) & set(y_financial_statements.columns))]
-        
-        if 'RTLR' not in y_financial_statements.columns :
-            self.total_revenue_key = 'SIIB'
-        
-        # free cash flow            = Cash from Operating Activities + Capital Expenditures( negative), 
-        y_financial_statements['FCFL'] = y_financial_statements["OTLO"] 
-        if "SCEX" in y_financial_statements:
-            y_financial_statements['FCFL'] += y_financial_statements["SCEX"]
-
-        self.y_financial_statements = y_financial_statements
-
-        ### Retrive interim data
-        int_data = []
-        for q in financial_st['interim'] :
-            for statement in q['statements']:
-                q_dict = {
-                        "endDate"  :  q['endDate']
-                        }
-                for k, v in statement.items():
-                    if k != "items" :
-                        q_dict[k] = v
-                 
-                for  item in  statement['items'] :
-                    if item['code'] in FINANCIAL_ST_CODES:
-                        q_dict[item["code"]] = item["value"]             
-
-                int_data.append(q_dict)
-         
-        df = pd.DataFrame.from_records(int_data).iloc[::-1]
-        df['endDate'] = pd.to_datetime(df['endDate'])
-        gb = df.groupby('type')
-
-        q_inc_financial_statements = gb.get_group('INC').dropna(axis=1, how= 'all')
-        q_bal_financial_statements = gb.get_group('BAL').dropna(axis=1, how= 'all').ffill()
-        q_cas_financial_statements = gb.get_group('CAS').dropna(axis=1, how= 'all')
-        
-        for key in BAL_CASH_CODES:
-            if key  in q_bal_financial_statements.columns:
-                self.cash_code = key
-
-        def get_date_shift_back(end_date : datetime, months : int = 0, weeks :int = 0):
-
-            return end_date - relativedelta(months= months, weeks= weeks )
-
-        ### correct interim data corresponding to period lenght if period is overlapping previous
-        for p_df in [q_inc_financial_statements, q_cas_financial_statements] :
-            value_cols = ["periodLength"] + [c for c in p_df.columns if c in FINANCIAL_ST_CODES]
-
-            #### eval coresponding startDate from end date and periodLenght
-
-            p_df['startDate'] = p_df.apply(lambda x : get_date_shift_back(x.endDate,
-                                                                         months = (x.periodType == 'M') * x.periodLength,
-                                                                         weeks = (x.periodType == 'W') * x.periodLength,
-                                                                           ), axis = 1)
-            p_df['startDate_shift'] = p_df['startDate'].shift()
-            
-            #### apply overlaping tolerance of OVERLAPING_DAYS_TOL days
-            p_df['startDate_shift'] = p_df['startDate_shift'].apply(lambda x : x + relativedelta(days= OVERLAPING_DAYS_TOL ) if not pd.isnull(x) else x,)
-
-            ### mark as overlaping line for which the period cover the one of previous line
-            p_df["overlaping"] = p_df['startDate'] < p_df['startDate_shift']
-
-            ### correct overlaping line by substracting from it periodLenght and values from previous line
-            p_df.loc[p_df["overlaping"], value_cols] -= p_df[value_cols].shift()
-            # p_old_df = p_df.copy()
-            # for i in range(len(p_df.index)) :
-            #     if p_df.iloc[i]["overlaping"] :
-            #         p_df.iloc[i, p_df.columns.get_indexer(value_cols)] -= p_old_df[value_cols].iloc[i-1]
-
-            p_df.drop(['startDate', 'startDate_shift', 'overlaping'], inplace = True, axis = 1)
-
-
-        # free cash flow            = Cash from Operating Activities - Capital Expenditures, 
-        q_cas_financial_statements['FCFL'] = q_cas_financial_statements["OTLO"] 
-   
-        if "SCEX" in q_cas_financial_statements:
-            q_cas_financial_statements['FCFL'] += q_cas_financial_statements["SCEX"]
-        # q_cas_financial_statements['annualised_FCFL'] = q_cas_financial_statements['FCFL'] * q_cas_financial_statements['periodLength'] / 12
-
-        self.q_inc_financial_statements = q_inc_financial_statements.set_index('endDate')
-        self.q_bal_financial_statements = q_bal_financial_statements.set_index('endDate')
-        self.q_cas_financial_statements = q_cas_financial_statements.set_index('endDate')
-
-        self.last_bal_financial_statements = q_bal_financial_statements.iloc[-1]
-
-        return(0)
 class ShareValues():
     """
     Data retrieved from degiro api with get_company_ratio
@@ -284,7 +97,6 @@ class ShareValues():
     
         self.retrieve_history()
     
-    
     def retrieve_values(self):
         """
         retrive company ratios fom degiro api
@@ -317,8 +129,6 @@ class ShareValues():
 
         # if not self.current_price:
         #     self.retrieve_current_price()
-
-        
 
         if self.session_model.output_value_files:
             with open(os.path.join(self.session_model.output_folder, 
@@ -394,40 +204,40 @@ class ShareValues():
     
         self.history_in_financial_currency = self.history.iloc[:-1].copy()
 
-        ### convert price history in financial statement currency  if needed
+        ## convert price history in financial statement currency  if needed
 
-        if self.identity.currency != self.financial_statements.financial_currency:
+        # if self.identity.currency != self.financial_statements.financial_currency:
             
-            rate_factor = 1
-            share_currency = self.identity.currency
-            if self.identity.currency in  SPECIAL_CURRENCIES :
-                share_currency = SPECIAL_CURRENCIES[self.identity.currency]['real']
-                rate_factor = SPECIAL_CURRENCIES[self.identity.currency]['rate_factor']
-            if self.session_model.market_infos is None:
-                self.session_model.market_infos = MarketInfos()
+        #     rate_factor = 1
+        #     share_currency = self.identity.currency
+        #     if self.identity.currency in  SPECIAL_CURRENCIES :
+        #         share_currency = SPECIAL_CURRENCIES[self.identity.currency]['real']
+        #         rate_factor = SPECIAL_CURRENCIES[self.identity.currency]['rate_factor']
+        #     if self.session_model.market_infos is None:
+        #         self.session_model.market_infos = MarketInfos()
             
-            if share_currency != self.financial_statements.financial_currency:
-                self.session_model.market_infos.update_rate_dic(share_currency,
-                                                                self.financial_statements.financial_currency,
-                                                                )
-                rate_symb = share_currency + self.financial_statements.financial_currency + "=X"
+        #     if share_currency != self.financial_statements.financial_currency:
+        #         self.session_model.market_infos.update_rate_dic(share_currency,
+        #                                                         self.financial_statements.financial_currency,
+        #                                                         )
+        #         rate_symb = share_currency + self.financial_statements.financial_currency + "=X"
     
-                rate = self.session_model.market_infos.rate_current_dic[rate_symb] * rate_factor
+        #         rate = self.session_model.market_infos.rate_current_dic[rate_symb] * rate_factor
 
-                self.market_cap *= rate
+        #         self.market_cap *= rate
 
-                history_in_financial_currency  = pd.concat(
-                    [
-                    self.history_in_financial_currency,
-                        self.session_model.market_infos.rate_history_dic[rate_symb] * rate_factor
-                        ], axis = 0
-                        ).sort_index().ffill().dropna()
+        #         history_in_financial_currency  = pd.concat(
+        #             [
+        #             self.history_in_financial_currency,
+        #                 self.session_model.market_infos.rate_history_dic[rate_symb] * rate_factor
+        #                 ], axis = 0
+        #                 ).sort_index().ffill().dropna()
                         
-                history_in_financial_currency['close'] *= history_in_financial_currency['change_rate']
-                self.history_in_financial_currency = history_in_financial_currency
-            else :
-                self.market_cap *= rate_factor
-                self.history_in_financial_currency  *= rate_factor
+        #         history_in_financial_currency['close'] *= history_in_financial_currency['change_rate']
+        #         self.history_in_financial_currency = history_in_financial_currency
+        #     else :
+        #         self.market_cap *= rate_factor
+        #         self.history_in_financial_currency  *= rate_factor
             
 
     def compute_complementary_values(self, pr = False):
@@ -436,7 +246,6 @@ class ShareValues():
         before dcf calculation
         """
         
-
         if self.session_model.market_infos is None:
             self.session_model.market_infos = MarketInfos()
 
@@ -447,11 +256,16 @@ class ShareValues():
             self.financial_statements.retrieve()
 
         y_financial_statements = self.financial_statements.y_financial_statements
+        
+
         q_cas_financial_statements =  self.financial_statements.q_cas_financial_statements
         # q_bal_financial_statements =  self.financial_statements.q_bal_financial_statements
         last_bal_financial_statements =  self.financial_statements.last_bal_financial_statements
         history_avg_nb_year = self.session_model.history_avg_nb_year
 
+        # if self.identity.symbol == 'MBI':
+        #     print( self.financial_statements.last_bal_financial_statements['QTLE'])
+        #     exit()
         stock_equity = self.financial_statements.last_bal_financial_statements['QTLE'] # CommonStockEquity
 
         if self.session_model.capital_cost_equal_market :
@@ -465,11 +279,13 @@ class ShareValues():
                     market_infos.debt_cost * (1-self.session_model.taxe_rate) * total_debt/(total_debt + stock_equity)
                         
         #net debt     =  total_debt - cash and cash equivalent
-        self.net_debt = total_debt - last_bal_financial_statements[self.financial_statements.cash_code]
+        self.net_debt = total_debt - last_bal_financial_statements[
+            self.financial_statements.cash_code]
 
         # if self.market_cap is None:
         #     self.retrieve_values()
 
+        
         self.net_market_cap = self.market_cap + self.net_debt
         if stock_equity >= 0 :
             self.debt_to_equity = total_debt / stock_equity
@@ -502,21 +318,27 @@ class ShareValues():
         #     self.fcf = y_financial_statements['FreeCashFlow'].mean()
 
         ttm_fcf_start_time = q_cas_financial_statements.index[-1] - relativedelta(years= 1)
-        ttm_fcf_infos = q_cas_financial_statements.loc[q_cas_financial_statements.index > ttm_fcf_start_time]
-        self.fcf_ttm = ttm_fcf_infos['FCFL'].sum() / (((ttm_fcf_infos['periodType'] == 'M') * ttm_fcf_infos['periodLength']).sum() /12 + \
-                            ((ttm_fcf_infos['periodType'] == 'W') * ttm_fcf_infos['periodLength']).sum() /53)
+        ttm_fcf_infos = q_cas_financial_statements.loc[
+            q_cas_financial_statements.index > ttm_fcf_start_time]
+        self.fcf_ttm = ttm_fcf_infos['FCFL'].sum() / (
+            ((ttm_fcf_infos['periodType'] == 'M') * ttm_fcf_infos['periodLength']).sum() /12 + (
+                (ttm_fcf_infos['periodType'] == 'W') * ttm_fcf_infos['periodLength']).sum() /53)
 
         ### terminal price to fcf calculation from  history
         if self.history is None:
             self.retrieve_history()
+        
 
         df_multiple = pd.concat([self.history_in_financial_currency, 
                                 y_financial_statements[["QTCO" , 'FCFL']]], axis = 0).sort_index().ffill().dropna()
 
+
         df_multiple['price_to_fcf'] = df_multiple['QTCO'] * df_multiple['close'] / df_multiple['FCFL']
 
         if self.session_model.price_to_fcf_avg_method == 'harmonic':
+            
             self.price_to_fcf = len(df_multiple) / (1 / df_multiple['price_to_fcf']).sum()
+            
         elif self.session_model.price_to_fcf_avg_method == 'median':
             self.price_to_fcf = df_multiple['price_to_fcf'].median()
         else: # arithmetic
@@ -561,8 +383,7 @@ class ShareValues():
 
         """
         Evaluate company assumed growth rate from fundamental financial data
-        """
-        
+        """ 
         
         if self.cmpc < 0:
             print(f"{self.identity.name} : negative cmpc can not compute DCF")
@@ -612,7 +433,6 @@ class ShareValues():
             g = self.mean_g_tr
         if start_fcf is None :
             start_fcf = self.fcf
-
         eval_dcf_(g, self, start_fcf, pr)
 
     
@@ -680,29 +500,7 @@ class Share():
         self.__dict__.update(s_dict)
         self.session_model = session_model
         self.identity = ShareIdentity(s_dict)
-        
 
-    # def eval_beta(self) :
-    #     """
-    #     Compute the share beta value regarding the evolution of share price with reference market
-    #     """
-    #     regular_history = self.history['adjclose'].iloc[:-1].copy()
-
-    #     if self.price_currency != MARKET_CURRENCY :
-    #         self.market_infos.update_rate_dic(self.price_currency, MARKET_CURRENCY)
-    #         change_rate = self.price_currency + MARKET_CURRENCY + "=X"
-    #         regular_history = regular_history * self.market_infos.rate_history_dic[change_rate]
-
-    #     month_change_share = regular_history.pct_change().rename("share")
-
-    #     cov_df = pd.concat([self.market_infos.month_change_rate,
-    #                         month_change_share], axis = 1, join= 'inner',).dropna(how = 'any')
-    #     cov = cov_df.cov()['rm'].loc['share']
-    #     beta = cov/ self.market_infos.var_rm
-    #     self.beta = beta
-
-    #     return beta
-    
 
     def retrieves_all_values(self,):
         """
@@ -727,11 +525,6 @@ class Share():
         self.eval_g = self.values.eval_g
 
         # self.eval_beta()
-
-        
-
-
-    
     
     # def __getattr__(self, item) -> Callable[..., Any]:
 
