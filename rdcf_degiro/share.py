@@ -193,17 +193,18 @@ class ShareFinancialStatements():
                                                                            ), axis = 1)
             p_df['startDate_shift'] = p_df['startDate'].shift()
             
-            #### apply overlaping tolerance of 5 days
+            #### apply overlaping tolerance of OVERLAPING_DAYS_TOL days
             p_df['startDate_shift'] = p_df['startDate_shift'].apply(lambda x : x + relativedelta(days= OVERLAPING_DAYS_TOL ) if not pd.isnull(x) else x,)
 
             ### mark as overlaping line for which the period cover the one of previous line
             p_df["overlaping"] = p_df['startDate'] < p_df['startDate_shift']
 
             ### correct overlaping line by substracting from it periodLenght and values from previous line
-            p_old_df = p_df.copy()
-            for i in range(len(p_df.index)) :
-                if p_df.iloc[i]["overlaping"] :
-                    p_df.iloc[i, p_df.columns.get_indexer(value_cols)] -= p_old_df[value_cols].iloc[i-1]
+            p_df.loc[p_df["overlaping"], value_cols] -= p_df[value_cols].shift()
+            # p_old_df = p_df.copy()
+            # for i in range(len(p_df.index)) :
+            #     if p_df.iloc[i]["overlaping"] :
+            #         p_df.iloc[i, p_df.columns.get_indexer(value_cols)] -= p_old_df[value_cols].iloc[i-1]
 
             p_df.drop(['startDate', 'startDate_shift', 'overlaping'], inplace = True, axis = 1)
 
