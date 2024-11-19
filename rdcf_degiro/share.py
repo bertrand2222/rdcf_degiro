@@ -18,6 +18,7 @@ NASDAQ_ID = '663'
 INC_CODES = [
     'RTLR', # 'TotalRevenue'
     'SIIB', # 'Total revenue (Bank)
+    "SGRP", # Gross profit
     "NINC", # "NetIncome", 
 ]
 
@@ -26,11 +27,8 @@ BAL_CASH_CODES = [
     "ACDB", # "Cash and due from bank"
     "ACSH", # "Cash"
 ]
-BAL_CODES = [
+BAL_CODES = BAL_CASH_CODES + [
     "STLD", # 'TotalDebt',
-    "ACAE", # "Cash & Equivalents" 
-    "ACDB", # "Cash and due from bank"
-    "ACSH", # "Cash"
     "QTLE", # "Total Equity"
     "QTCO", # "Total Common Shares Outstanding"
 ]
@@ -202,9 +200,10 @@ class ShareFinancialStatements():
             p_df["overlaping"] = p_df['startDate'] < p_df['startDate_shift']
 
             ### correct overlaping line by substracting from it periodLenght and values from previous line
+            p_old_df = p_df.copy()
             for i in range(len(p_df.index)) :
                 if p_df.iloc[i]["overlaping"] :
-                    p_df.iloc[i, p_df.columns.get_indexer(value_cols)] -= p_df[value_cols].iloc[i-1]
+                    p_df.iloc[i, p_df.columns.get_indexer(value_cols)] -= p_old_df[value_cols].iloc[i-1]
 
             p_df.drop(['startDate', 'startDate_shift', 'overlaping'], inplace = True, axis = 1)
 
