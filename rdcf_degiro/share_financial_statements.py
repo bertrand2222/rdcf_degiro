@@ -10,7 +10,9 @@ INC_CODES = [
     'RTLR', # 'TotalRevenue'
     'SIIB', # 'Total revenue (Bank)
     "SGRP", # Gross profit
+    "SOPI", # Operating income
     "NINC", # "NetIncome", 
+    "EIBT", # "Net Income Before Taxes",
 ]
 
 BAL_CASH_CODES = [
@@ -49,7 +51,8 @@ class ShareFinancialStatements():
     last_bal_financial_statements : pd.DataFrame = None
     financial_currency : str = None
     cash_code : str = 'ACAE'
-    total_revenue_key : str = 'RTLR'
+    total_revenue_code : str = 'RTLR'
+    gross_profit_code : str = 'SGRP'
 
     def __init__(self, session_model : SessionModelDCF, identity : ShareIdentity):
         
@@ -98,13 +101,11 @@ class ShareFinancialStatements():
             set(FINANCIAL_ST_CODES) & set(y_financial_statements.columns))]
         
         if 'RTLR' not in y_financial_statements.columns :
-            self.total_revenue_key = 'SIIB'
+            self.total_revenue_code = 'SIIB'
         
+        y_financial_statements['periodLength'] = 12
+        y_financial_statements['periodType'] = 'M'
         # free cash flow            = Cash from Operating Activities + Capital Expenditures( negative), 
-        y_financial_statements['FCFL'] = y_financial_statements["OTLO"] 
-        if "SCEX" in y_financial_statements:
-            y_financial_statements['FCFL'] += y_financial_statements["SCEX"]
-        
         y_financial_statements[
             list(set(BAL_CODES) & set(y_financial_statements.columns))
             ] = y_financial_statements[
@@ -114,6 +115,20 @@ class ShareFinancialStatements():
             ] = y_financial_statements[
                 list(set(CASH_CODES + INC_CODES) & set(y_financial_statements.columns))].fillna(0)
         
+        # compute free cash flow
+        y_financial_statements['FCFL'] = y_financial_statements["OTLO"] 
+        if "SCEX" in y_financial_statements:
+            y_financial_statements['FCFL'] += y_financial_statements["SCEX"]
+        
+        # if "SGRP" in y_financial_statements:
+        #     self.gross_profit_code = "SGRP"
+        # elif "SOPI" in y_financial_statements :
+        #     self.gross_profit_code = "SOPI"
+        # else :
+        #     self.gross_profit_code = 'EIBT'
+        # compute difference between gross profit and free cash flow
+        # y_financial_statements['G_M_FCFL'] = y_financial_statements[self.gross_profit_code] - y_financial_statements['FCFL']
+            
         self.y_financial_statements = y_financial_statements
         
 
@@ -141,7 +156,14 @@ class ShareFinancialStatements():
         q_inc_financial_statements = gb.get_group('INC').dropna(axis=1, how= 'all').fillna(0)
         q_bal_financial_statements = gb.get_group('BAL').dropna(axis=1, how= 'all').ffill()
         q_cas_financial_statements = gb.get_group('CAS').dropna(axis=1, how= 'all').fillna(0)
- 
+
+        if "SGRP" in q_inc_financial_statements:
+            self.gross_profit_code = "SGRP"
+        elif "SOPI" in q_inc_financial_statements :
+            self.gross_profit_code = "SOPI"
+        else :
+            self.gross_profit_code = 'EIBT'
+
         for key in BAL_CASH_CODES:
             if key  in q_bal_financial_statements.columns:
                 self.cash_code = key
@@ -155,13 +177,11 @@ class ShareFinancialStatements():
             value_cols = ["periodLength"] + [c for c in p_df.columns if c in FINANCIAL_ST_CODES]
 
             #### eval coresponding startDate from end date and periodLenght
-
             p_df['startDate'] = p_df.apply(lambda x : get_date_shift_back(x.endDate,
                                                                          months = (x.periodType == 'M') * x.periodLength,
                                                                          weeks = (x.periodType == 'W') * x.periodLength,
                                                                            ), axis = 1)
             p_df['startDate_shift'] = p_df['startDate'].shift()
-            
             #### apply overlaping tolerance of OVERLAPING_DAYS_TOL days
             p_df['startDate_shift'] = p_df['startDate_shift'].apply(
                 lambda x : x + relativedelta(days= OVERLAPING_DAYS_TOL ) if not pd.isnull(x) else x,)
@@ -171,21 +191,31 @@ class ShareFinancialStatements():
 
             ### correct overlaping line by substracting from it periodLenght and values from previous line
             p_df.loc[p_df["overlaping"], value_cols] -= p_df[value_cols].shift()
-
             p_df.drop(['startDate', 'startDate_shift', 'overlaping'], inplace = True, axis = 1)
 
 
         # free cash flow            = Cash from Operating Activities - Capital Expenditures, 
         q_cas_financial_statements['FCFL'] = q_cas_financial_statements["OTLO"] 
-   
         if "SCEX" in q_cas_financial_statements:
             q_cas_financial_statements['FCFL'] += q_cas_financial_statements["SCEX"]
-        # q_cas_financial_statements['annualised_FCFL'] = q_cas_financial_statements['FCFL'] * q_cas_financial_statements['periodLength'] / 12
 
         self.q_inc_financial_statements = q_inc_financial_statements.set_index('endDate')
         self.q_bal_financial_statements = q_bal_financial_statements.set_index('endDate')
         self.q_cas_financial_statements = q_cas_financial_statements.set_index('endDate')
 
+        # # compute gross profit or EIBT minus free cash flow 
+        # q_inc_adj_cas =  pd.concat([q_cas_financial_statements,
+        #                     self.q_inc_financial_statements], axis = 1, keys = ['cas', 'inc'])
+        # ids_cors = (q_inc_adj_cas[('inc','periodLength')] < q_inc_adj_cas[('cas','periodLength')])
+        # value_cols = ["periodLength"] + [c for c in q_inc_adj_cas['inc'].columns if c in FINANCIAL_ST_CODES]
+        # q_inc_adj_cas.loc[ids_cors, ('inc', value_cols)]  += q_inc_adj_cas.shift()
+        # q_inc_adj_cas = q_inc_adj_cas.dropna()
+        # q_inc_adj_cas.loc[:,('cas','G_M_FCFL')] = q_inc_adj_cas[('inc',self.gross_profit_code)] - q_inc_adj_cas[('cas','FCFL')]
+     
+        # self.q_cas_financial_statements = q_inc_adj_cas['cas']
+        # print(self.q_cas_financial_statements)
+
+       
         if self.financial_currency != self.identity.currency:
             self.convert_to_price_currency()
    
@@ -229,8 +259,8 @@ class ShareFinancialStatements():
                 # if 'BY6' in self.identity.symbol :
                 #     print(new_df)
                 new_df[convert_value_cols] = new_df[convert_value_cols].multiply(new_df['change_rate'], axis= 0)
-                p_df[convert_value_cols] = new_df[convert_value_cols]
+                p_df.loc[:,convert_value_cols] = new_df[convert_value_cols]
                 
                 
             else :
-                p_df[convert_value_cols]  /= rate_factor
+                p_df.loc[:,convert_value_cols]  /= rate_factor

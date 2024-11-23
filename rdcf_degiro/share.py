@@ -10,6 +10,8 @@ from rdcf_degiro.share_financial_statements import ShareFinancialStatements
 from rdcf_degiro.share_identity import ShareIdentity
 from typing import Any, Callable
 from tabulate import tabulate
+import matplotlib.pylab as plt
+from sklearn.linear_model import LinearRegression
 
 ERROR_QUERRY_PRICE = 2
 
@@ -58,11 +60,18 @@ class ShareValues():
     total_payout_ratio : float = None
     fcf : float = None
     fcf_ttm : float = None
+    gp : float = None
+    gp_ttm : float = None
+    gp_m_fcf : float = None
     mean_g_fcf : float = None
     mean_g_tr : float = None
     capital_cost : float = None
     g : float = np.nan
-    g_from_ttm : float = np.nan
+    g_ttm : float = np.nan
+    g_gp : float = np.nan
+    g_gp_ttm : float = np.nan
+    ninc_m_fcf : float = None
+    gp_to_ninc_fit : tuple = None
     history_in_financial_currency : pd.DataFrame = None
 
     # mean_g_netinc = None
@@ -240,7 +249,7 @@ class ShareValues():
         #         self.history_in_financial_currency  *= rate_factor
             
 
-    def compute_complementary_values(self, pr = False):
+    def compute_complementary_values(self,):
         """
         compute value and ratios from financial statements and market infos 
         before dcf calculation
@@ -259,6 +268,7 @@ class ShareValues():
         
 
         q_cas_financial_statements =  self.financial_statements.q_cas_financial_statements
+        q_inc_financial_statements = self.financial_statements.q_inc_financial_statements
         # q_bal_financial_statements =  self.financial_statements.q_bal_financial_statements
         last_bal_financial_statements =  self.financial_statements.last_bal_financial_statements
         history_avg_nb_year = self.session_model.history_avg_nb_year
@@ -284,7 +294,6 @@ class ShareValues():
 
         # if self.market_cap is None:
         #     self.retrieve_values()
-
         
         self.net_market_cap = self.market_cap + self.net_debt
         if stock_equity >= 0 :
@@ -302,41 +311,71 @@ class ShareValues():
         
         self.total_payout_ratio = payout / y_financial_statements['NINC'].iloc[-history_avg_nb_year:].mean()
 
-        complement_q_financial_infos = q_cas_financial_statements.loc[q_cas_financial_statements.index
+        complement_q_cas_financial_infos = q_cas_financial_statements.loc[q_cas_financial_statements.index
                                                             > y_financial_statements.index[-1]]
+        complement_q_inc_financial_infos = q_inc_financial_statements.loc[ q_inc_financial_statements.index > y_financial_statements.index[-1]]
         
-        complement_time =  ((complement_q_financial_infos['periodType'] == 'M') * complement_q_financial_infos['periodLength']).sum() /12 + \
-                            ((complement_q_financial_infos['periodType'] == 'W') * complement_q_financial_infos['periodLength']).sum() /53
+        q_cas_complement_time =  complement_q_cas_financial_infos.loc[complement_q_cas_financial_infos['periodType'] == 'M','periodLength'].sum() /12 + \
+                            complement_q_cas_financial_infos.loc[complement_q_cas_financial_infos['periodType'] == 'W','periodLength'].sum() /53
+        q_inc_complement_time =  complement_q_inc_financial_infos.loc[complement_q_inc_financial_infos['periodType'] == 'M','periodLength'].sum() /12 + \
+                            complement_q_inc_financial_infos.loc[complement_q_inc_financial_infos['periodType'] == 'W','periodLength'].sum() /53
 
             
-        nb_year_avg = history_avg_nb_year + complement_time
+        q_cas_nb_year_avg = history_avg_nb_year + q_cas_complement_time
         self.fcf = (y_financial_statements['FCFL'].iloc[-history_avg_nb_year:].sum() \
-                    + complement_q_financial_infos['FCFL'].sum()
-                    ) / (nb_year_avg)
+                    + complement_q_cas_financial_infos['FCFL'].sum()
+                    ) / q_cas_nb_year_avg
+        
+        q_inc_nb_year_avg = history_avg_nb_year + q_inc_complement_time
+        self.gp = (y_financial_statements[self.financial_statements.gross_profit_code].iloc[-history_avg_nb_year:].sum() \
+                    + complement_q_inc_financial_infos[self.financial_statements.gross_profit_code].sum()
+                    ) / q_inc_nb_year_avg
+        ninc = (y_financial_statements['NINC'].iloc[-history_avg_nb_year:].sum() \
+                    + complement_q_inc_financial_infos['NINC'].sum()
+                    ) / q_inc_nb_year_avg
+        self.ninc_m_fcf = ninc - self.fcf
 
-        # if self.fcf < 0 :
-        #     self.fcf = y_financial_statements['FreeCashFlow'].mean()
+        # evaluate linear regression between gross profit and net income
+        df_inc = pd.concat([y_financial_statements,complement_q_inc_financial_infos])[[self.financial_statements.gross_profit_code, 'NINC']].dropna()
+        lregr = LinearRegression()
+        length = len(df_inc.index)
+        lregr.fit(df_inc[self.financial_statements.gross_profit_code].values.reshape(length, 1), 
+                  df_inc['NINC'].values.reshape(length, 1))
+        self.gp_to_ninc_fit=(lregr.coef_[0][0], lregr.intercept_[0])
 
-        ttm_fcf_start_time = q_cas_financial_statements.index[-1] - relativedelta(years= 1)
-        ttm_fcf_infos = q_cas_financial_statements.loc[
-            q_cas_financial_statements.index > ttm_fcf_start_time]
-        self.fcf_ttm = ttm_fcf_infos['FCFL'].sum() / (
-            ((ttm_fcf_infos['periodType'] == 'M') * ttm_fcf_infos['periodLength']).sum() /12 + (
-                (ttm_fcf_infos['periodType'] == 'W') * ttm_fcf_infos['periodLength']).sum() /53)
+        # print(self.identity.name)
+        # print(self.gp_to_ninc_fit)
+        # plt.figure()
+        # plt.scatter(df_inc[self.financial_statements.gross_profit_code], df_inc['NINC'])
+        # plt.show()
+     
+
+        ttm_start_time = q_cas_financial_statements.index[-1] - relativedelta(years= 1)
+        q_cas_ttm_infos = q_cas_financial_statements.loc[
+            q_cas_financial_statements.index > ttm_start_time]
+        ttm_start_time = q_inc_financial_statements.index[-1] - relativedelta(years= 1)
+        q_inc_ttm_infos = q_inc_financial_statements.loc[
+            q_inc_financial_statements.index > ttm_start_time]
+        
+
+        self.fcf_ttm = q_cas_ttm_infos['FCFL'].sum() / (((q_cas_ttm_infos['periodType'] == 'M') * q_cas_ttm_infos['periodLength']).sum() /12 + (
+                (q_cas_ttm_infos['periodType'] == 'W') * q_cas_ttm_infos['periodLength']).sum() /53)
+        
+        self.gp_ttm = q_inc_ttm_infos[self.financial_statements.gross_profit_code].sum() / (((q_inc_ttm_infos['periodType'] == 'M') * q_inc_ttm_infos['periodLength']).sum() /12 + (
+                (q_inc_ttm_infos['periodType'] == 'W') * q_inc_ttm_infos['periodLength']).sum() /53)
 
         ### terminal price to fcf calculation from  history
         if self.history is None:
             self.retrieve_history()
-        
 
         df_multiple = pd.concat([self.history_in_financial_currency, 
-                                y_financial_statements[["QTCO" , 'FCFL']]], axis = 0).sort_index().ffill().dropna()
+                                y_financial_statements[["QTCO" , 'FCFL']]
+                                ], axis = 0).sort_index().ffill().dropna()
 
 
         df_multiple['price_to_fcf'] = df_multiple['QTCO'] * df_multiple['close'] / df_multiple['FCFL']
 
         if self.session_model.price_to_fcf_avg_method == 'harmonic':
-            
             self.price_to_fcf = len(df_multiple) / (1 / df_multiple['price_to_fcf']).sum()
             
         elif self.session_model.price_to_fcf_avg_method == 'median':
@@ -344,8 +383,10 @@ class ShareValues():
         else: # arithmetic
             self.price_to_fcf = df_multiple['price_to_fcf'].mean()
         
-        self.price_to_fcf_terminal = min(max(self.price_to_fcf, self.session_model.terminal_price_to_fcf_bounds[0]),
-                                          self.session_model.terminal_price_to_fcf_bounds[1])
+        self.price_to_fcf_terminal = max(
+            self.session_model.terminal_price_to_fcf_bounds[0],
+            1 / max(1/self.price_to_fcf, 1/self.session_model.terminal_price_to_fcf_bounds[1])
+            )
 
 
         ### calculation of fcf growth
@@ -355,11 +396,11 @@ class ShareValues():
         if fcf_se_ratio < 0:
             self.mean_g_fcf = np.nan
         else :
-            self.mean_g_fcf = (fcf_se_ratio)**(1/nb_year_avg) - 1
+            self.mean_g_fcf = (fcf_se_ratio)**(1/q_cas_nb_year_avg) - 1
 
 
-        self.mean_g_tr = (y_financial_statements[self.financial_statements.total_revenue_key].iloc[-1]\
-                        /y_financial_statements[self.financial_statements.total_revenue_key].iloc[-history_avg_nb_year])**(1/nb_year_avg) - 1
+        self.mean_g_tr = (y_financial_statements[self.financial_statements.total_revenue_code].iloc[-1]\
+                        /y_financial_statements[self.financial_statements.total_revenue_code].iloc[-history_avg_nb_year])**(1/q_cas_nb_year_avg) - 1
        
         # inc_se_ratio = y_financial_statements['NetIncome'].iloc[-1]\
         #                 /y_financial_statements['NetIncome'].iloc[YEAR_G]
@@ -387,40 +428,52 @@ class ShareValues():
         
         if self.cmpc < 0:
             print(f"{self.identity.name} : negative cmpc can not compute DCF")
-            return 
-        if not start_fcf is None :
+            return
+        if  start_fcf  :
             self.fcf = start_fcf
         if self.session_model.use_multiple:
             up_bound = 2
-        else : 
+        else :
             up_bound = self.cmpc
 
-        # compute g from mean fcf
+        if self.session_model.use_multiple :
+            if self.price_to_fcf_terminal < 0:
+                print(f"{self.identity.name} negative terminal price to fcf multiple, can not compute RDCF")
+                return
         
+        # compute g from mean fcf
         if self.fcf < 0 :
-            print(f"{self.identity.name} : negative free cash flow mean can not compute RDCF")
+            print(f"{self.identity.name} : negative free cash flow mean, can not compute RDCF")
         else :
             res_mean = minimize_scalar(eval_dcf_, args=(self, self.fcf, False),
                                 method= 'bounded', bounds = (-1, up_bound))
             self.g = res_mean.x
 
         # compute g_from_ttm from last fcf
-
-        if self.session_model.use_multiple :
-            if self.price_to_fcf_terminal < 0:
-                print(f"{self.identity.name} negative terminal price to fcf multiple, can not compute RDCF")
-                return
-            
         if self.fcf_ttm < 0:
-            print(f"{self.identity.name} : negative TTM free cash flow mean can not compute TTM RDCF")
+            print(f"{self.identity.name} : negative TTM free cash flow, can not compute TTM RDCF")
         else :
             res_last = minimize_scalar(eval_dcf_, args=(self, self.fcf_ttm, False),
                                 method= 'bounded', bounds = (-1, up_bound))
-            self.g_from_ttm = res_last.x
-
+            self.g_ttm = res_last.x
         if pr:
             print(f"Croissance correspondant au prix courrant: {self.g*100:.2f}%")
             self.get_dcf(self.g, start_fcf= start_fcf, pr = pr)
+
+        # compute g from mean gp
+        if self.gp < 0 :
+            print(f"{self.identity.name} : negative gross profit mean, can not compute RDGP")
+        else :
+            self.g_gp = minimize_scalar(eval_dgp_, args=(self, self.gp),
+                                method= 'bounded', bounds = (-1, up_bound)).x
+
+        # compute g_from_ttm from last fcf
+        if self.gp_ttm < 0:
+            print(f"{self.identity.name} : negative TTM gross profit, can not compute TTM RDGP")
+        else :
+            self.g_gp_ttm = minimize_scalar(eval_dgp_, args=(self, self.gp_ttm),
+                                method= 'bounded', bounds = (-1, up_bound)).x
+            
 
     def get_dcf(self, g : float = None, start_fcf : float = None, pr = False) -> float :
         """
@@ -443,7 +496,6 @@ class ShareValues():
         return : 0 when the growth rate g correspond to the one assumed by the market price.
         """
         cmpc = self.cmpc
-        net_debt = self.net_debt
         if isinstance(g, (list, np.ndarray)):
             g = g[0]
 
@@ -465,7 +517,7 @@ class ShareValues():
             act_vec = np.array([1/((1+cmpc)**k) for k in range(1,1 + nb_year_dcf)])
             fcf_act = fcf_ar * act_vec
             print("\r")
-            val_share = (enterprise_value - net_debt)/ self.nb_shares
+            val_share = (enterprise_value - self.net_debt)/ self.nb_shares
             nyear_disp = min(10,nb_year_dcf)
             annees = list(2023 + np.arange(0, nyear_disp)) +  ["Terminal"]
             table = np.array([ np.concatenate((fcf_ar[:nyear_disp] ,[vt])),
@@ -477,7 +529,47 @@ class ShareValues():
 
             print(f"Valeur DCF de l'action: {val_share:.2f} {self.identity.currency:s}")
 
-        # return ((enterpriseValue - netDebt)/ share.marketCap - 1)**2
+        return (enterprise_value / self.net_market_cap - 1)**2
+    
+    def eval_dgp(self, g :  float, gp : float):
+        """
+        computes company value regarding its actuated free cash flows assuming growing gross profit 
+        and constant difference between gross profit and fcf and compares it 
+        to the market value of the company
+        return : 0 when the growth rate g correspond to the one assumed by the market price.
+        """
+        cmpc = self.cmpc
+        if isinstance(g, (list, np.ndarray)):
+            g = g[0]
+
+        nb_year_dcf = self.session_model.nb_year_dcf
+
+        coef, intercept = self.gp_to_ninc_fit
+        if self.session_model.use_multiple :
+            # ninc = coef * gp + intercept
+            vt = (coef * gp * (1+g)**(nb_year_dcf) + intercept - self.ninc_m_fcf) * self.price_to_fcf_terminal
+        else :
+            vt = (coef * gp * (1+g)**(nb_year_dcf) + intercept - self.gp_m_fcf) / (cmpc - g)
+        vt_act = vt / (1+cmpc)**(nb_year_dcf)
+
+        a = (1+g)/(1+cmpc)
+        b = 1/(1+cmpc)
+        fcf_act_sum = coef * gp * ((a**nb_year_dcf - 1)/(a-1) - 1 + a**(nb_year_dcf)) + \
+                    (intercept - self.ninc_m_fcf) * ((b**nb_year_dcf - 1)/(b-1) - 1 + b**(nb_year_dcf))
+        # if self.session_model.use_multiple :
+        #     vt = (gp * (1+g)**(nb_year_dcf) - self.gp_m_fcf) * self.price_to_fcf_terminal
+        # else :
+        #     vt = (gp * (1+g)**(nb_year_dcf) - self.gp_m_fcf) / (cmpc - g)
+        # vt_act = vt / (1+cmpc)**(nb_year_dcf)
+
+        # a = (1+g)/(1+cmpc)
+        # b = 1/(1+cmpc)
+        # fcf_act_sum = gp * ((a**nb_year_dcf - 1)/(a-1) - 1 + a**(nb_year_dcf)) - self.gp_m_fcf * ((b**nb_year_dcf - 1)/(b-1) - 1 + b**(nb_year_dcf))
+        # fcf_act_sum = np.array([(gp * (1+g)**k - self.gp_m_fcf)/(1+cmpc)**k for k in range(1,1 + nb_year_dcf)]).sum()
+
+
+        enterprise_value = fcf_act_sum + vt_act
+
         return (enterprise_value / self.net_market_cap - 1)**2
 
 class Share():
@@ -547,3 +639,12 @@ def eval_dcf_(g, *data):
     pr = data[2]
 
     return sharevalues.eval_dcf(g = g, fcf = fcf, pr = pr)
+
+def eval_dgp_(g, *data):
+    """
+    reformated Share.eval_dcf() function for compatibility with minimize_scalar
+    """
+    sharevalues : ShareValues = data[0]
+    gp : float = data[1]
+
+    return sharevalues.eval_dgp(g = g, gp = gp)
