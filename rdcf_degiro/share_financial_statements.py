@@ -99,27 +99,22 @@ class ShareFinancialStatements():
         y_financial_statements['endDate'] = pd.to_datetime(y_financial_statements['endDate'])
         y_financial_statements = y_financial_statements.set_index('endDate')[list(
             set(FINANCIAL_ST_CODES) & set(y_financial_statements.columns))]
-        
         if 'RTLR' not in y_financial_statements.columns :
             self.total_revenue_code = 'SIIB'
         
         y_financial_statements['periodLength'] = 12
         y_financial_statements['periodType'] = 'M'
         # free cash flow            = Cash from Operating Activities + Capital Expenditures( negative), 
-        y_financial_statements[
-            list(set(BAL_CODES) & set(y_financial_statements.columns))
-            ] = y_financial_statements[
-            list(set(BAL_CODES) & set(y_financial_statements.columns))].ffill()
-        y_financial_statements[
-            list(set(CASH_CODES + INC_CODES) & set(y_financial_statements.columns))
-            ] = y_financial_statements[
-            list(set(CASH_CODES + INC_CODES) & set(y_financial_statements.columns))].fillna(0)
-
+        bal_cols = list(set(BAL_CODES) & set(y_financial_statements.columns))
+        y_financial_statements[bal_cols] = y_financial_statements[bal_cols].ffill().bfill()
+        inc_cols = list(set(CASH_CODES + INC_CODES) & set(y_financial_statements.columns))
+        y_financial_statements[inc_cols] = y_financial_statements[inc_cols].fillna(0)
+        
         # compute free cash flow
         y_financial_statements['FCFL'] = y_financial_statements["OTLO"] 
         if "SCEX" in y_financial_statements:
             y_financial_statements['FCFL'] += y_financial_statements["SCEX"]
-        
+
         # if "SGRP" in y_financial_statements:
         #     self.gross_profit_code = "SGRP"
         # elif "SOPI" in y_financial_statements :
@@ -131,7 +126,7 @@ class ShareFinancialStatements():
             
         self.y_financial_statements = y_financial_statements
         
-
+        
         ### Retrive interim data
         int_data = []
         for q in financial_st['interim'] :

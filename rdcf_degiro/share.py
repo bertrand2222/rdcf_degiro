@@ -11,7 +11,7 @@ from sklearn.linear_model import LinearRegression
 from rdcf_degiro.session_model_dcf import SessionModelDCF, MarketInfos
 from rdcf_degiro.share_financial_statements import ShareFinancialStatements
 from rdcf_degiro.share_identity import ShareIdentity
-# import matplotlib.pylab as plt
+import matplotlib.pylab as plt
 
 ERROR_QUERRY_PRICE = 2
 
@@ -72,7 +72,9 @@ class ShareValues():
     g_gp_ttm : float = np.nan
     ninc_m_fcf : float = None
     gp_to_ninc_fit : tuple = None
+    gp_to_ninc_fit_score : float = None
     history_in_financial_currency : pd.DataFrame = None
+    stock_equity :float = None
 
     # mean_g_netinc = None
 
@@ -266,14 +268,14 @@ class ShareValues():
 
         y_financial_statements = self.financial_statements.y_financial_statements
         
-
+        
         q_cas_financial_statements =  self.financial_statements.q_cas_financial_statements
         q_inc_financial_statements = self.financial_statements.q_inc_financial_statements
         last_bal_financial_statements =  self.financial_statements.last_bal_financial_statements
         history_avg_nb_year = self.session_model.history_avg_nb_year
-
+        
         stock_equity = self.financial_statements.last_bal_financial_statements['QTLE'] # CommonStockEquity
-
+        self.stock_equity = stock_equity
         if self.session_model.capital_cost_equal_market :
             self.capital_cost = market_infos.market_rate
         else : 
@@ -292,10 +294,10 @@ class ShareValues():
         #     self.retrieve_values()
         
         self.net_market_cap = self.market_cap + self.net_debt
-        if stock_equity >= 0 :
-            self.debt_to_equity = total_debt / stock_equity
-            self.price_to_book = self.market_cap / stock_equity
+        self.debt_to_equity = total_debt / stock_equity
+        self.price_to_book = self.market_cap / stock_equity
 
+        
         payout = 0
         for info in list(set(PAYOUT_INFOS) & set(y_financial_statements.columns)) :
             payout -= y_financial_statements[info].iloc[-history_avg_nb_year:].mean()
@@ -325,19 +327,39 @@ class ShareValues():
                     + complement_q_inc_financial_infos['NINC'].sum()
                     ) / q_inc_nb_year_avg
         self.ninc_m_fcf = ninc - self.fcf
+        
 
         # evaluate linear regression between gross profit and net income
-        df_inc = pd.concat([y_financial_statements,complement_q_inc_financial_infos])[[self.financial_statements.gross_profit_code, 'NINC']].dropna()
+        df_inc = pd.concat([y_financial_statements,complement_q_inc_financial_infos])[[
+            self.financial_statements.total_revenue_code,
+            self.financial_statements.gross_profit_code, 
+            'NINC']].dropna()
         lregr = LinearRegression()
         length = len(df_inc.index)
-        lregr.fit(df_inc[self.financial_statements.gross_profit_code].values.reshape(length, 1), 
-                  df_inc['NINC'].values.reshape(length, 1))
+        lregr.fit(
+            df_inc[self.financial_statements.gross_profit_code].values.reshape(length, 1),
+            df_inc['NINC'].values.reshape(length, 1)
+                  )
         self.gp_to_ninc_fit=(lregr.coef_[0][0], lregr.intercept_[0])
 
-        # print(self.identity.name)
-        # print(self.gp_to_ninc_fit)
+        self.gp_to_ninc_fit_score = lregr.score(
+            df_inc[self.financial_statements.gross_profit_code].values.reshape(length, 1),
+            df_inc['NINC'].values.reshape(length, 1)
+                    )
+
+        # lregr = LinearRegression()
+        # length = len(y_financial_statements.index)
+        # lregr.fit(y_financial_statements[self.financial_statements.gross_profit_code].values.reshape(length, 1), 
+        #             y_financial_statements['FCFL'].values.reshape(length, 1),
+        #             )
+                  
+        # print(self.identity.name, lregr.score(y_financial_statements[self.financial_statements.gross_profit_code].values.reshape(length, 1), 
+        #             y_financial_statements['FCFL'].values.reshape(length, 1),
+        #             )
+        #             )
         # plt.figure()
-        # plt.scatter(df_inc[self.financial_statements.gross_profit_code], df_inc['NINC'])
+        # plt.scatter(y_financial_statements[self.financial_statements.gross_profit_code], 
+        #             y_financial_statements['FCFL'])
         # plt.show()
      
 
@@ -378,7 +400,7 @@ class ShareValues():
             1 / max(1/self.price_to_fcf, 1/self.session_model.terminal_price_to_fcf_bounds[1])
             )
 
-
+        
         ### calculation of fcf growth
         fcf_se_ratio = self.fcf_ttm\
             /y_financial_statements['FCFL'].iloc[-history_avg_nb_year]
@@ -415,9 +437,9 @@ class ShareValues():
         """
         Evaluate company assumed growth rate from fundamental financial data
         """ 
-        
-        if self.cmpc < 0:
-            print(f"{self.identity.name} : negative cmpc can not compute DCF")
+  
+        if self.stock_equity < 0:
+            print(f"{self.identity.name} : negative stock equity can not compute DCF")
             return
         if  start_fcf  :
             self.fcf = start_fcf
@@ -435,22 +457,27 @@ class ShareValues():
         if self.fcf < 0 :
             print(f"{self.identity.name} : negative free cash flow mean, can not compute RDCF")
         else :
-            res_mean = minimize_scalar(eval_dcf_, args=(self, self.fcf, False),
-                                method= 'bounded', bounds = (-1, up_bound))
-            self.g = res_mean.x
+            self.g = minimize_scalar(eval_dcf_, args=(self, self.fcf, False),
+                                method= 'bounded', bounds = (-1, up_bound)).x
 
         # compute g_from_ttm from last fcf
         if self.fcf_ttm < 0:
             print(f"{self.identity.name} : negative TTM free cash flow, can not compute TTM RDCF")
         else :
-            res_last = minimize_scalar(eval_dcf_, args=(self, self.fcf_ttm, False),
-                                method= 'bounded', bounds = (-1, up_bound))
-            self.g_ttm = res_last.x
+            self.g_ttm = minimize_scalar(eval_dcf_, args=(self, self.fcf_ttm, False),
+                                method= 'bounded', bounds = (-1, up_bound)).x
         if pr:
             print(f"Croissance correspondant au prix courrant: {self.g*100:.2f}%")
             self.get_dcf(self.g, start_fcf= start_fcf, pr = pr)
 
         # compute g from mean gp
+        if self.gp_to_ninc_fit[0] <0:
+            print(f"{self.identity.name} : negative correlation between net income and gross profit, can not compute RDGP")
+            return
+        if self.gp_to_ninc_fit_score <0.6:
+            print(f"{self.identity.name} : too low coefficient of determination between net income and gross profit, can not compute RDGP")
+            return
+        
         if self.gp < 0 :
             print(f"{self.identity.name} : negative gross profit mean, can not compute RDGP")
         else :

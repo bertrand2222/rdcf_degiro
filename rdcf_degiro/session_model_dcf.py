@@ -83,7 +83,7 @@ class MarketInfos():
         rate_symb = currency_1 + currency_2 + "=X"
         if rate_symb not in self.rate_history_dic :
             try :
-                currency_history = yq.Ticker(rate_symb).history(period= '5y',
+                currency_history = yq.Ticker(rate_symb).history(period= '6y',
                                                                 interval= "1mo", 
                                                                 ).loc[rate_symb]
             except KeyError as e:
