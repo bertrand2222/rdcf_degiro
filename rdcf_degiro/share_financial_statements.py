@@ -11,8 +11,8 @@ INC_CODES = [
     'SIIB', # 'Total revenue (Bank)
     "SGRP", # Gross profit
     "SOPI", # Operating income
-    "NINC", # "NetIncome", 
     "EIBT", # "Net Income Before Taxes",
+    "NINC", # "NetIncome", 
 ]
 
 BAL_CASH_CODES = [
@@ -109,12 +109,12 @@ class ShareFinancialStatements():
         y_financial_statements[
             list(set(BAL_CODES) & set(y_financial_statements.columns))
             ] = y_financial_statements[
-                list(set(BAL_CODES) & set(y_financial_statements.columns))].ffill()
+            list(set(BAL_CODES) & set(y_financial_statements.columns))].ffill()
         y_financial_statements[
             list(set(CASH_CODES + INC_CODES) & set(y_financial_statements.columns))
             ] = y_financial_statements[
-                list(set(CASH_CODES + INC_CODES) & set(y_financial_statements.columns))].fillna(0)
-        
+            list(set(CASH_CODES + INC_CODES) & set(y_financial_statements.columns))].fillna(0)
+
         # compute free cash flow
         y_financial_statements['FCFL'] = y_financial_statements["OTLO"] 
         if "SCEX" in y_financial_statements:
@@ -167,6 +167,7 @@ class ShareFinancialStatements():
         for key in BAL_CASH_CODES:
             if key  in q_bal_financial_statements.columns:
                 self.cash_code = key
+                break
 
         def get_date_shift_back(end_date : datetime, months : int = 0, weeks :int = 0):
 

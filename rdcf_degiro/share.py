@@ -3,15 +3,15 @@ import numpy as np
 import pandas as pd
 import json, os
 from scipy.optimize import minimize_scalar
+from typing import Any, Callable
 from degiro_connector.quotecast.models.chart import ChartRequest, Interval
 from dateutil.relativedelta import relativedelta
+from tabulate import tabulate
+from sklearn.linear_model import LinearRegression
 from rdcf_degiro.session_model_dcf import SessionModelDCF, MarketInfos
 from rdcf_degiro.share_financial_statements import ShareFinancialStatements
 from rdcf_degiro.share_identity import ShareIdentity
-from typing import Any, Callable
-from tabulate import tabulate
-import matplotlib.pylab as plt
-from sklearn.linear_model import LinearRegression
+# import matplotlib.pylab as plt
 
 ERROR_QUERRY_PRICE = 2
 
@@ -269,13 +269,9 @@ class ShareValues():
 
         q_cas_financial_statements =  self.financial_statements.q_cas_financial_statements
         q_inc_financial_statements = self.financial_statements.q_inc_financial_statements
-        # q_bal_financial_statements =  self.financial_statements.q_bal_financial_statements
         last_bal_financial_statements =  self.financial_statements.last_bal_financial_statements
         history_avg_nb_year = self.session_model.history_avg_nb_year
 
-        # if self.identity.symbol == 'MBI':
-        #     print( self.financial_statements.last_bal_financial_statements['QTLE'])
-        #     exit()
         stock_equity = self.financial_statements.last_bal_financial_statements['QTLE'] # CommonStockEquity
 
         if self.session_model.capital_cost_equal_market :
@@ -300,11 +296,6 @@ class ShareValues():
             self.debt_to_equity = total_debt / stock_equity
             self.price_to_book = self.market_cap / stock_equity
 
-
-        # net_income = y_financial_statements['NINC'][-3:].mean()
-        # net_income = y_financial_statements['NetIncome'][-1]
-        # last_delta_t = relativedelta(y_financial_statements.index[-1], y_financial_statements.index[-2],)
-
         payout = 0
         for info in list(set(PAYOUT_INFOS) & set(y_financial_statements.columns)) :
             payout -= y_financial_statements[info].iloc[-history_avg_nb_year:].mean()
@@ -316,9 +307,9 @@ class ShareValues():
         complement_q_inc_financial_infos = q_inc_financial_statements.loc[ q_inc_financial_statements.index > y_financial_statements.index[-1]]
         
         q_cas_complement_time =  complement_q_cas_financial_infos.loc[complement_q_cas_financial_infos['periodType'] == 'M','periodLength'].sum() /12 + \
-                            complement_q_cas_financial_infos.loc[complement_q_cas_financial_infos['periodType'] == 'W','periodLength'].sum() /53
+                            complement_q_cas_financial_infos.loc[complement_q_cas_financial_infos['periodType'] == 'W','periodLength'].sum() /52
         q_inc_complement_time =  complement_q_inc_financial_infos.loc[complement_q_inc_financial_infos['periodType'] == 'M','periodLength'].sum() /12 + \
-                            complement_q_inc_financial_infos.loc[complement_q_inc_financial_infos['periodType'] == 'W','periodLength'].sum() /53
+                            complement_q_inc_financial_infos.loc[complement_q_inc_financial_infos['periodType'] == 'W','periodLength'].sum() /52
 
             
         q_cas_nb_year_avg = history_avg_nb_year + q_cas_complement_time
@@ -357,12 +348,11 @@ class ShareValues():
         q_inc_ttm_infos = q_inc_financial_statements.loc[
             q_inc_financial_statements.index > ttm_start_time]
         
-
         self.fcf_ttm = q_cas_ttm_infos['FCFL'].sum() / (((q_cas_ttm_infos['periodType'] == 'M') * q_cas_ttm_infos['periodLength']).sum() /12 + (
-                (q_cas_ttm_infos['periodType'] == 'W') * q_cas_ttm_infos['periodLength']).sum() /53)
+                (q_cas_ttm_infos['periodType'] == 'W') * q_cas_ttm_infos['periodLength']).sum() /52)
         
         self.gp_ttm = q_inc_ttm_infos[self.financial_statements.gross_profit_code].sum() / (((q_inc_ttm_infos['periodType'] == 'M') * q_inc_ttm_infos['periodLength']).sum() /12 + (
-                (q_inc_ttm_infos['periodType'] == 'W') * q_inc_ttm_infos['periodLength']).sum() /53)
+                (q_inc_ttm_infos['periodType'] == 'W') * q_inc_ttm_infos['periodLength']).sum() /52)
 
         ### terminal price to fcf calculation from  history
         if self.history is None:
