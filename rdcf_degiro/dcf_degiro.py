@@ -161,12 +161,14 @@ class RDCFAnal():
                                 'capital_cost' :        s.values.capital_cost,
                                 'cmpc' :                s.values.cmpc ,
                                 'assumed_g' :           s.values.g ,  
-                                'assumed_g_ttm' :       s.values.g_from_ttm,  
+                                'assumed_g_ttm' :       s.values.g_ttm,  
+                                'assumed_g_incf' :        s.values.g_incf ,
+                                'assumed_g_incf_ttm' :    s.values.g_incf_ttm,
                                 'per' :                 s.values.per,
                                 'roic' :                s.values.roic , 
                                 'debt_to_equity' :      s.values.debt_to_equity,
                                 'price_to_book' :       s.values.price_to_book ,
-                                'total_payout_ratio' :  s.values.total_payout_ratio,
+                                'total_payout_ratio' :  s.financial_statements.total_payout_ratio,
                                 # 'mean_g_fcf':     s.mean_g_fcf ,
                                 # 'mean_g_tr' :     s.mean_g_tr,
                                 # 'mean_g_inc' :    s.mean_g_netinc 
@@ -237,7 +239,8 @@ class RDCFAnal():
             f"{col_letter['current_price']}:{col_letter['current_price']}", 13, number)
         worksheet.set_column(
             f"{col_letter['beta']}:{col_letter['price_to_fcf']}", 8, number)
-        worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_ttm']}", 11, percent)
+        # worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_ttm']}", 11, percent)
+        worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_incf_ttm']}", 11, percent)
         worksheet.set_column(f"{col_letter['per']}:{col_letter['price_to_book']}", 13, number)
         worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}", 11, percent )
         worksheet.set_column(f"{col_letter['roic']}:{col_letter['roic']}", 13, percent )
@@ -251,8 +254,20 @@ class RDCFAnal():
             'min_value' : -0.2, 'mid_value' : 50,  
             'min_color' : '#63BE7B', "max_color" : '#F8696B', 
             "mid_color" : "#FFFFFF"})
+        # format assumed g_gp
+        worksheet.conditional_format(
+            f"{col_letter['assumed_g_incf']}2:{col_letter['assumed_g_incf_ttm']}{len(df.index)+1}",
+            {"type": "3_color_scale", 'min_type': 'num',
+            'max_type': 'max', 'mid_type' : 'percentile',
+            'min_value' : -0.2, 'mid_value' : 50,  
+            'min_color' : '#63BE7B', "max_color" : '#F8696B', 
+            "mid_color" : "#FFFFFF"})
         # format debt ratio
 
+        worksheet.conditional_format(
+            f"{col_letter['debt_to_equity']}2:{col_letter['debt_to_equity']}{len(df.index)+1}",
+                                     {"type": "cell", "criteria": "<", 
+                                      "value": 0, "format": format3})
         worksheet.conditional_format(
             f"{col_letter['debt_to_equity']}2:{col_letter['debt_to_equity']}{len(df.index)+1}",
             {"type": "3_color_scale", 'min_type': 'num',
