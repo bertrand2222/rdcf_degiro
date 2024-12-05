@@ -27,7 +27,6 @@ urllib3.disable_warnings()
 # from google.oauth2.credentials import Credentials
 # from google_auth_oauthlib.flow import InstalledAppFlow
 
-# import pandas as pd
 # SCOPES =  ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 
 PKL_NAME = "df_save.pkl"
@@ -159,11 +158,13 @@ class RDCFAnal():
                                 'beta' :                s.values.beta ,
                                 'price_to_fcf' :        s.values.price_to_fcf,
                                 'capital_cost' :        s.values.capital_cost,
-                                'cmpc' :                s.values.cmpc ,
+                                'cmpc' :                s.values.wacc ,
                                 'assumed_g' :           s.values.g ,  
                                 'assumed_g_ttm' :       s.values.g_ttm,  
                                 'assumed_g_incf' :        s.values.g_incf ,
                                 'assumed_g_incf_ttm' :    s.values.g_incf_ttm,
+                                'diff_g_cacgr'         : s.values.diff_g_cacgr,
+                                'focf_cagr'                  : s.financial_statements.focf_cagr,
                                 'per' :                 s.values.per,
                                 'roic' :                s.values.roic , 
                                 'debt_to_equity' :      s.values.debt_to_equity,
@@ -177,7 +178,7 @@ class RDCFAnal():
 
         self.trading_api.logout()
 
-        df.sort_values(by = ['assumed_g', 'debt_to_equity']  , inplace= True, ascending= True)
+        df.sort_values(by = ['diff_g_cacgr',]  , inplace= True, ascending= False)
 
         self.df = df
         try:
@@ -240,7 +241,7 @@ class RDCFAnal():
         worksheet.set_column(
             f"{col_letter['beta']}:{col_letter['price_to_fcf']}", 8, number)
         # worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_ttm']}", 11, percent)
-        worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_incf_ttm']}", 11, percent)
+        worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['focf_cagr']}", 11, percent)
         worksheet.set_column(f"{col_letter['per']}:{col_letter['price_to_book']}", 13, number)
         worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}", 11, percent )
         worksheet.set_column(f"{col_letter['roic']}:{col_letter['roic']}", 13, percent )
@@ -254,13 +255,21 @@ class RDCFAnal():
             'min_value' : -0.2, 'mid_value' : 50,  
             'min_color' : '#63BE7B', "max_color" : '#F8696B', 
             "mid_color" : "#FFFFFF"})
-        # format assumed g_gp
+        # format assumed g_focf
         worksheet.conditional_format(
             f"{col_letter['assumed_g_incf']}2:{col_letter['assumed_g_incf_ttm']}{len(df.index)+1}",
             {"type": "3_color_scale", 'min_type': 'num',
             'max_type': 'max', 'mid_type' : 'percentile',
             'min_value' : -0.2, 'mid_value' : 50,  
             'min_color' : '#63BE7B', "max_color" : '#F8696B', 
+            "mid_color" : "#FFFFFF"})
+        # format diff history g assumed g
+        worksheet.conditional_format(
+            f"{col_letter['diff_g_cacgr']}2:{col_letter['diff_g_cacgr']}{len(df.index)+1}",
+            {"type": "3_color_scale", 'min_type': 'min',
+            'max_type': 'max', 'mid_type' : 'num',
+            'mid_value' : 0,  
+            'min_color' : '#F8696B', "max_color" : '#63BE7B', 
             "mid_color" : "#FFFFFF"})
         # format debt ratio
 

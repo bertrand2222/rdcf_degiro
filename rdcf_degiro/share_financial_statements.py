@@ -5,7 +5,8 @@ from dateutil.relativedelta import relativedelta
 from rdcf_degiro.session_model_dcf import SessionModelDCF, MarketInfos
 from rdcf_degiro.share_identity import ShareIdentity
 from sklearn.linear_model import LinearRegression
-import matplotlib.pylab as plt
+# import matplotlib.pylab as plt
+import numpy as np
 
 OVERLAPING_DAYS_TOL = 7
 
@@ -64,6 +65,8 @@ class ShareFinancialStatements():
     incf : float = None
     incf_ttm : float = None
     nincf : float = None
+    focf_cagr : float = np.nan
+ 
 
     def __init__(self, session_model : SessionModelDCF, identity : ShareIdentity):
         
@@ -126,7 +129,7 @@ class ShareFinancialStatements():
             y_financial_statements['FCFL'] += y_financial_statements["SCEX"]
 
         # compute cash flow from income
-        y_financial_statements['INCF'] = y_financial_statements["OTLO"] - y_financial_statements["SOCF"]
+        y_financial_statements['FOCF'] = y_financial_statements["OTLO"] - y_financial_statements["SOCF"]
         # if "SGRP" in y_financial_statements:
         #     self.gross_profit_code = "SGRP"
         # elif "SOPI" in y_financial_statements :
@@ -208,7 +211,7 @@ class ShareFinancialStatements():
             q_cas_financial_statements['FCFL'] += q_cas_financial_statements["SCEX"]
 
         # cash flow from income
-        q_cas_financial_statements['INCF'] = q_cas_financial_statements["OTLO"] - q_cas_financial_statements["SOCF"]
+        q_cas_financial_statements['FOCF'] = q_cas_financial_statements["OTLO"] - q_cas_financial_statements["SOCF"]
 
         self.q_inc_financial_statements = q_inc_financial_statements.set_index('endDate')
         self.q_bal_financial_statements = q_bal_financial_statements.set_index('endDate')
@@ -310,8 +313,8 @@ class ShareFinancialStatements():
         self.fcf = (y_financial_statements['FCFL'].iloc[-history_avg_nb_year:].sum() \
                     + complement_q_cas_financial_infos['FCFL'].sum()
                     ) / q_cas_nb_year_avg
-        self.incf = (y_financial_statements['INCF'].iloc[-history_avg_nb_year:].sum() \
-                    + complement_q_cas_financial_infos['INCF'].sum()
+        self.incf = (y_financial_statements['FOCF'].iloc[-history_avg_nb_year:].sum() \
+                    + complement_q_cas_financial_infos['FOCF'].sum()
                     ) / q_cas_nb_year_avg
         self.nincf = self.fcf - self.incf
 
@@ -325,28 +328,10 @@ class ShareFinancialStatements():
         # self.ninc_m_fcf = ninc - self.fcf
         
 
-
-        # lregr = LinearRegression()
-        # length = len(y_financial_statements.index)
-        # lregr.fit(y_financial_statements[self.gross_profit_code].values.reshape(length, 1), 
-        #             y_financial_statements['FCFL'].values.reshape(length, 1),
-        #             )
-                    
-        # print(self.identity.name, lregr.score(y_financial_statements[self.gross_profit_code].values.reshape(length, 1), 
-        #             y_financial_statements['FCFL'].values.reshape(length, 1),
-        #             )
-        #             )
-        # plt.figure()
-        # if 'SDPR' in y_financial_statements.columns :
-        #     plt.scatter(y_financial_statements[self.gross_profit_code], 
-        #                 y_financial_statements['NINC'] )
-        #     plt.scatter(y_financial_statements[self.gross_profit_code], 
-        #                 y_financial_statements['NINC'] + y_financial_statements['SDPR'] )
-        # plt.show()    
-
         ttm_start_time = q_cas_financial_statements.index[-1] - relativedelta(years= 1)
         q_cas_ttm_infos = q_cas_financial_statements.loc[
             q_cas_financial_statements.index > ttm_start_time]
+
         # ttm_start_time = q_inc_financial_statements.index[-1] - relativedelta(years= 1)
         # q_inc_ttm_infos = q_inc_financial_statements.loc[
         #     q_inc_financial_statements.index > ttm_start_time]
@@ -356,7 +341,15 @@ class ShareFinancialStatements():
                 (q_cas_ttm_infos['periodType'] == 'W') * q_cas_ttm_infos['periodLength']).sum() /52)
         
         self.fcf_ttm = q_cas_ttm_infos['FCFL'].sum() / ttm_period
-        self.incf_ttm = q_cas_ttm_infos['INCF'].sum() / ttm_period
+        self.incf_ttm = q_cas_ttm_infos['FOCF'].sum() / ttm_period
 
-        # self.gp_ttm = q_inc_ttm_infos[self.gross_profit_code].sum() / (((q_inc_ttm_infos['periodType'] == 'M') * q_inc_ttm_infos['periodLength']).sum() /12 + (
-        #         (q_inc_ttm_infos['periodType'] == 'W') * q_inc_ttm_infos['periodLength']).sum() /52)
+        # compound annual growth rate
+        # starting_equity = y_financial_statements['QTLE'].iloc[-history_avg_nb_year]
+        # self.cagr = ((starting_equity + self.fcf * q_cas_nb_year_avg)/ starting_equity)**(1/q_cas_nb_year_avg) -1
+
+        # end_start = (self.incf * history_avg_nb_year   /y_financial_statements['OTLO'].iloc[-2-history_avg_nb_year:-2].sum())
+        # if end_start >= 0:
+        #     self.focf_cagr = end_start**(1/(2 + q_cas_complement_time)) - 1
+        end_start = (y_financial_statements['FOCF'].iloc[-history_avg_nb_year:].sum()   /y_financial_statements['FOCF'].iloc[-2-history_avg_nb_year:-2].sum())
+        if end_start >= 0:
+            self.focf_cagr = end_start**(1/2) - 1

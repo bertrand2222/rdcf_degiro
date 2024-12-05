@@ -22,8 +22,9 @@ RATIO_CODES = [
     'BETA',
     "PEEXCLXOR",  # "P/E excluding extraordinary items - TTM",
     # "APRFCFPS", # "Price to Free Cash Flow per Share - most recent fiscal year",
-    "TTMROIPCT" # "Return on investment - trailing 12 month",
-    ] 
+    "TTMROIPCT" ,# "Return on investment - trailing 12 month",
+    # "FOCF_AYr5CAGR" #"Free Operating Cash Flow, 5 Year CAGR",
+    ]
 
 
 
@@ -47,11 +48,11 @@ class ShareValues():
     history : pd.DataFrame = None
     history_expires : datetime = None
     roic: float = np.nan
-    beta : float = np.nan
+    beta : float = None
     per : float = np.nan
     price_to_fcf : float = None
     price_to_fcf_terminal : float = None
-    cmpc : float = None
+    wacc : float = None
     net_debt : float = None
     net_market_cap : float = None
     debt_to_equity : float = None
@@ -65,6 +66,8 @@ class ShareValues():
     # g_gp_ttm : float = np.nan
     g_incf : float = np.nan
     g_incf_ttm : float = np.nan
+    diff_g_cacgr : float = np.nan
+    # focf_cagr : float = None # free oerating cash flow compound annual  growth
     
     history_in_financial_currency : pd.DataFrame = None
     stock_equity :float = None
@@ -130,6 +133,8 @@ class ShareValues():
         if "TTMROIPCT" in ratio_dic : 
             self.roic = float(ratio_dic['TTMROIPCT']) / 100 # return on investec capital - TTM
 
+        # if "FOCF_AYr5CAGR" in ratio_dic : 
+        #     self.focf_cagr = float(ratio_dic['FOCF_AYr5CAGR']) / 100 # return on investec capital - TTM
         # if not self.current_price:
         #     self.retrieve_current_price()
 
@@ -227,17 +232,21 @@ class ShareValues():
         
         last_bal_financial_statements =  self.financial_statements.last_bal_financial_statements
         
-        stock_equity = self.financial_statements.last_bal_financial_statements['QTLE'] # CommonStockEquity
-        self.stock_equity = stock_equity
-        if self.session_model.capital_cost_equal_market :
+        if self.session_model.capital_cost_equal_market or not self.beta:
             self.capital_cost = market_infos.market_rate
         else : 
             self.capital_cost = free_risk_rate + self.beta * (market_infos.market_rate - free_risk_rate)
         
         total_debt = last_bal_financial_statements['STLD'] # 'TotalDebt',
 
-        self.cmpc = self.capital_cost * stock_equity/(total_debt + stock_equity) + \
-                    market_infos.debt_cost * (1-self.session_model.taxe_rate) * total_debt/(total_debt + stock_equity)
+        stock_equity = self.financial_statements.last_bal_financial_statements['QTLE'] # CommonStockEquity
+        self.stock_equity = stock_equity
+        if stock_equity >= 0 :
+            self.wacc = self.capital_cost * stock_equity/(total_debt + stock_equity) + \
+                        market_infos.debt_cost * (1-self.session_model.taxe_rate) * total_debt/(total_debt + stock_equity)
+        else :
+            self.wacc = self.capital_cost * -stock_equity/total_debt + \
+                market_infos.debt_cost * (1-self.session_model.taxe_rate) * (total_debt + stock_equity)/ total_debt
                         
         #net debt     =  total_debt - cash and cash equivalent
         self.net_debt = total_debt - last_bal_financial_statements[
@@ -286,8 +295,7 @@ class ShareValues():
         #     self.mean_g_fcf = (fcf_se_ratio)**(1/q_cas_nb_year_avg) - 1
 
 
-        # self.mean_g_tr = (y_financial_statements[self.financial_statements.total_revenue_code].iloc[-1]\
-        #                 /y_financial_statements[self.financial_statements.total_revenue_code].iloc[-history_avg_nb_year])**(1/q_cas_nb_year_avg) - 1
+
        
         # inc_se_ratio = y_financial_statements['NetIncome'].iloc[-1]\
         #                 /y_financial_statements['NetIncome'].iloc[YEAR_G]
@@ -313,16 +321,16 @@ class ShareValues():
         Evaluate company assumed growth rate from fundamental financial data
         """ 
   
-        if self.stock_equity < 0:
-            print(f"{self.identity.name} : negative stock equity can not compute DCF")
-            return
+        # if self.stock_equity < 0:
+        #     print(f"{self.identity.name} : negative stock equity can not compute DCF")
+        #     return
         
         fcf = start_fcf  if start_fcf else self.financial_statements.fcf
  
         if self.session_model.use_multiple:
             up_bound = 2
         else :
-            up_bound = self.cmpc
+            up_bound = self.wacc
 
         if self.session_model.use_multiple :
             if self.price_to_fcf_terminal < 0:
@@ -335,7 +343,7 @@ class ShareValues():
         else :
             self.g = minimize_scalar(eval_dcf_, args=(self, fcf, False),
                                 method= 'bounded', bounds = (-1, up_bound)).x
-
+            self.diff_g_cacgr = self.financial_statements.focf_cagr - self.g
         # compute g_from_ttm from last fcf
         if self.financial_statements.fcf_ttm < 0:
             print(f"{self.identity.name} : negative TTM free cash flow, can not compute TTM RDCF")
@@ -367,7 +375,7 @@ class ShareValues():
         Get price corresponding to given growth rate with discouted
         cash flow methods
         """
-        if self.cmpc is None :
+        if self.wacc is None :
             self.compute_complementary_values()
         if g is None :
             g = self.mean_g_tr
@@ -382,7 +390,7 @@ class ShareValues():
         to the market value of the company
         return : 0 when the growth rate g correspond to the one assumed by the market price.
         """
-        cmpc = self.cmpc
+        cmpc = self.wacc
         if isinstance(g, (list, np.ndarray)):
             g = g[0]
 
@@ -425,7 +433,7 @@ class ShareValues():
         to the market value of the company
         return : 0 when the growth rate g correspond to the one assumed by the market price.
         """
-        cmpc = self.cmpc
+        cmpc = self.wacc
         if isinstance(g, (list, np.ndarray)):
             g = g[0]
 
