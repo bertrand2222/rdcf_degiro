@@ -350,6 +350,7 @@ class ShareFinancialStatements():
         # end_start = (self.incf * history_avg_nb_year   /y_financial_statements['OTLO'].iloc[-2-history_avg_nb_year:-2].sum())
         # if end_start >= 0:
         #     self.focf_cagr = end_start**(1/(2 + q_cas_complement_time)) - 1
-        end_start = (y_financial_statements['FOCF'].iloc[-history_avg_nb_year:].sum()   /y_financial_statements['FOCF'].iloc[-2-history_avg_nb_year:-2].sum())
+        cavg_nb_year = self.session_model.cavg_nb_year
+        end_start = (y_financial_statements['FOCF'].iloc[-history_avg_nb_year:].sum()   /y_financial_statements['FOCF'].iloc[-cavg_nb_year-history_avg_nb_year:-cavg_nb_year].sum())
         if end_start >= 0:
-            self.focf_cagr = end_start**(1/2) - 1
+            self.focf_cagr = end_start**(1/cavg_nb_year) - 1

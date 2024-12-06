@@ -158,7 +158,7 @@ class RDCFAnal():
                                 'beta' :                s.values.beta ,
                                 'price_to_fcf' :        s.values.price_to_fcf,
                                 'capital_cost' :        s.values.capital_cost,
-                                'cmpc' :                s.values.wacc ,
+                                'wacc' :                s.values.wacc ,
                                 'assumed_g' :           s.values.g ,  
                                 'assumed_g_ttm' :       s.values.g_ttm,  
                                 'assumed_g_incf' :        s.values.g_incf ,
