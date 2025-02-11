@@ -106,7 +106,7 @@ class SessionModelDCF():
     use_multiple = True
     price_to_fcf_avg_method = 'harmonic'
     history_avg_nb_year : int = 3
-    cavg_nb_year : int = 2
+    delta_avg_nb_year : int = 2
     nb_year_dcf : int = 10
     output_value_files : bool = False
     use_last_intraday_price : bool = False
@@ -114,6 +114,7 @@ class SessionModelDCF():
     output_folder = os.getenv("TEMP")
     taxe_rate = 0.25
     output_name = "rdcf"
+    yahoo_symbol_cor = None
     
     def __init__(self, config_dict : dict):
 

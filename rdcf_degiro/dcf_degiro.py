@@ -127,14 +127,16 @@ class RDCFAnal():
         for s in self.share_list :
             
             print(f'{s.identity.name} : retrieves all values                    ', flush= True, end = "\r")
+
             # s.retrieves_all_values()
             try:
                 s.retrieves_all_values()
-            except (KeyError, TypeError) as e:
+            except (KeyError, TypeError, ValueError, AttributeError) as e:
                 print(f"{s.identity.name} : error while retrieving values \n {type(e).__name__} : {e}   ")
                 continue
             
             print(f'{s.identity.name} : compute complementary values            ', flush= True, end='\r')
+
             try:
                 s.compute_complementary_values()
             except (KeyError, TypeError) as e:
@@ -148,12 +150,14 @@ class RDCFAnal():
 
         print("generate summary table")
 
-
+        if not valid_share_list :
+            print('no valid share')
+            return
         df = pd.DataFrame.from_records(index = [s.identity.symbol for s in valid_share_list],
                           data= [
                               {
                                 'short_name' :          s.identity.name  ,
-                                'current_price' :       s.values.current_price ,
+                                'current_price' :       s.price_data.current_price ,
                                 'currency' :            s.currency ,
                                 'beta' :                s.values.beta ,
                                 'price_to_fcf' :        s.values.price_to_fcf,
@@ -166,6 +170,7 @@ class RDCFAnal():
                                 'diff_g_cacgr'         : s.values.diff_g_cacgr,
                                 'focf_cagr'                  : s.financial_statements.focf_cagr,
                                 'per' :                 s.values.per,
+                                'roe' :                s.values.roe , 
                                 'roic' :                s.values.roic , 
                                 'debt_to_equity' :      s.values.debt_to_equity,
                                 'price_to_book' :       s.values.price_to_book ,
@@ -210,6 +215,8 @@ class RDCFAnal():
             except PermissionError:
                 xl_outfile = re.sub(".xlsx$","_1.xlsx", xl_outfile)
 
+        if self.df is None:
+            return
         df = self.df
         col_letter = {c : letters[i+1] for i, c in enumerate(df.columns)}
         df.to_excel(writer, sheet_name= "rdcf")
@@ -242,9 +249,9 @@ class RDCFAnal():
             f"{col_letter['beta']}:{col_letter['price_to_fcf']}", 8, number)
         # worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_ttm']}", 11, percent)
         worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['focf_cagr']}", 11, percent)
-        worksheet.set_column(f"{col_letter['per']}:{col_letter['price_to_book']}", 13, number)
+        worksheet.set_column(f"{col_letter['per']}:{col_letter['price_to_book']}", 11, number)
         worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}", 11, percent )
-        worksheet.set_column(f"{col_letter['roic']}:{col_letter['roic']}", 13, percent )
+        worksheet.set_column(f"{col_letter['roe']}:{col_letter['roic']}", 11, percent )
         # worksheet.set_column(f"{col_letter['mean_g_fcf']}:{col_letter['diff_g']}", 13, percent )
 
         # format assumed g
@@ -295,14 +302,24 @@ class RDCFAnal():
                 'min_value' : 3, 'mid_value' : 50, "max_value" : 50,
                 'min_color' : '#63BE7B', "max_color" : '#F8696B', 
                 "mid_color" : "#FFFFFF"})
+        # format ROE
+        worksheet.conditional_format(f"{col_letter['roe']}2:{col_letter['roe']}{len(df.index)+1}",
+                                     {"type": "cell", "criteria": "<",
+                                      "value": 0, "format": format3})
+        worksheet.conditional_format(f"{col_letter['roe']}2:{col_letter['roe']}{len(df.index)+1}",
+                                    {"type": "3_color_scale", 'min_type': 'num','max_type': 'max',
+                                     'mid_type' : 'percentile',
+                                    'min_value' : 0, 'mid_value' : 50, "max_value" : 0.15,
+                                    "min_color" : '#F8696B', 'max_color' : '#63BE7B' ,
+                                    "mid_color" : "#FFFFFF"})
         # format ROIC
         worksheet.conditional_format(f"{col_letter['roic']}2:{col_letter['roic']}{len(df.index)+1}",
                                      {"type": "cell", "criteria": "<",
                                       "value": 0, "format": format3})
         worksheet.conditional_format(f"{col_letter['roic']}2:{col_letter['roic']}{len(df.index)+1}",
-                                    {"type": "3_color_scale", 'min_type': 'num','max_type': 'num',
+                                    {"type": "3_color_scale", 'min_type': 'num','max_type': 'max',
                                      'mid_type' : 'percentile',
-                                    'min_value' : 0, 'mid_value' : 50, "max_value" : 0.15,
+                                    'min_value' : 0, 'mid_value' : 50,
                                     "min_color" : '#F8696B', 'max_color' : '#63BE7B' ,
                                     "mid_color" : "#FFFFFF"})
 
