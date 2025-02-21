@@ -1,4 +1,7 @@
+import sys
+sys.path.append(r"C:\Users\SAFCOB009150\Downloads\dcf-main")
 import pandas as pd
+
 import os
 import json
 from degiro_connector.trading.api import API , Credentials
@@ -8,7 +11,7 @@ from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
 import yahooquery as yq
 import polars as pl
 from importlib import reload
-
+from rdcf_degiro.financial_statements import TYPES
 from rdcf_degiro.dcf_degiro import RDCFAnal
 
 # credentials_path = os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json")
@@ -19,37 +22,35 @@ from rdcf_degiro.dcf_degiro import RDCFAnal
 # trading_api.connect()
 # client_details_table = trading_api.get_client_details()
 
+yahoo_symbol_cor = {
+
+    'RIGD' : 'RIGD.IL'
+}
 
 config_dict = {
     'credential_file_path'          : os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json"),
-    'capital_cost_equal_market'     : True,
+    'use_beta'     : True,
     'use_multiple'                  : True,
-    'fcf_history_multiple_method'   : 'mean', # mean or median
-    'terminal_price_to_fcf_bounds' : [1, 70],
+    'terminal_price_to_fcf_bounds'  : [1, 70],
     'history_avg_nb_year'           : 3,
+    # 'delta_avg_nb_year'             : 3,
     'output_value_files'            : False,
-    'use_last_price_intraday'       : True,
-    'output_folder'                 : 'data',
-    'taxe_rate'                     : 0.25
+    'use_last_intraday_price'       : True,
+    'output_folder'                 : r'C:\Users\SAFCOB009150\OneDrive - Saipem\Documents\rdcf_degiro_out',
+    'taxe_rate'                     : 0.25,
+    'output_name'                   : 'rdcf',
+    'yahoo_symbol_cor'              : yahoo_symbol_cor
 }
 # outfile = os.path.join(os.environ["USERPROFILE"], r"Documents\rdcf.xlsx")
 
 if __name__ == "__main__":
-    
 
     rdcf_anal = RDCFAnal(config_dict)
 
+    # rdcf_anal.share_list = [ s for s in rdcf_anal.share_list if s.symbol in [ "BY6"] ]
     
-    rdcf_anal.retrieve_shares_from_favorites()
-    rdcf_anal.retrieve_shares_from_portfolio()
-    rdcf_anal.process()
-
-    # for s in dcf_anal.share_list:
-    #     # if s.identity.symbol == 'TM':
-    #     s.compute_financial_info()
-            # s.retrieve_history()
-        # break
     # rdcf_anal.load_df()
+    rdcf_anal.process()
 
     rdcf_anal.to_excel()
   # upload_file(outfile)
