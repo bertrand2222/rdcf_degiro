@@ -29,7 +29,7 @@ yahoo_symbol_cor = {
 
 config_dict = {
     'credential_file_path'          : os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json"),
-    'use_beta'     : True,
+    'use_beta'     : False,
     'use_multiple'                  : True,
     'terminal_price_to_fcf_bounds'  : [1, 70],
     'history_avg_nb_year'           : 3,
