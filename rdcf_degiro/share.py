@@ -306,7 +306,7 @@ class ShareValues():
         
         last_bal_statements =  self.financial_statements.last_bal_statements
         
-        if self.session_model.use_beta or not self.beta:
+        if (not self.session_model.use_beta) or (not self.beta):
             self.market_capital_cost = market_infos.market_rate
         else : 
             self.market_capital_cost = free_risk_rate + self.beta * (market_infos.market_rate - free_risk_rate)
