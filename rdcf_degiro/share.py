@@ -9,7 +9,7 @@ from dateutil.relativedelta import relativedelta
 from tabulate import tabulate
 
 from rdcf_degiro.session_model_dcf import SessionModelDCF, MarketInfos
-from rdcf_degiro.financial_statements import ShareFinancialStatements
+from rdcf_degiro.financial_statements import FinancialStatements, DegiroFinancialStatements, YahooFinancialStatements, FinancialForcast
 from rdcf_degiro.share_identity import ShareIdentity
 
 ERROR_QUERRY_PRICE = 2
@@ -146,48 +146,37 @@ class ShareValues():
     """
     Data retrieved from degiro api with get_company_ratio
     """
-    nb_shares : int = None
     market_cap : float = None
-    # history_expires : datetime = None
     roic: float = np.nan
     roe : float = np.nan
     beta : float = None
     per : float = np.nan
     price_to_fcf : float = None
     price_to_fcf_terminal : float = None
-    wacc : float = None
     net_debt : float = None
     net_market_cap : float = None
     debt_to_equity : float = None
     price_to_book :float = None
-    # mean_g_fcf : float = None
-    mean_g_tr : float = None
-    capital_cost : float = None
-    g : float = np.nan
-    g_ttm : float = np.nan
-    # g_gp : float = np.nan
-    # g_gp_ttm : float = np.nan
-    g_incf : float = np.nan
-    g_incf_ttm : float = np.nan
-    diff_g_cacgr : float = np.nan
-    # focf_cagr : float = None # free oerating cash flow compound annual  growth
-    
-    
-    stock_equity :float = None
+    market_capital_cost : float = None
+    _market_wacc : float = None
 
-    # mean_g_netinc = None
+    # history_growth : float = None # free oerating cash flow compound annual  growth
+    
     # price_currency : str = None
-    # financial_currency_price_history = None
 
     def __init__(self, session_model : SessionModelDCF,
                  price_data : SharePrice,
-                 financial_statements : ShareFinancialStatements, 
+                 financial_statements : FinancialStatements, 
+                 financial_forcasts : FinancialForcast,
                  identity : ShareIdentity,
         ):
         self.session_model = session_model
         self.price_data = price_data
         self.financial_statements = financial_statements
+        self.financial_forcast = financial_forcasts
+        
         self.identity = identity
+
 
         self.retrieve()
     
@@ -219,8 +208,7 @@ class ShareValues():
         )
         if 'data' not in ratios:
             raise KeyError(f'ratio data not available for isin {self.identity.isin}')
-        self.nb_shares = float(ratios['data']['sharesOut'])
-        self.market_cap = self.nb_shares * self.price_data.current_price / 1e6
+        self.market_cap = self.financial_statements.nb_shares * self.price_data.current_price 
 
         ratio_dic = {}
         for rg in ratios['data']['currentRatios']['ratiosGroups'] :
@@ -244,7 +232,7 @@ class ShareValues():
             self.roe = float(ratio_dic['TTMROEPCT']) / 100 # return on equity - TTM
 
         # if "FOCF_AYr5CAGR" in ratio_dic : 
-        #     self.focf_cagr = float(ratio_dic['FOCF_AYr5CAGR']) / 100 # return on investec capital - TTM
+        #     self.history_growth = float(ratio_dic['FOCF_AYr5CAGR']) / 100 # return on investec capital - TTM
         # if not self.current_price:
         #     self.retrieve_current_price()
 
@@ -261,21 +249,44 @@ class ShareValues():
         """
         net_income = self.financial_statements.q_inc_ttm_statements['NINC'].sum()
 
-        if self.nb_shares is None:
-            self.nb_shares = self.financial_statements.nb_shares
-        self.market_cap = self.nb_shares * self.price_data.current_price
+        # if self.nb_shares is None:
+        # self.nb_shares = self.financial_statements.nb_shares
+        self.market_cap = self.financial_statements.nb_shares * self.price_data.current_price
         self.per = self.market_cap / net_income
         
         # return on invested capital
-        invested_capital = self.financial_statements.last_bal_financial_statements['InvestedCapital']
+        invested_capital = self.financial_statements.last_bal_statements['InvestedCapital']
         if invested_capital > 0 :
             self.roic = net_income / invested_capital
 
         # return on equity
-        equity = self.financial_statements.last_bal_financial_statements['QTLE']
-        if equity > 0 :
-            self.roe = net_income / equity
+        if self.stock_equity > 0 :
+            self.roe = net_income / self.stock_equity
 
+    @property
+    def total_debt(self):
+        return self.financial_statements.last_bal_statements['STLD']
+    
+    @property
+    def stock_equity(self):
+        return self.financial_statements.last_bal_statements['QTLE']
+    
+    @property
+    def market_wacc(self):
+        if self._market_wacc is None:
+            self._market_wacc = self.get_market_wacc()
+        return self._market_wacc
+    
+    def get_market_wacc(self) :
+        stock_equity = self.stock_equity
+        total_debt = self.total_debt
+        if stock_equity >= 0 :
+            return self.market_capital_cost * stock_equity/(total_debt + stock_equity) + \
+                        self.session_model.market_infos.debt_cost * (1-self.session_model.taxe_rate) * total_debt/(total_debt + stock_equity)
+       
+        return  self.market_capital_cost * -stock_equity/total_debt + \
+                self.session_model.market_infos.debt_cost * (1-self.session_model.taxe_rate) * (total_debt + stock_equity)/ total_debt
+    
     def compute_complementary_values(self,):
         """
         compute value and ratios from financial statements and market infos 
@@ -288,128 +299,122 @@ class ShareValues():
         market_infos = self.session_model.market_infos
         free_risk_rate = market_infos.free_risk_rate
 
-        if self.financial_statements.y_financial_statements is None:
+        if self.financial_statements.y_statements is None:
             self.financial_statements.retrieve()
 
-        y_financial_statements = self.financial_statements.y_financial_statements
+        y_statements = self.financial_statements.y_statements
         
-        last_bal_financial_statements =  self.financial_statements.last_bal_financial_statements
+        last_bal_statements =  self.financial_statements.last_bal_statements
         
-        if self.session_model.capital_cost_equal_market or not self.beta:
-            self.capital_cost = market_infos.market_rate
+        if self.session_model.use_beta or not self.beta:
+            self.market_capital_cost = market_infos.market_rate
         else : 
-            self.capital_cost = free_risk_rate + self.beta * (market_infos.market_rate - free_risk_rate)
+            self.market_capital_cost = free_risk_rate + self.beta * (market_infos.market_rate - free_risk_rate)
         
-        total_debt = last_bal_financial_statements['STLD'] # 'TotalDebt',
+        total_debt = self.total_debt # 'TotalDebt',
 
-        stock_equity = self.financial_statements.last_bal_financial_statements['QTLE'] # CommonStockEquity
-        self.stock_equity = stock_equity
-        if stock_equity >= 0 :
-            self.wacc = self.capital_cost * stock_equity/(total_debt + stock_equity) + \
-                        market_infos.debt_cost * (1-self.session_model.taxe_rate) * total_debt/(total_debt + stock_equity)
-        else :
-            self.wacc = self.capital_cost * -stock_equity/total_debt + \
-                market_infos.debt_cost * (1-self.session_model.taxe_rate) * (total_debt + stock_equity)/ total_debt
+        stock_equity = self.stock_equity # CommonStockEquity
+        
                         
         #net debt     =  total_debt - cash and cash equivalent
-        self.net_debt = total_debt - last_bal_financial_statements[
+        self.net_debt = total_debt - last_bal_statements[
             self.financial_statements.cash_code]
-
-        
 
         self.net_market_cap = self.market_cap + self.net_debt
         self.debt_to_equity = total_debt / stock_equity
         self.price_to_book = self.market_cap / stock_equity
 
-        ### terminal price to fcf calculation from  history
-        # if self.price_data.history is None:
-        #     self.price_data.retrieve_history()
-
         df_multiple = pd.concat([self.price_data.history_in_financial_currency, 
-                                y_financial_statements[["QTCO" , 'FCFL']]
+                                y_statements[["QTCO" , 'FCFL']]
                                 ], axis = 0).sort_index().ffill().dropna()
 
 
         df_multiple['price_to_fcf'] = df_multiple['QTCO'] * df_multiple['close'] / df_multiple['FCFL']
 
-        if self.session_model.price_to_fcf_avg_method == 'harmonic':
-            self.price_to_fcf = len(df_multiple) / (1 / df_multiple['price_to_fcf']).sum()
+        # price to fcf multilple calculated as harmonic mean of history:
+        self.price_to_fcf = len(df_multiple) / (1 / df_multiple['price_to_fcf']).sum()
             
-        elif self.session_model.price_to_fcf_avg_method == 'median':
-            self.price_to_fcf = df_multiple['price_to_fcf'].median()
-        else: # arithmetic
-            self.price_to_fcf = df_multiple['price_to_fcf'].mean()
         
         self.price_to_fcf_terminal = max(
             self.session_model.terminal_price_to_fcf_bounds[0],
             1 / max(1/self.price_to_fcf, 1/self.session_model.terminal_price_to_fcf_bounds[1])
             )
 
-        
-        ### calculation of fcf growth
-        # history_avg_nb_year = self.session_model.history_avg_nb_year
-        # fcf_se_ratio = self.fcf_ttm\
-        #     /y_financial_statements['FCFL'].iloc[-history_avg_nb_year]
-        
-        # if fcf_se_ratio < 0:
-        #     self.mean_g_fcf = np.nan
-        # else :
-        #     self.mean_g_fcf = (fcf_se_ratio)**(1/q_cas_nb_year_avg) - 1
-
-       
-        # inc_se_ratio = y_financial_statements['NetIncome'].iloc[-1]\
-        #                 /y_financial_statements['NetIncome'].iloc[YEAR_G]
-        # if inc_se_ratio < 0 :
-        #     self.mean_g_netinc = np.nan
-        # else :
-        #     self.mean_g_netinc = inc_se_ratio**(1/nb_year_inc) - 1
-
-        # if pr :
-        #     print("\r")
-        #     print(y_financial_statements)
-        #     print(f"Prix courant: {self.close_price:.2f} {self.financial_currency:s}" )
-        #     print(f"Cout moyen pondere du capital: {self.cmpc*100:.2f}%")
-        #     print(f"Croissance moyenne du chiffre d'affaire sur {nb_year_inc:f} \
-        #         ans: {self.mean_g_tr*100:.2f}%")
-        #     print(f"Croissance moyenne du free cash flow sur {nb_year_inc:f} \
-        #         ans: {self.mean_g_fcf*100:.2f}%")
         return(0)
 
-    def eval_g(self, start_fcf : float = None, pr=False,):
+
+class ShareDCFModule():
+    
+    g : float = np.nan
+    g_ttm : float = np.nan
+    g_incf : float = np.nan
+    g_incf_ttm : float = np.nan
+    g_delta_forcasted_assumed : float = np.nan
+    forcasted_wacc : float = np.nan
+
+    def __init__(self, session_model : SessionModelDCF,
+                 financial_statements : FinancialStatements, 
+                 financial_forcasts : FinancialForcast,
+                 identity : ShareIdentity,
+                 values : ShareValues
+        ):
+        self.session_model = session_model
+        self.financial_statements = financial_statements
+        self.financial_forcasts = financial_forcasts
+        self.identity = identity
+        self.values = values
+
+    @property
+    def forcasted_capital_cost(self):
+        total_debt =  self.values.total_debt
+        stock_equity =  self.values.stock_equity
+        if stock_equity >= 0 :
+            return (self.forcasted_wacc - \
+                    self.session_model.market_infos.debt_cost * (1-self.session_model.taxe_rate) *\
+                        total_debt/(total_debt + stock_equity)) *\
+                        (total_debt + stock_equity)/stock_equity
+        
+        return (self.forcasted_wacc - \
+                    self.session_model.market_infos.debt_cost * (1-self.session_model.taxe_rate) *\
+                        (total_debt + stock_equity) /total_debt ) *\
+                        - stock_equity /(total_debt + stock_equity)
+
+    def eval_g(self, start_fcf : float = None):
 
         """
         Evaluate company assumed growth rate from fundamental financial data
-        """ 
+        """
         
         fcf = start_fcf  if start_fcf else self.financial_statements.fcf
  
         if self.session_model.use_multiple:
             up_bound = 2
         else :
-            up_bound = self.wacc
+            up_bound = self.values.market_wacc
 
         if self.session_model.use_multiple :
-            if self.price_to_fcf_terminal < 0:
+            if self.values.price_to_fcf_terminal < 0:
                 print(f"{self.identity.name} negative terminal price to fcf multiple, can not compute RDCF")
                 return
-        
         # compute g from mean fcf
         if fcf < 0 :
             print(f"{self.identity.name} : negative free cash flow mean, can not compute RDCF")
         else :
-            self.g = minimize_scalar(eval_dcf_, args=(self, fcf, False),
+            self.g = minimize_scalar(_residual_dcf_on_g, args=(self, fcf,  False),
                                 method= 'bounded', bounds = (-1, up_bound)).x
-            self.diff_g_cacgr = self.financial_statements.focf_cagr - self.g
-        if pr:
-            print(f"Croissance correspondant au prix courrant: {self.g*100:.2f}%")
-            self.get_dcf(self.g, start_fcf= start_fcf, pr = pr)
+            
+            self.forcasted_wacc = minimize_scalar(_residual_dcf_on_wacc, args=(self, fcf,  False),
+                                method= 'bounded', bounds = (-1, 1)).x
+
+
+            self.g_delta_forcasted_assumed = self.financial_forcasts.forcasted_growth - self.g
 
         # # compute g from income cash flow
         
         if self.financial_statements.incf < 0 :
             print(f"{self.identity.name} : negative cash flow from income mean, can not compute RDINCF")
         else :
-            self.g_incf = minimize_scalar(eval_dincf_, args=(self, self.financial_statements.incf),
+            self.g_incf = minimize_scalar(_residual_dincf_on_g, args=(self, self.financial_statements.incf),
                                 method= 'bounded', bounds = (-1, up_bound)).x
 
         if  self.financial_statements.q_cashflow_available :
@@ -417,72 +422,57 @@ class ShareValues():
             if self.financial_statements.fcf_ttm < 0:
                 print(f"{self.identity.name} : negative TTM free cash flow, can not compute TTM RDCF")
             else :
-                self.g_ttm = minimize_scalar(eval_dcf_, args=(self, self.financial_statements.fcf_ttm, False),
+                self.g_ttm = minimize_scalar(_residual_dcf_on_g, args=(self, self.financial_statements.fcf_ttm,  False),
                                     method= 'bounded', bounds = (-1, up_bound)).x
         
             # compute g_from_ttm from last incf
             if self.financial_statements.incf_ttm < 0:
                 print(f"{self.identity.name} : negative TTM cash flow from income mean, can not compute TTM RDINCF")
             else :
-                self.g_incf_ttm = minimize_scalar(eval_dincf_, args=(self, self.financial_statements.incf_ttm),
+                self.g_incf_ttm = minimize_scalar(_residual_dincf_on_g, args=(self, self.financial_statements.incf_ttm),
                                 method= 'bounded', bounds = (-1, up_bound)).x
             
 
-    def get_dcf(self, g : float = None, start_fcf : float = None, pr = False) -> float :
-        """
-        Get price corresponding to given growth rate with discouted
-        cash flow methods
-        """
-        if self.wacc is None :
-            self.compute_complementary_values()
-        if g is None :
-            g = self.mean_g_tr
-        if not start_fcf  :
-            start_fcf = self.financial_statements.fcf
-        eval_dcf_(g, self, start_fcf, pr)
-
-    
-    def eval_dcf(self, g :  float, fcf : float, pr = False,):
+    def eval_dcf(self, g :  float, fcf : float, wacc : float , pr = False,):
         """
         compute company value regarding its actuated free cash flows and compare it 
         to the market value of the company
         return : 0 when the growth rate g correspond to the one assumed by the market price.
         """
-        cmpc = self.wacc
         if isinstance(g, (list, np.ndarray)):
             g = g[0]
 
         nb_year_dcf = self.session_model.nb_year_dcf
         if self.session_model.use_multiple :
-            vt = fcf * (1+g)**(nb_year_dcf ) * self.price_to_fcf_terminal
+            vt = fcf * (1+g)**(nb_year_dcf ) * self.values.price_to_fcf_terminal
         else :
-            vt = fcf * (1+g)**(nb_year_dcf ) / (cmpc - g)
-        vt_act = vt / (1+cmpc)**(nb_year_dcf)
+            vt = fcf * (1+g)**(nb_year_dcf ) / (wacc - g)
+        vt_act = vt / (1+wacc)**(nb_year_dcf)
 
-        a = (1+g)/(1+cmpc)
+        a = (1+g)/(1+wacc)
         # fcf * sum of a**k for k from 1 to nb_year_dcf 
         fcf_act_sum = fcf * ((a**nb_year_dcf - 1)/(a-1) - 1 + a**(nb_year_dcf))
         enterprise_value = fcf_act_sum + vt_act
      
 
-        if pr :
-            fcf_ar = np.array([fcf * (1+g)**(k) for k in range(1,1 + nb_year_dcf)])
-            act_vec = np.array([1/((1+cmpc)**k) for k in range(1,1 + nb_year_dcf)])
-            fcf_act = fcf_ar * act_vec
-            print("\r")
-            val_share = (enterprise_value - self.net_debt)/ self.nb_shares
-            nyear_disp = min(10,nb_year_dcf)
-            annees = list(2023 + np.arange(0, nyear_disp)) +  ["Terminal"]
-            table = np.array([ np.concatenate((fcf_ar[:nyear_disp] ,[vt])),
-                              np.concatenate((fcf_act[:nyear_disp], [vt_act]))])
-            print(f"Prévision pour une croissance de {g*100:.2f}% :")
-            print(tabulate(table, floatfmt= ".4e",
-                           showindex= [ "Free Cash Flow", "Free Cash Flow actualisé"],
-                           headers= annees))
+        # if pr :
+        #     fcf_ar = np.array([fcf * (1+g)**(k) for k in range(1,1 + nb_year_dcf)])
+        #     act_vec = np.array([1/((1+cmpc)**k) for k in range(1,1 + nb_year_dcf)])
+        #     fcf_act = fcf_ar * act_vec
+        #     print("\r")
+        #     val_share = (enterprise_value - self.net_debt)/ self.financial_statements.nb_shares
+        #     nyear_disp = min(10,nb_year_dcf)
+        #     annees = list(2023 + np.arange(0, nyear_disp)) +  ["Terminal"]
+        #     table = np.array([ np.concatenate((fcf_ar[:nyear_disp] ,[vt])),
+        #                       np.concatenate((fcf_act[:nyear_disp], [vt_act]))])
+        #     print(f"Prévision pour une croissance de {g*100:.2f}% :")
+        #     print(tabulate(table, floatfmt= ".4e",
+        #                    showindex= [ "Free Cash Flow", "Free Cash Flow actualisé"],
+        #                    headers= annees))
 
-            print(f"Valeur DCF de l'action: {val_share:.2f} {self.identity.currency:s}")
+            # print(f"Valeur DCF de l'action: {val_share:.2f} {self.identity.currency:s}")
 
-        return (enterprise_value / self.net_market_cap - 1)**2
+        return (enterprise_value / self.values.net_market_cap - 1)**2
     
     def eval_dincf(self, g :  float, incf : float):
         """
@@ -491,7 +481,7 @@ class ShareValues():
         to the market value of the company
         return : 0 when the growth rate g correspond to the one assumed by the market price.
         """
-        cmpc = self.wacc
+        cmpc = self.values.market_wacc
         if isinstance(g, (list, np.ndarray)):
             g = g[0]
 
@@ -499,7 +489,7 @@ class ShareValues():
 
         if self.session_model.use_multiple :
             # fcf = incf + nincf
-            vt = (incf * (1+g)**(nb_year_dcf)  + self.financial_statements.nincf) * self.price_to_fcf_terminal
+            vt = (incf * (1+g)**(nb_year_dcf)  + self.financial_statements.nincf) * self.values.price_to_fcf_terminal
         else :
             vt = (incf * (1+g)**(nb_year_dcf)  + self.financial_statements.nincf) / (cmpc - g)
         vt_act = vt / (1+cmpc)**(nb_year_dcf)
@@ -508,7 +498,6 @@ class ShareValues():
         b = 1/(1+cmpc)
         fcf_act_sum = incf * ((a**nb_year_dcf - 1)/(a-1) - 1 + a**(nb_year_dcf)) + \
                     self.financial_statements.nincf * ((b**nb_year_dcf - 1)/(b-1) - 1 + b**(nb_year_dcf))
- 
 
         # a = (1+g)/(1+cmpc)
         # b = 1/(1+cmpc)
@@ -518,7 +507,42 @@ class ShareValues():
 
         enterprise_value = fcf_act_sum + vt_act
 
-        return (enterprise_value / self.net_market_cap - 1)**2
+        return (enterprise_value / self.values.net_market_cap - 1)**2
+
+def _residual_dcf_on_g(g, *data):
+    """
+    reformated Share.eval_dcf() function for compatibility with minimize_scalar
+    """
+    dcf : ShareDCFModule = data[0]
+    fcf : float = data[1]
+    pr = data[2]
+
+    return dcf.eval_dcf(g = g,
+                        fcf = fcf,
+                        wacc = dcf.values.market_wacc, 
+                        pr = pr)
+
+def _residual_dcf_on_wacc(wacc, *data):
+    """
+    reformated Share.eval_dcf() function for compatibility with minimize_scalar
+    """
+    dcf : ShareDCFModule = data[0]
+    fcf : float = data[1]
+    pr = data[2]
+
+    return dcf.eval_dcf(g = dcf.financial_forcasts.forcasted_growth,
+                        fcf = fcf, 
+                        wacc = wacc, 
+                        pr = pr)
+
+def _residual_dincf_on_g(g, *data):
+    """
+    reformated Share.eval_dcf() function for compatibility with minimize_scalar
+    """
+    sharevalues : ShareValues = data[0]
+    incf : float = data[1]
+
+    return sharevalues.eval_dincf(g = g, incf = incf)
 
 class Share():
     """
@@ -530,10 +554,12 @@ class Share():
     exchange_id : str = None
     currency :str = None
     price_data : SharePrice = None
-    financial_statements : ShareFinancialStatements = None
+    financial_statements : FinancialStatements = None
+    financial_forcasts : FinancialForcast = None
     values : ShareValues = None
     compute_complementary_values : Callable = None
     eval_g :  Callable = None
+    dcf : ShareDCFModule = None
 
     def __init__(self, s_dict : dict = None,
             session_model : SessionModelDCF  = None):
@@ -542,13 +568,36 @@ class Share():
         self.session_model = session_model
         self.identity = ShareIdentity(s_dict)
 
+    def retrieves_financials(self):
+
+        try:
+            self.financial_statements = DegiroFinancialStatements(
+                self.session_model,
+                self.identity )
+        except KeyError as e:
+            print(f'{self.identity.name} : can not retrieve financial data from degiro, {e}')
+        else:
+            return
+        
+        try:
+            self.financial_statements = YahooFinancialStatements(
+                self.session_model,
+                self.identity )
+        except (AttributeError, KeyError) as e:
+            raise KeyError(f'{self.identity.name} : error while retrieving financial from yahoo, {e}') from e
+        except (TypeError) as e:
+            raise TypeError(f'{self.identity.name} : error while retrieving financial from yahoo, {e}') from e
+
 
     def retrieves_all_values(self,):
         """
         Get all the share associated financial infos from degiro api 
         """
 
-        self.financial_statements = ShareFinancialStatements(
+        self.retrieves_financials()
+
+        ## forcast
+        self.financial_forcasts = FinancialForcast(
             self.session_model,
             self.identity )
         
@@ -557,34 +606,21 @@ class Share():
                                      )
         
         self.values = ShareValues(
-            self.session_model,
-            self.price_data,
-            self.financial_statements,
-            self.identity,
+            session_model= self.session_model,
+            price_data= self.price_data,
+            financial_statements= self.financial_statements,
+            financial_forcasts= self.financial_forcasts,
+            identity= self.identity,
         )
 
-
+        self.dcf = ShareDCFModule(
+            session_model= self.session_model,
+            financial_statements= self.financial_statements,
+            financial_forcasts= self.financial_forcasts,
+            identity= self.identity,
+            values= self.values
+        )
         self.compute_complementary_values = self.values.compute_complementary_values
-        self.eval_g = self.values.eval_g
+        self.eval_g = self.dcf.eval_g
 
         # self.eval_beta()
-    
-
-def eval_dcf_(g, *data):
-    """
-    reformated Share.eval_dcf() function for compatibility with minimize_scalar
-    """
-    sharevalues : ShareValues = data[0]
-    fcf : float = data[1]
-    pr = data[2]
-
-    return sharevalues.eval_dcf(g = g, fcf = fcf, pr = pr)
-
-def eval_dincf_(g, *data):
-    """
-    reformated Share.eval_dcf() function for compatibility with minimize_scalar
-    """
-    sharevalues : ShareValues = data[0]
-    incf : float = data[1]
-
-    return sharevalues.eval_dincf(g = g, incf = incf)

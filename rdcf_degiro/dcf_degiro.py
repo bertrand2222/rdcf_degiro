@@ -54,8 +54,11 @@ class RDCFAnal():
 
         self.trading_api = self.session_model.trading_api
         self.get_client_details_table = self.trading_api.get_client_details
-       
-     
+        if self.session_model.retrieve_shares_from_favorites:
+            self.retrieve_shares_from_favorites()
+        if self.session_model.retrieve_shares_from_portfolio:
+            self.retrieve_shares_from_portfolio()
+        
     def retrieve_shares_from_favorites(self):
         """
         Retrieve stock and fund ids recorded in Degiro account favorite list
@@ -128,12 +131,12 @@ class RDCFAnal():
             
             print(f'{s.identity.name} : retrieves all values                    ', flush= True, end = "\r")
 
-            # s.retrieves_all_values()
-            try:
-                s.retrieves_all_values()
-            except (KeyError, TypeError, ValueError, AttributeError) as e:
-                print(f"{s.identity.name} : error while retrieving values \n {type(e).__name__} : {e}   ")
-                continue
+            s.retrieves_all_values()
+            # try:
+            #     s.retrieves_all_values()
+            # except (KeyError, TypeError, ValueError, AttributeError) as e:
+            #     print(f"{s.identity.name} : error while retrieving values \n {type(e).__name__} : {e}   ")
+            #     continue
             
             print(f'{s.identity.name} : compute complementary values            ', flush= True, end='\r')
 
@@ -153,6 +156,7 @@ class RDCFAnal():
         if not valid_share_list :
             print('no valid share')
             return
+
         df = pd.DataFrame.from_records(index = [s.identity.symbol for s in valid_share_list],
                           data= [
                               {
@@ -161,29 +165,29 @@ class RDCFAnal():
                                 'currency' :            s.currency ,
                                 'beta' :                s.values.beta ,
                                 'price_to_fcf' :        s.values.price_to_fcf,
-                                'capital_cost' :        s.values.capital_cost,
-                                'wacc' :                s.values.wacc ,
-                                'assumed_g' :           s.values.g ,  
-                                'assumed_g_ttm' :       s.values.g_ttm,  
-                                'assumed_g_incf' :        s.values.g_incf ,
-                                'assumed_g_incf_ttm' :    s.values.g_incf_ttm,
-                                'diff_g_cacgr'         : s.values.diff_g_cacgr,
-                                'focf_cagr'                  : s.financial_statements.focf_cagr,
+                                'market_capital_cost' :   s.values.market_capital_cost,
+                                'wacc' :                s.values.market_wacc ,
+                                'assumed_g' :           s.dcf.g ,  
+                                'assumed_g_ttm' :       s.dcf.g_ttm,  
+                                'assumed_g_incf' :        s.dcf.g_incf ,
+                                'assumed_g_incf_ttm' :    s.dcf.g_incf_ttm,
+                                'history_growth'         : s.financial_statements.history_growth,
+                                "forcast_growth" :       s.financial_forcasts.forcasted_growth,
+                                'diff_g_cacgr'         : s.dcf.g_delta_forcasted_assumed,
+                                'forcasted_capital_cost'         : s.dcf.forcasted_capital_cost,
                                 'per' :                 s.values.per,
                                 'roe' :                s.values.roe , 
                                 'roic' :                s.values.roic , 
                                 'debt_to_equity' :      s.values.debt_to_equity,
                                 'price_to_book' :       s.values.price_to_book ,
                                 'total_payout_ratio' :  s.financial_statements.total_payout_ratio,
-                                # 'mean_g_fcf':     s.mean_g_fcf ,
-                                # 'mean_g_tr' :     s.mean_g_tr,
-                                # 'mean_g_inc' :    s.mean_g_netinc 
+              
                                     } for s in valid_share_list])
 
 
         self.trading_api.logout()
 
-        df.sort_values(by = ['diff_g_cacgr',]  , inplace= True, ascending= False)
+        df.sort_values(by = ['forcasted_capital_cost',]  , inplace= True, ascending= False)
 
         self.df = df
         try:
@@ -248,11 +252,21 @@ class RDCFAnal():
         worksheet.set_column(
             f"{col_letter['beta']}:{col_letter['price_to_fcf']}", 8, number)
         # worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_ttm']}", 11, percent)
-        worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['focf_cagr']}", 11, percent)
+        worksheet.set_column(f"{col_letter['market_capital_cost']}:{col_letter['forcasted_capital_cost']}", 11, percent)
         worksheet.set_column(f"{col_letter['per']}:{col_letter['price_to_book']}", 11, number)
         worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}", 11, percent )
         worksheet.set_column(f"{col_letter['roe']}:{col_letter['roic']}", 11, percent )
         # worksheet.set_column(f"{col_letter['mean_g_fcf']}:{col_letter['diff_g']}", 13, percent )
+
+        def format_max_min_green_red(ws, col_s : str, col_e : str = None):
+            if col_e is None:
+                col_e = col_s
+            ws.conditional_format(
+                f"{col_letter[col_s]}2:{col_letter[col_e]}{len(df.index)+1}",
+                {"type": "3_color_scale", 'min_type': 'min',
+                'max_type': 'max', 'mid_type' : 'percentile',
+                'min_color' : '#F8696B', "max_color" : '#63BE7B', 
+                "mid_color" : "#FFFFFF"})
 
         # format assumed g
         worksheet.conditional_format(
@@ -270,15 +284,11 @@ class RDCFAnal():
             'min_value' : -0.2, 'mid_value' : 50,  
             'min_color' : '#63BE7B', "max_color" : '#F8696B', 
             "mid_color" : "#FFFFFF"})
-        # format diff history g assumed g
-        worksheet.conditional_format(
-            f"{col_letter['diff_g_cacgr']}2:{col_letter['diff_g_cacgr']}{len(df.index)+1}",
-            {"type": "3_color_scale", 'min_type': 'min',
-            'max_type': 'max', 'mid_type' : 'num',
-            'mid_value' : 0,  
-            'min_color' : '#F8696B', "max_color" : '#63BE7B', 
-            "mid_color" : "#FFFFFF"})
-        # format debt ratio
+   
+        format_max_min_green_red(worksheet, 'history_growth', 'forcast_growth')
+        format_max_min_green_red(worksheet, 'diff_g_cacgr')
+        format_max_min_green_red(worksheet, 'forcasted_capital_cost')
+
 
         worksheet.conditional_format(
             f"{col_letter['debt_to_equity']}2:{col_letter['debt_to_equity']}{len(df.index)+1}",
@@ -335,13 +345,7 @@ class RDCFAnal():
                                     'min_value' : 1, 'mid_value' : 50, "max_value" : 10, 
                                     'min_color' : '#63BE7B', "max_color" : '#F8696B',
                                     "mid_color" : "#FFFFFF"})
-        
-
-        
-        #
-        # worksheet.conditional_format(f"{col_letter['mean_g_fcf']}2:{col_letter['diff_g']}{len(df.index)+1}", {"type": "cell", "criteria": "<", "value": 0, "format": format1})
-        # worksheet.conditional_format(f"{col_letter['mean_g_fcf']}2:{col_letter['diff_g']}{len(df.index)+1}", {"type": "cell", "criteria": ">", "value": 0, "format": format2})
-        
+                
         ##### save config
         df_config = pd.DataFrame.from_dict(self.session_model.config_dict, orient= 'index')
         df_config.to_excel(writer, sheet_name= "config")
