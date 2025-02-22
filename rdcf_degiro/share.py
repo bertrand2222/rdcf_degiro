@@ -1,4 +1,5 @@
 import json, os
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable
 import numpy as np
@@ -8,7 +9,7 @@ from degiro_connector.quotecast.models.chart import ChartRequest, Interval
 from dateutil.relativedelta import relativedelta
 from tabulate import tabulate
 
-from rdcf_degiro.session_model_dcf import SessionModelDCF, MarketInfos
+from rdcf_degiro.session_model_dcf import SessionModelDCF
 from rdcf_degiro.financial_statements import FinancialStatements, DegiroFinancialStatements, YahooFinancialStatements, FinancialForcast
 from rdcf_degiro.share_identity import ShareIdentity
 
@@ -78,6 +79,7 @@ class SharePrice():
         """
         retrive current history from charts
         """
+        print(f'{self.identity.name} : retrieves price history                      ', flush= True, end = "\r")
 
         chart_request = ChartRequest(
             culture="fr-FR",
@@ -142,10 +144,17 @@ class SharePrice():
         except IndexError :
             print(f'{self.identity.name} : warning, not enought data to retrieve intra day price')
 
+
+@dataclass
 class ShareValues():
     """
     Data retrieved from degiro api with get_company_ratio
     """
+    session_model : SessionModelDCF
+    price_data : SharePrice
+    financial_statements : FinancialStatements
+    financial_forcasts : FinancialForcast
+    identity : ShareIdentity
     market_cap : float = None
     roic: float = np.nan
     roe : float = np.nan
@@ -153,30 +162,11 @@ class ShareValues():
     per : float = np.nan
     price_to_fcf : float = None
     price_to_fcf_terminal : float = None
-    net_debt : float = None
-    net_market_cap : float = None
-    debt_to_equity : float = None
-    price_to_book :float = None
-    market_capital_cost : float = None
     _market_wacc : float = None
 
     # history_growth : float = None # free oerating cash flow compound annual  growth
-    
-    # price_currency : str = None
 
-    def __init__(self, session_model : SessionModelDCF,
-                 price_data : SharePrice,
-                 financial_statements : FinancialStatements, 
-                 financial_forcasts : FinancialForcast,
-                 identity : ShareIdentity,
-        ):
-        self.session_model = session_model
-        self.price_data = price_data
-        self.financial_statements = financial_statements
-        self.financial_forcast = financial_forcasts
-        
-        self.identity = identity
-
+    def __post_init__(self):
 
         self.retrieve()
     
@@ -202,16 +192,30 @@ class ShareValues():
         """
         retrieve company ratios fom degiro api
         """
-        ratios = self.session_model.trading_api.get_company_ratios(
-            product_isin=self.identity.isin, 
-            raw = True
-        )
-        if 'data' not in ratios:
-            raise KeyError(f'ratio data not available for isin {self.identity.isin}')
+        print(f'{self.identity.name} : retrieves ratio from degiro              ', flush= True, end = "\r")
+
+        statement_path = os.path.join(self.session_model.output_folder, 
+                                   f"{self.identity.symbol}_company_ratio.json")
+        if self.session_model.update_statements or (not os.path.isfile(statement_path)):
+            _ratios = self.session_model.trading_api.get_company_ratios(
+                product_isin=self.identity.isin, 
+                raw = True
+            )
+            if 'data' not in _ratios:
+                raise KeyError(f'ratio data not available for isin {self.identity.isin}')
+            ratios = _ratios['data']
+            with open(statement_path, 
+                        "w", 
+                        encoding= "utf8") as outfile: 
+                json.dump(ratios, outfile, indent = 4)
+        else:
+            with open(statement_path, "r", encoding= "utf8") as json_file:
+                ratios = json.load(json_file) 
+
         self.market_cap = self.financial_statements.nb_shares * self.price_data.current_price 
 
         ratio_dic = {}
-        for rg in ratios['data']['currentRatios']['ratiosGroups'] :
+        for rg in ratios['currentRatios']['ratiosGroups'] :
             for item in rg['items']:
                 if item['id'] in RATIO_CODES:
                     if 'value' in item:
@@ -236,17 +240,13 @@ class ShareValues():
         # if not self.current_price:
         #     self.retrieve_current_price()
 
-        if self.session_model.output_value_files:
-            with open(os.path.join(self.session_model.output_folder, 
-                                   f"{self.identity.symbol}_company_ratio.json"), 
-                        "w", 
-                        encoding= "utf8") as outfile: 
-                json.dump(ratios['data'], outfile, indent = 4)
+        
 
     def yahoo_retrieve(self):
         """
         compute ratios from degiro statements
         """
+        print(f'{self.identity.name} : retrieves ratio from yahoo              ', flush= True, end = "\r")
         net_income = self.financial_statements.q_inc_ttm_statements['NINC'].sum()
 
         # if self.nb_shares is None:
@@ -268,61 +268,61 @@ class ShareValues():
         return self.financial_statements.last_bal_statements['STLD']
     
     @property
+    def net_debt(self):
+                #net debt     =  total_debt - cash and cash equivalent
+        return  self.total_debt - self.financial_statements.last_bal_statements[
+                self.financial_statements.cash_code]
+    @property
     def stock_equity(self):
         return self.financial_statements.last_bal_statements['QTLE']
     
     @property
+    def market_capital_cost(self):
+        market_infos = self.session_model.rate_info
+        if (not self.session_model.use_beta) or (not self.beta):
+            return market_infos.market_rate
+        
+        free_risk_rate = market_infos.free_risk_rate
+        return free_risk_rate + self.beta * (market_infos.market_rate - free_risk_rate)
+    
+    @property
     def market_wacc(self):
         if self._market_wacc is None:
-            self._market_wacc = self.get_market_wacc()
+            self._market_wacc = self._get_market_wacc()
         return self._market_wacc
     
-    def get_market_wacc(self) :
+    @property
+    def net_market_cap(self):
+        return self.market_cap + self.net_debt
+    
+    @property
+    def debt_to_equity(self) :
+        return self.total_debt / self.stock_equity
+
+    @property
+    def price_to_book(self):
+        return  self.market_cap / self.stock_equity
+    
+    def _get_market_wacc(self) :
         stock_equity = self.stock_equity
         total_debt = self.total_debt
         if stock_equity >= 0 :
             return self.market_capital_cost * stock_equity/(total_debt + stock_equity) + \
-                        self.session_model.market_infos.debt_cost * (1-self.session_model.taxe_rate) * total_debt/(total_debt + stock_equity)
+                    self.session_model.rate_info.debt_cost * (1-self.session_model.taxe_rate) * total_debt/(total_debt + stock_equity)
        
         return  self.market_capital_cost * -stock_equity/total_debt + \
-                self.session_model.market_infos.debt_cost * (1-self.session_model.taxe_rate) * (total_debt + stock_equity)/ total_debt
-    
+                self.session_model.rate_info.debt_cost * (1-self.session_model.taxe_rate) * (total_debt + stock_equity)/ total_debt
+
     def compute_complementary_values(self,):
         """
         compute value and ratios from financial statements and market infos 
         before dcf calculation
         """
         
-        if self.session_model.market_infos is None:
-            self.session_model.market_infos = MarketInfos()
-
-        market_infos = self.session_model.market_infos
-        free_risk_rate = market_infos.free_risk_rate
-
         if self.financial_statements.y_statements is None:
             self.financial_statements.retrieve()
 
         y_statements = self.financial_statements.y_statements
-        
-        last_bal_statements =  self.financial_statements.last_bal_statements
-        
-        if (not self.session_model.use_beta) or (not self.beta):
-            self.market_capital_cost = market_infos.market_rate
-        else : 
-            self.market_capital_cost = free_risk_rate + self.beta * (market_infos.market_rate - free_risk_rate)
-        
-        total_debt = self.total_debt # 'TotalDebt',
-
-        stock_equity = self.stock_equity # CommonStockEquity
-        
-                        
-        #net debt     =  total_debt - cash and cash equivalent
-        self.net_debt = total_debt - last_bal_statements[
-            self.financial_statements.cash_code]
-
-        self.net_market_cap = self.market_cap + self.net_debt
-        self.debt_to_equity = total_debt / stock_equity
-        self.price_to_book = self.market_cap / stock_equity
 
         df_multiple = pd.concat([self.price_data.history_in_financial_currency, 
                                 y_statements[["QTCO" , 'FCFL']]
@@ -334,7 +334,6 @@ class ShareValues():
         # price to fcf multilple calculated as harmonic mean of history:
         self.price_to_fcf = len(df_multiple) / (1 / df_multiple['price_to_fcf']).sum()
             
-        
         self.price_to_fcf_terminal = max(
             self.session_model.terminal_price_to_fcf_bounds[0],
             1 / max(1/self.price_to_fcf, 1/self.session_model.terminal_price_to_fcf_bounds[1])
@@ -342,9 +341,14 @@ class ShareValues():
 
         return(0)
 
-
+@dataclass
 class ShareDCFModule():
-    
+
+    session_model : SessionModelDCF
+    financial_statements : FinancialStatements
+    financial_forcasts : FinancialForcast
+    identity : ShareIdentity
+    values : ShareValues
     g : float = np.nan
     g_ttm : float = np.nan
     g_incf : float = np.nan
@@ -352,39 +356,27 @@ class ShareDCFModule():
     g_delta_forcasted_assumed : float = np.nan
     forcasted_wacc : float = np.nan
 
-    def __init__(self, session_model : SessionModelDCF,
-                 financial_statements : FinancialStatements, 
-                 financial_forcasts : FinancialForcast,
-                 identity : ShareIdentity,
-                 values : ShareValues
-        ):
-        self.session_model = session_model
-        self.financial_statements = financial_statements
-        self.financial_forcasts = financial_forcasts
-        self.identity = identity
-        self.values = values
-
     @property
     def forcasted_capital_cost(self):
         total_debt =  self.values.total_debt
         stock_equity =  self.values.stock_equity
         if stock_equity >= 0 :
             return (self.forcasted_wacc - \
-                    self.session_model.market_infos.debt_cost * (1-self.session_model.taxe_rate) *\
+                    self.session_model.rate_info.debt_cost * (1-self.session_model.taxe_rate) *\
                         total_debt/(total_debt + stock_equity)) *\
                         (total_debt + stock_equity)/stock_equity
         
         return (self.forcasted_wacc - \
-                    self.session_model.market_infos.debt_cost * (1-self.session_model.taxe_rate) *\
+                    self.session_model.rate_info.debt_cost * (1-self.session_model.taxe_rate) *\
                         (total_debt + stock_equity) /total_debt ) *\
                         - stock_equity /(total_debt + stock_equity)
 
-    def eval_g(self, start_fcf : float = None):
+    def compute(self, start_fcf : float = None):
 
         """
         Evaluate company assumed growth rate from fundamental financial data
         """
-        
+        print(f'{self.identity.name} : compute dcf values                     ', )
         fcf = start_fcf  if start_fcf else self.financial_statements.fcf
  
         if self.session_model.use_multiple:
@@ -621,6 +613,6 @@ class Share():
             values= self.values
         )
         self.compute_complementary_values = self.values.compute_complementary_values
-        self.eval_g = self.dcf.eval_g
+        self.eval_g = self.dcf.compute
 
         # self.eval_beta()

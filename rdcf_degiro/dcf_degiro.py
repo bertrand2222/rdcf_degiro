@@ -11,7 +11,7 @@ import pandas as pd
 from degiro_connector.trading.api import API
 from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
 from rdcf_degiro.share import Share
-from rdcf_degiro.session_model_dcf import SessionModelDCF, MarketInfos
+from rdcf_degiro.session_model_dcf import SessionModelDCF
 from importlib import reload
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -124,13 +124,9 @@ class RDCFAnal():
             print('No product to process, retrieve products before')
             return
         
-        self.session_model.market_infos = MarketInfos()
-
         valid_share_list : List[Share] = []
         for s in self.share_list :
             
-            print(f'{s.identity.name} : retrieves all values                    ', flush= True, end = "\r")
-
             s.retrieves_all_values()
             # try:
             #     s.retrieves_all_values()
@@ -146,7 +142,7 @@ class RDCFAnal():
                 print(f"{s.identity.name} : error while computing complementary values \n {type(e).__name__} : {e}")
                 continue
 
-            print(f'{s.identity.name} : eval assumed growth                     ', )
+            
             s.eval_g()
 
             valid_share_list.append(s)

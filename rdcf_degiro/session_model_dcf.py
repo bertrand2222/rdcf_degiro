@@ -1,4 +1,5 @@
 import os, json
+from dataclasses import dataclass
 import requests
 from lxml import html
 import pandas as pd
@@ -10,7 +11,7 @@ from degiro_connector.trading.models.credentials import build_credentials
 
 ERROR_SYMBOL = 1
 MARKET_CURRENCY = "USD"
-HISTORY_TIME = 5 # nb year history
+NO_HISTORY_YEAR = 5 # nb year history
 
 BROWSER_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)\
                     AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0'}
@@ -19,25 +20,14 @@ BROWSER_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)\
 URL_FED_FUND_RATE = "https://ycharts.com/indicators/effective_federal_funds_rate"
 XPATH_FED_FUND_RATE = "/html/body/main/div/div[4]/div/div/div/div/div[2]/div[1]/div[3]/div[2]/div/div[1]/table/tbody/tr[1]/td[2]"
 
-class MarketInfos():
-    """
-    Global market informations
-    """
+
+@dataclass
+class RateInfos():
+    debt_cost : float = None
+    free_risk_rate : float = None
+    market_rate : float = None
     
-    def __init__(self) -> None:
-
-        self.debt_cost : float = None
-        self.free_risk_rate : float = None
-        self.market_rate : float = None
-        self.month_change_rate : pd.DataFrame = None
-        self.var_rm : float = None
-
-        self.rate_history_dic = {}
-        self.rate_current_dic = {}
-
-        self.update()
-    
-    def update(self) :
+    def retrieve(self) :
         """
         Querry market info from web sources and yahoo finance api
         """
@@ -60,9 +50,9 @@ class MarketInfos():
         # sptr = yq.Ticker("^SP500TR").history(period = '5y', interval= "1mo").loc["^SP500TR"]
 
         last_date = sptr_6y.index[-2]
-        time_delta = HISTORY_TIME
+        time_delta = NO_HISTORY_YEAR
         past_date = last_date - relativedelta(years = time_delta)
-        sptr = sptr_6y.loc[past_date:]
+        # sptr = sptr_6y.loc[past_date:]
         sptr_rm = sptr_6y_rm.loc[past_date:]
 
         # delta = relativedelta(last_date, past_date)
@@ -70,44 +60,33 @@ class MarketInfos():
         self.market_rate =  (sptr_rm.loc[last_date]['close'] / sptr_rm.loc[past_date]['close'])**(1/time_delta) - 1 # S&P 500 mean year rate over 5 years
         print(f"market rate = {self.market_rate*100:.2f}%")
 
-        self.month_change_rate = sptr["adjclose"][:-1].pct_change(periods = 1).rename('rm')
-        self.var_rm = self.month_change_rate.var()
+        # self.month_change_rate = sptr["adjclose"][:-1].pct_change(periods = 1).rename('rm')
+        # self.var_rm = self.month_change_rate.var()
+    
+    def save(self,path:str):
+        with open(os.path.join(path),
+                        "w", 
+                        encoding= "utf8") as outfile:
+            json.dump(self.__dict__, outfile, indent = 4)
 
-
-    def update_rate_dic(self, currency_1, currency_2, ):
-        """
-        Record change rate hystory and curent value for one currency pair
-        """
-        if currency_1 == currency_2 :
-            return
-        rate_symb = currency_1 + currency_2 + "=X"
-        if rate_symb not in self.rate_history_dic :
-            try :
-                currency_history = yq.Ticker(rate_symb).history(period= '6y',
-                                                                interval= "1mo", 
-                                                                ).loc[rate_symb]
-            except KeyError as e:
-                raise KeyError(f'rate symbol {rate_symb} not found in yahoofinance database') from e
-            
-            self.rate_history_dic[rate_symb] = currency_history[["close"]].iloc[:-1].rename(
-                columns = {'close' : 'change_rate'}).reindex(
-                    pd.to_datetime(currency_history.index[:-1]))
-            self.rate_current_dic[rate_symb] = currency_history["close"].iloc[-1]
+    def read(self,path: str):
+        with open(os.path.join(path),
+                        "r", 
+                        encoding= "utf8") as readfile:
+            self.__dict__.update(json.load( readfile))
 
 
 class SessionModelDCF():
 
     """
-    Oobject containing all global data
+    Object containing all global data
     """
     
     credential_file_path : str = None
     use_beta = False
     use_multiple = True
     history_avg_nb_year : int = 3
-    # delta_avg_nb_year : int = 2
     nb_year_dcf : int = 10
-    output_value_files : bool = False
     use_last_intraday_price : bool = False
     terminal_price_to_fcf_bounds = [1, 100]
     output_folder = os.getenv("TEMP")
@@ -116,15 +95,25 @@ class SessionModelDCF():
     yahoo_symbol_cor = None
     retrieve_shares_from_favorites = True
     retrieve_shares_from_portfolio = True
+    update_market_rate = False
+    update_statements = False
+    rate_history_dic = {}
+    rate_current_dic = {}
+    chart_fetcher : ChartFetcher = None
+    trading_api : API = None
     
     def __init__(self, config_dict : dict):
 
         self.__dict__.update(config_dict)
         self.config_dict = self.__dict__.copy()
 
-        self.market_infos : MarketInfos = None
-        self.chart_fetcher : ChartFetcher = None
-        self.trading_api : API = None
+        self.rate_info = RateInfos()
+        market_info_path = os.path.join(self.output_folder,"market_info.json")
+        if self.update_market_rate or (not os.path.isfile(market_info_path)):
+            self.rate_info.retrieve()
+            self.rate_info.save(market_info_path)
+        else:
+            self.rate_info.read(market_info_path)
 
         if not os.path.isdir(self.output_folder):
             raise FileNotFoundError(f"The specified output folder does not exist {self.output_folder}")
@@ -150,4 +139,33 @@ class SessionModelDCF():
         credentials = build_credentials(location=self.credential_file_path )
         self.trading_api = API(credentials = credentials )
         self.trading_api.connect()
+
+   
+    
+    def update_rate_dic(self, currency_1, currency_2, ):
+        """
+        Record change rate hystory and curent value for one currency pair
+        """
+        if currency_1 == currency_2 :
+            return
+        rate_symb = currency_1 + currency_2 + "=X"
+        if rate_symb not in self.rate_history_dic :
+            rate_path = os.path.join(self.output_folder,f'{rate_symb}_history.pckl')
+            if self.update_statements or( not os.path.isfile(rate_path)):
+                try :
+                    
+                    currency_history = yq.Ticker(rate_symb).history(period= '6y',
+                                                                    interval= "1mo", 
+                                                                    ).loc[rate_symb]
+                except KeyError as e:
+                    raise KeyError(f'rate symbol {rate_symb} not found in yahoofinance database') from e
+                
+                currency_history.to_pickle(rate_path)
+            else :
+                currency_history = pd.read_pickle(rate_path)
+
+            self.rate_history_dic[rate_symb] = currency_history[["close"]].iloc[:-1].rename(
+                columns = {'close' : 'change_rate'}).reindex(
+                    pd.to_datetime(currency_history.index[:-1]))
+            self.rate_current_dic[rate_symb] = currency_history["close"].iloc[-1]
 
