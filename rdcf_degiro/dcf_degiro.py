@@ -13,7 +13,7 @@ from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
 from rdcf_degiro.share import Share
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 from importlib import reload
-
+from rdcf_degiro.financial_statements import YahooRetrieveError
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 urllib3.disable_warnings()
@@ -127,24 +127,12 @@ class RDCFAnal():
         valid_share_list : List[Share] = []
         for s in self.share_list :
             
-            s.retrieves_all_values()
-            # try:
-            #     s.retrieves_all_values()
-            # except (KeyError, TypeError, ValueError, AttributeError) as e:
-            #     print(f"{s.identity.name} : error while retrieving values \n {type(e).__name__} : {e}   ")
-            #     continue
-            
-            print(f'{s.identity.name} : compute complementary values            ', flush= True, end='\r')
-
-            try:
-                s.compute_complementary_values()
-            except (KeyError, TypeError) as e:
-                print(f"{s.identity.name} : error while computing complementary values \n {type(e).__name__} : {e}")
+            try :
+                s.retrieves_all_values()
+            except (YahooRetrieveError) as e:
+                print(f"{s.identity.name} : error while retrieving values from yahoo \n {type(e).__name__} : {e}   ")
                 continue
-
-            
-            s.eval_g()
-
+        
             valid_share_list.append(s)
 
         print("generate summary table")
@@ -165,10 +153,10 @@ class RDCFAnal():
                                 'wacc' :                s.values.market_wacc ,
                                 'assumed_g' :           s.dcf.g ,  
                                 'assumed_g_ttm' :       s.dcf.g_ttm,  
-                                'assumed_g_incf' :        s.dcf.g_incf ,
-                                'assumed_g_incf_ttm' :    s.dcf.g_incf_ttm,
+                                # 'assumed_g_incf' :        s.dcf.g_incf ,
+                                # 'assumed_g_incf_ttm' :    s.dcf.g_incf_ttm,
                                 'history_growth'         : s.financial_statements.history_growth,
-                                "forcast_growth" :       s.financial_forcasts.forcasted_growth,
+                                "forcast_growth" :       s.financial_forcasts.forcasted_sal_growth,
                                 'diff_g_cacgr'         : s.dcf.g_delta_forcasted_assumed,
                                 'forcasted_capital_cost'         : s.dcf.forcasted_capital_cost,
                                 'per' :                 s.values.per,
@@ -272,14 +260,14 @@ class RDCFAnal():
             'min_value' : -0.2, 'mid_value' : 50,  
             'min_color' : '#63BE7B', "max_color" : '#F8696B', 
             "mid_color" : "#FFFFFF"})
-        # format assumed g_focf
-        worksheet.conditional_format(
-            f"{col_letter['assumed_g_incf']}2:{col_letter['assumed_g_incf_ttm']}{len(df.index)+1}",
-            {"type": "3_color_scale", 'min_type': 'num',
-            'max_type': 'max', 'mid_type' : 'percentile',
-            'min_value' : -0.2, 'mid_value' : 50,  
-            'min_color' : '#63BE7B', "max_color" : '#F8696B', 
-            "mid_color" : "#FFFFFF"})
+        # # format assumed g_focf
+        # worksheet.conditional_format(
+        #     f"{col_letter['assumed_g_incf']}2:{col_letter['assumed_g_incf_ttm']}{len(df.index)+1}",
+        #     {"type": "3_color_scale", 'min_type': 'num',
+        #     'max_type': 'max', 'mid_type' : 'percentile',
+        #     'min_value' : -0.2, 'mid_value' : 50,  
+        #     'min_color' : '#63BE7B', "max_color" : '#F8696B', 
+        #     "mid_color" : "#FFFFFF"})
    
         format_max_min_green_red(worksheet, 'history_growth', 'forcast_growth')
         format_max_min_green_red(worksheet, 'diff_g_cacgr')

@@ -6,10 +6,10 @@ import json, os
 from dateutil.relativedelta import relativedelta
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 from rdcf_degiro.share_identity import ShareIdentity
-from sklearn.linear_model import LinearRegression
+# from sklearn.linear_model import LinearRegression
 # import matplotlib.pylab as plt
 import numpy as np
-
+import re
 OVERLAPING_DAYS_TOL = 7
 
 YA_INCOME_INFOS = [ 'FreeCashFlow','TotalRevenue', "NetIncome", "OperatingCashFlow", 'CapitalExpenditure', 'ChangeInWorkingCapital']
@@ -52,7 +52,7 @@ PAYOUT_INFOS = ["FCDP", "FPSS" ]
 
 FINANCIAL_ST_CODES =   INC_CODES + BAL_CODES + CASH_CODES
 
-FINANCIAL_FCST_CODES =  ['NET', 'SAL', 'PRE']
+FINANCIAL_FCST_CODES =  ['NET', 'SAL', 'PRE', 'CPX']
 RENAME_DIC = {
     "TotalRevenue" :                "RTLR",
     "OperatingCashFlow" :           "OTLO",
@@ -72,9 +72,11 @@ SPECIAL_CURRENCIES = {
     'GBX' : {'real' : 'GBP', 'rate_factor' : 0.01}
 }
 
+class YahooRetrieveError(Exception):
+    pass
 class Statements():
 
-    financial_currency :str = None
+    currency :str = None
     rate_factor = 1
     rate_symb = None
 
@@ -89,23 +91,24 @@ class Statements():
         Convert financial statement from statement curency to share price history 
         curency considering the change rate history over the period
         """
-        if self.financial_currency == self.identity.currency:
+        if self.currency == self.identity.currency:
             return
         print(f'{self.identity.name} : convert statement to price currency                                  ')
-        df_attr_list = [k for k, v in self.__dict__.items() if isinstance(v, pd.DataFrame)]
         share_currency = self.identity.currency
         if self.identity.currency in  SPECIAL_CURRENCIES :
             share_currency = SPECIAL_CURRENCIES[self.identity.currency]['real']
             self.rate_factor = SPECIAL_CURRENCIES[self.identity.currency]['rate_factor']
         
-        if share_currency != self.financial_currency:
-            print(f'{self.identity.name} : retrieve {self.financial_currency}/{share_currency} history                    ')
-            self.session_model.update_rate_dic(  self.financial_currency, share_currency
+        if share_currency != self.currency:
+            print(f'{self.identity.name} : retrieve {self.currency}/{share_currency} history                    ')
+            self.session_model.update_rate_dic(  self.currency, share_currency
                                                             )
-            self.rate_symb = self.financial_currency +  share_currency   + "=X"
+            self.rate_symb = self.currency +  share_currency   + "=X"
 
+        df_attr_list = [k for k, v in self.__dict__.items() if isinstance(v, pd.DataFrame)]
         for  attr in df_attr_list:
-            self.__setattr__(attr, self.convert_to_price_curency_df(self.__getattribute__(attr)))
+            self.__dict__[attr] = self.convert_to_price_curency_df(self.__dict__[attr])
+            # self.__setattr__(attr, self.convert_to_price_curency_df(self.__getattribute__(attr)))
 
     def convert_to_price_curency_df(self, p_df):
         """
@@ -135,7 +138,8 @@ class Statements():
 class FinancialForcast(Statements):
 
     y_forcasts : pd.DataFrame = None
-    _forcasted_growth : float = None
+    _forcasted_sal_growth : float = None
+    _forcasted_cpx_growth : float = None
     def __init__(self, session_model : SessionModelDCF, identity : ShareIdentity):
 
         super().__init__(session_model= session_model, identity= identity)
@@ -148,8 +152,9 @@ class FinancialForcast(Statements):
             self.convert_to_price_currency()
 
     def retrieve(self):
-        
-        print(f'{self.identity.name} : retrieves forcast                    ', flush= True, end = "\r")
+
+        print(f'{self.identity.name} : retrieves forcast                    ',
+                flush= True, end = "\r")
         statement_path = os.path.join(self.session_model.output_folder, 
                                     f"{self.identity.symbol}_company_forcast.json")
         if self.session_model.update_statements or (not os.path.isfile(statement_path)):
@@ -183,19 +188,19 @@ class FinancialForcast(Statements):
 
         self.y_forcasts = pd.DataFrame.from_records(
             data).set_index('endDate').sort_index().dropna()
-        self.financial_currency = estimates_summaries['currency']
+        self.currency = estimates_summaries['currency']
 
 
     @property
-    def forcasted_growth(self):
+    def forcasted_sal_growth(self):
         """
         forcasted annual growth rate
         """
-        if self._forcasted_growth is None :
-            self._forcasted_growth = self._get_forcast_growth()
-        return self._forcasted_growth
+        if self._forcasted_sal_growth is None :
+            self._forcasted_sal_growth = self._get_forcast_sal_growth()
+        return self._forcasted_sal_growth
     
-    def _get_forcast_growth(self):
+    def _get_forcast_sal_growth(self):
         """
         retruned growth rate fited from estimate 
         """
@@ -212,13 +217,47 @@ class FinancialForcast(Statements):
             return np.nan
 
         x = np.arange(len(self.y_forcasts.index))
-        x = x[:, np.newaxis]
-        a, _, _, _ = np.linalg.lstsq(x,y)
-        g= np.exp(a[0]) - 1
         
-        # z = np.polyfit(x,y, deg = 1)
-        # g = np.exp(z[0]) - 1 
+        # x = x[:, np.newaxis]
+        # a, _, _, _ = np.linalg.lstsq(x,y)
+        # g= np.exp(a[0]) - 1
+        
+        z = np.polyfit(x,y, deg = 1)
+        g = np.exp(z[0]) - 1 
+        return g
+    
+    @property
+    def forcasted_cpx_growth(self):
+        """
+        forcasted annual growth rate
+        """
+        if self._forcasted_cpx_growth is None :
+            self._forcasted_cpx_growth = self._get_forcast_cpx_growth()
+        return self._forcasted_cpx_growth
+    
+    def _get_forcast_cpx_growth(self):
+        """
+        retruned growth rate fited from estimate 
+        """
+        
+        if self.y_forcasts is None:
+            return np.nan
+        y = None
+        for val in ['CPX',] :
+            if val in self.y_forcasts and self.y_forcasts[val].min() > 0 : 
+                y = np.log(self.y_forcasts[val].values / self.y_forcasts[val].iloc[0])
+                break
+        if y is None :# no valid values 
+            print(f"{self.identity.symbol} no valid value to compute estimate")
+            return np.nan
 
+        x = np.arange(len(self.y_forcasts.index))
+        # x = x[:, np.newaxis]
+        # a, _, _, _ = np.linalg.lstsq(x,y)
+        # g= np.exp(a[0]) - 1
+        
+        z = np.polyfit(x,y, deg = 1)
+        g = np.exp(z[0]) - 1 
         return g
 
 
@@ -232,19 +271,15 @@ class FinancialStatements(Statements):
     q_inc_statements : pd.DataFrame = None
     q_bal_statements : pd.DataFrame = None     
     q_cas_statements : pd.DataFrame = None
-    q_inc_ttm_statements = pd.DataFrame = None
-    last_bal_statements : pd.DataFrame = None
+    _inc_ttm_statements_df : pd.DataFrame = None
+    _cas_ttm_statements_df : pd.DataFrame = None
     nb_shares = None
     cash_code : str = 'ACAE'
     total_revenue_code : str = 'RTLR'
     # gross_profit_code : str = 'SGRP'
     fcf : float = None
-    fcf_ttm : float = None
-    incf : float = None
-    incf_ttm : float = None
+    # focf : float = None
     nincf : float = None
-    _y_inc_complete_statements : pd.DataFrame = None
-    _y_cas_complete_statements : pd.DataFrame = None
     _history_growth : float = None
     # ttm_inc_period : float = None
 
@@ -252,19 +287,23 @@ class FinancialStatements(Statements):
         
         super().__init__(session_model= session_model, identity= identity)
 
-        
         self.retrieve()
-
+        
+        self.y_statements.loc[:,'periodLength'] = 12
+        self.y_statements.loc[:,'periodType'] = 'M'
         
         self.convert_to_price_currency()
 
-        self.q_cashflow_available = ('FCFL' in self.q_cas_statements.columns)
+        self.q_cashflow_available = ('OTLO' in self.q_cas_statements.columns)
         # compute cash flow from income
-        self.y_statements.loc[:,'FOCF'] = self.y_statements.loc[:,"OTLO"] - self.y_statements.loc[:,"SOCF"]
-        if "OTLO" in self.q_cas_statements.columns:
-            self.q_cas_statements.loc[:,'FOCF'] = self.q_cas_statements.loc[:,"OTLO"] - self.q_cas_statements.loc[:,"SOCF"]
+        # self.y_statements.loc[:,'FOCF'] = self.y_statements.loc[:,"OTLO"] - self.y_statements.loc[:,"SOCF"]
+        # if "OTLO" in self.q_cas_statements.columns:
+        #     self.q_cas_statements.loc[:,'FOCF'] = self.q_cas_statements.loc[:,"OTLO"] - self.q_cas_statements.loc[:,"SOCF"]
+        self._y_inc_complete_statements = pd.concat([self.y_statements,
+                                         self._inc_ttm_statements_df])
 
-        self.last_bal_statements = self.q_bal_statements.iloc[-1]
+        # self._y_cas_complete_statements = pd.concat([self.y_statements,
+        #                             self._cas_ttm_statements_df]).dropna(subset= CASH_CODES)
         
         self.compute_avg_values()
 
@@ -281,79 +320,40 @@ class FinancialStatements(Statements):
         q_inc_statements =  self.q_inc_statements
         y_statements = self.y_statements
         
+        complement_q_inc = q_inc_statements.loc[q_inc_statements.index
+                                                            > y_statements.index[-1]]
         history_avg_nb_year = min(self.session_model.history_avg_nb_year, len(y_statements.index))
 
-        complement_q_cas_fcfl = 0
-        complement_q_cas_focf = 0
-        q_cas_complement_time = 0
-        if self.q_cashflow_available :
-            complement_q_cas = q_cas_statements.loc[q_cas_statements.index
-                                                                > y_statements.index[-1]]
-            
-            if 'periodType' in complement_q_cas:
-                q_cas_complement_time =  complement_q_cas.loc[complement_q_cas['periodType'] == 'M','periodLength'].sum() /12 + \
-                                    complement_q_cas.loc[complement_q_cas['periodType'] == 'W','periodLength'].sum() /52
-            else :
-                q_cas_complement_time = len(complement_q_cas.index) * 3 / 12
-            
-            complement_q_cas_fcfl = complement_q_cas['FCFL'].sum()
-            complement_q_cas_focf = complement_q_cas['FOCF'].sum()
+        all_cas = pd.concat([y_statements.iloc[-history_avg_nb_year:],
+                            q_cas_statements.loc[q_cas_statements.index > y_statements.index[-1]]
+                            ]
+                            , axis = 0).dropna(subset = 'OTLO')
 
-        q_cas_nb_year_avg = history_avg_nb_year + q_cas_complement_time
+        all_cas_time = all_cas.loc[all_cas['periodType'] == 'M','periodLength'].sum() /12 + \
+                                all_cas.loc[all_cas['periodType'] == 'W','periodLength'].sum() /52
 
-        self.fcf = (y_statements.loc[:,'FCFL'].iloc[-history_avg_nb_year:].sum() \
-                    + complement_q_cas_fcfl
-                    ) / q_cas_nb_year_avg
-        self.incf = (y_statements.loc[:,'FOCF'].iloc[-history_avg_nb_year:].sum() \
-                    + complement_q_cas_focf
-                    ) / q_cas_nb_year_avg
-        self.nincf = self.fcf - self.incf
+        self.fcf = all_cas.loc[:,'FCFL'].sum() / all_cas_time
 
-        
-        # TTM values
-        ttm_start_time = q_inc_statements.index[-1] - relativedelta(years= 1)
-        q_inc_ttm_statements = q_inc_statements.loc[
-            q_inc_statements.index > ttm_start_time]
-        self.q_inc_ttm_statements = q_inc_ttm_statements
+        # self.focf = (y_statements.loc[:,'FOCF'].iloc[-history_avg_nb_year:].sum() \
+        #             + complement_q_cas_focf
+        #             ) / q_cas_nb_year_avg
+        # self.nincf = self.fcf - self.focf
 
-        y_ttm_line = q_inc_ttm_statements.sum().to_frame().T
-        y_ttm_line.index = [q_inc_ttm_statements.index[-1]]
-
-        self._y_inc_complete_statements = pd.concat([y_statements,
-                                         y_ttm_line])
-       
-        # # inc ttm real period in years
-        # if 'periodType' in q_inc_ttm_statements:
-        #     self.ttm_inc_period = (((q_inc_ttm_statements['periodType'] == 'M') * q_inc_ttm_statements['periodLength']).sum() /12 + (
-        #             (q_inc_ttm_statements['periodType'] == 'W') * q_inc_ttm_statements['periodLength']).sum() /52)
-        # else:
-        #     self.ttm_inc_period = len(q_inc_ttm_statements.index) * 3 / 12
-
-        if self.q_cashflow_available :
-            ttm_start_time = q_cas_statements.index[-1] - relativedelta(years= 1)
-            q_cas_ttm_statements = q_cas_statements.loc[
-                q_cas_statements.index > ttm_start_time]
-            
-            y_ttm_line = q_cas_ttm_statements.sum().to_frame().T
-            y_ttm_line.index = [q_cas_ttm_statements.index[-1]]
-
-            y_cas_complete_statements = pd.concat([y_statements,
-                                            y_ttm_line])
-            
-            # cash flow ttm real period in years
-            if 'periodType' in q_cas_ttm_statements:
-                ttm_period = (((q_cas_ttm_statements['periodType'] == 'M') * q_cas_ttm_statements['periodLength']).sum() /12 + (
-                        (q_cas_ttm_statements['periodType'] == 'W') * q_cas_ttm_statements['periodLength']).sum() /52)
-            else:
-                ttm_period = len(q_cas_ttm_statements.index) * 3 / 12
-
-            self.fcf_ttm = q_cas_ttm_statements['FCFL'].sum() / ttm_period
-            self.incf_ttm = q_cas_ttm_statements['FOCF'].sum() / ttm_period
-
-        else:
-            y_cas_complete_statements = y_statements
-
-        self._y_cas_complete_statements = y_cas_complete_statements
+    @property
+    def last_bal_statements(self) -> pd.Series :
+        return None
+    @property
+    def inc_ttm_statements(self) -> pd.Series :
+        return self._inc_ttm_statements_df.iloc[-1]
+    @property
+    def cas_ttm_statements(self) -> pd.Series :
+        return self._cas_ttm_statements_df.iloc[-1]
+    @property    
+    def fcf_ttm(self):
+        return self.cas_ttm_statements['FCFL']
+    # @property
+    # def focf_ttm(self):
+    #     return self.cas_ttm_statements['FOCF']
 
     @property
     def total_payout_ratio(self) -> float:
@@ -420,11 +420,14 @@ class YahooFinancialStatements(FinancialStatements):
         
         if self.session_model.update_statements or (not os.path.isfile(y_statements_path)):
             tk = yq.Ticker(symb)
-            print(f'{self.identity.name} rkzeqojg read statement gdgkgfdkmhlfhd')
             y_statements : pd.DataFrame = tk.get_financial_data(TYPES)
+            if not isinstance(y_statements, pd.DataFrame):
+                raise YahooRetrieveError(
+                    f"{symb} symbol not available in yahoo database")
             y_statements.to_pickle(y_statements_path)
             q_statements : pd.DataFrame = tk.get_financial_data(TYPES , frequency= "q",
                                                         trailing= False).set_index('asOfDate')
+            
             q_statements.to_pickle(q_statements_path)
         else:
             print(f'{self.identity.name} read data frame')
@@ -433,20 +436,30 @@ class YahooFinancialStatements(FinancialStatements):
 
         if not isinstance(y_statements, pd.DataFrame):
             raise TypeError('financial data is not a valid dataframe')
-        financial_currency = y_statements.dropna(subset="FreeCashFlow")["currencyCode"].value_counts().idxmax()
+
+        currency = y_statements.dropna(subset="FreeCashFlow")["currencyCode"].value_counts().idxmax()
         y_statements = y_statements.sort_values(by = ['asOfDate' , 'BasicAverageShares'], ascending=[1, 0])
 
         y_statements['BasicAverageShares'] = y_statements['BasicAverageShares'].ffill(axis = 0, )
-        y_statements = y_statements.loc[y_statements['currencyCode'] == financial_currency ]
-
+        y_statements = y_statements.loc[y_statements['currencyCode'] == currency ]
+        
+        y_statements = y_statements.rename(columns= RENAME_DIC)
+        q_statements = q_statements.rename(columns= RENAME_DIC)
         
         y_statements = y_statements.ffill(axis = 0).drop_duplicates(
                                                                 subset = ['asOfDate', ],
                                                                 keep= 'last').set_index('asOfDate')
             
+        q_statements = q_statements.loc[q_statements['currencyCode'] == currency ]
+        y_statements[[c for c in y_statements.columns if c not in ['periodType', 'currencyCode']]] *= 1e-6
+        q_statements[[c for c in q_statements.columns if c not in ['periodType', 'currencyCode']]] *= 1e-6
+   
+        self._inc_ttm_statements_df = y_statements.loc[y_statements['periodType'] == 'TTM'].iloc[[-1]]
+        self._cas_ttm_statements_df = self._inc_ttm_statements_df
 
-        q_statements = q_statements.loc[q_statements['currencyCode'] == financial_currency ]
-
+        max_occur_month = y_statements.index.month.value_counts().idxmax()
+        y_statements = y_statements.loc[y_statements.index.month == max_occur_month ]
+        
         if isinstance(q_statements, pd.DataFrame) :
             q_statements.ffill(axis = 0, inplace = True)
             last_date_y = y_statements.index[-1]
@@ -455,47 +468,51 @@ class YahooFinancialStatements(FinancialStatements):
             for d in YA_BALANCE_INFOS:
                 if d in q_statements.columns :
                     y_statements.loc[last_date_y , d] = q_statements.loc[last_date_q , d]
-
-        max_occur_month = y_statements.index.month.value_counts().idxmax()
-        y_statements = y_statements.loc[y_statements.index.month == max_occur_month ]
-        y_statements = y_statements.rename(columns= RENAME_DIC)
-        q_statements = q_statements.rename(columns= RENAME_DIC)
-
-        y_statements[[c for c in y_statements.columns if c not in ['periodType', 'currencyCode']]] *= 1e-6
-
+        
         self.y_statements = y_statements
+        
 
-        self.q_inc_statements = q_statements[list(set(INC_CODES) & set(q_statements.columns))] * 1e-6
-        self.q_bal_statements = q_statements[list(set(BAL_CODES) & set(q_statements.columns))] * 1e-6
-        self.q_cas_statements = q_statements[list(set(CASH_CODES) & set(q_statements.columns))] * 1e-6
+        q_statements['periodLength'] = q_statements['periodType'].apply(lambda x : int(re.search('^[0-9]+',x).group()))
+        q_statements['periodType'] = q_statements['periodType'].apply(lambda x : re.search('[A-Z]+$',x).group())
 
-        # print(self.q_cas_statements)
-        self.nb_shares = self.q_bal_statements["QTCO"].iloc[-1]
+        self.q_inc_statements = q_statements[['periodLength' , 'periodType'] + list(set(INC_CODES) & set(q_statements.columns))]
+        self.q_bal_statements = q_statements[list(set(BAL_CODES) & set(q_statements.columns))]
+        self.q_cas_statements = q_statements[['periodLength' , 'periodType'] + list(set(CASH_CODES) & set(q_statements.columns))] 
 
-        self.financial_currency = y_statements['currencyCode'].iloc[-1]
+        self.nb_shares = self.y_statements["QTCO"].iloc[-1]
 
+        self.currency = y_statements['currencyCode'].iloc[-1]
+
+    @property
+    def last_bal_statements(self) -> pd.Series :
+        return self.y_statements.iloc[-1]
+        
 class DegiroFinancialStatements(FinancialStatements):
 
     def __init__(self, session_model : SessionModelDCF, identity : ShareIdentity):
-        super().__init__(session_model= session_model, identity= identity) 
+        super().__init__(session_model= session_model, identity= identity)
 
 
     def retrieve(self):
         """
         Retrieve financial statements from degiro api
         """
-        print(f'{self.identity.name} : retrieves financial statement from degiro         ', flush= True, end = "\r")
+        print(f'{self.identity.name} : retrieves financial statement from degiro            ', flush= True, end = "\r")
         statement_path = os.path.join(self.session_model.output_folder, 
                                     f"{self.identity.symbol}_company_financial.json")
+        # print(os.path.isfile(statement_path))
         if self.session_model.update_statements or (not os.path.isfile(statement_path)):
+
+            r_financial_st = self.session_model.trading_api.get_financial_statements(
+                        product_isin= self.identity.isin,
+                        raw= True
+                    )
+            if r_financial_st is None:
+                raise KeyError('no financial statement available from degiro ')
             try:
-                financial_st = self.session_model.trading_api.get_financial_statements(
-                            product_isin= self.identity.isin,
-                            raw= True
-                        )['data']
+                financial_st = r_financial_st['data']
             except KeyError as e:
                 raise KeyError(f'no financial statement found for isin {self.identity.isin}') from e
-                    
             
             with open(statement_path,
                         "w", 
@@ -505,16 +522,17 @@ class DegiroFinancialStatements(FinancialStatements):
             with open(statement_path, "r", encoding= "utf8") as json_file:
                 financial_st = json.load(json_file)
 
-        self.financial_currency = financial_st['currency']
+        self.currency = financial_st['currency']
 
         self.retrieve_annual(financial_st= financial_st)
-
         self.retrieve_quarterly(financial_st= financial_st)
 
         
-   
-        return(0)
-    
+
+    @property
+    def last_bal_statements(self):
+        return self.q_bal_statements.iloc[-1]
+        
 
     def retrieve_annual(self, financial_st : dict):
         """
@@ -539,8 +557,7 @@ class DegiroFinancialStatements(FinancialStatements):
         if 'RTLR' not in y_statements.columns :
             self.total_revenue_code = 'SIIB'
         
-        y_statements['periodLength'] = 12
-        y_statements['periodType'] = 'M'
+    
         # free cash flow            = Cash from Operating Activities + Capital Expenditures( negative), 
         bal_cols = list(set(BAL_CODES) & set(y_statements.columns))
         y_statements[bal_cols] = y_statements[bal_cols].ffill().bfill()
@@ -596,20 +613,49 @@ class DegiroFinancialStatements(FinancialStatements):
             q_cas_statements['FCFL'] += q_cas_statements["SCEX"]
 
 
-        self.q_inc_statements = q_inc_statements.set_index('endDate')
-        self.q_bal_statements = q_bal_statements.set_index('endDate')
-        self.q_cas_statements = q_cas_statements.set_index('endDate')
+        q_inc_statements.set_index('endDate', inplace= True)
+        q_bal_statements.set_index('endDate', inplace= True)
+        q_cas_statements.set_index('endDate', inplace= True)
 
-        self.nb_shares = self.q_bal_statements["QTCO"].iloc[-1]
+        self.nb_shares = q_bal_statements["QTCO"].iloc[-1]
 
+        # TTM values
+        ### income
+        ttm_start_time = q_inc_statements.index[-1] - relativedelta(years= 1)
+        q_inc_ttm_statements  = q_inc_statements.loc[
+            q_inc_statements.index > ttm_start_time]
+        
+        self._inc_ttm_statements_df = q_inc_ttm_statements.sum().to_frame().T
+        self._inc_ttm_statements_df.index = [q_inc_statements.index[-1]]
+
+        ttm_period = (((q_inc_ttm_statements['periodType'] == 'M') * q_inc_ttm_statements['periodLength']).sum() /12 + (
+                    (q_inc_ttm_statements['periodType'] == 'W') * q_inc_ttm_statements['periodLength']).sum() /52)
+        self._inc_ttm_statements_df[list(set(INC_CODES) & set(self._inc_ttm_statements_df.columns))] /= ttm_period
+
+        #### cash flows
+        ttm_start_time = q_cas_statements.index[-1] - relativedelta(years= 1)
+        q_cas_ttm_statements = q_cas_statements.loc[
+            q_cas_statements.index > ttm_start_time]
+        
+        self._cas_ttm_statements_df = q_cas_ttm_statements.sum().to_frame().T
+        self._cas_ttm_statements_df.index = [q_cas_ttm_statements.index[-1]]
+
+        ttm_period = (((q_cas_ttm_statements['periodType'] == 'M') * q_cas_ttm_statements['periodLength']).sum() /12 + (
+                (q_cas_ttm_statements['periodType'] == 'W') * q_cas_ttm_statements['periodLength']).sum() /52)
+        
+        self._cas_ttm_statements_df[list(set(CASH_CODES) & set(self._cas_ttm_statements_df.columns))] /= ttm_period
+        
+        self.q_inc_statements = q_inc_statements
+        self.q_bal_statements = q_bal_statements
+        self.q_cas_statements = q_cas_statements
 
 def remove_overlapping_data(p_df:pd.DataFrame):
     """
-    correct period lenght dependant data in dataframe if period  of one row is overlapping previous
+    correct period length dependant data in dataframe if period  of one row is overlapping previous
     """
     value_cols = ["periodLength"] + [c for c in p_df.columns if c in FINANCIAL_ST_CODES]
 
-    #### eval coresponding startDate from end date and periodLenght
+    #### eval coresponding startDate from end date and periodLength
     p_df['startDate'] = p_df.apply(lambda x : get_date_shift_back(x.endDate,
                                                                     months = (x.periodType == 'M') * x.periodLength,
                                                                     weeks = (x.periodType == 'W') * x.periodLength,
@@ -622,7 +668,7 @@ def remove_overlapping_data(p_df:pd.DataFrame):
     ### mark as overlaping line for which the period cover the one of previous line
     p_df["overlaping"] = p_df['startDate'] < p_df['startDate_shift']
 
-    ### correct overlaping line by substracting from it periodLenght and values from previous line
+    ### correct overlaping line by substracting from it periodLength and values from previous line
     p_df.loc[p_df["overlaping"], value_cols] -= p_df[value_cols].shift()
     p_df.drop(['startDate', 'startDate_shift', 'overlaping'], inplace = True, axis = 1)
 

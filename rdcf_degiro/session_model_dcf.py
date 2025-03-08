@@ -81,7 +81,6 @@ class SessionModelDCF():
     """
     Object containing all global data
     """
-    
     credential_file_path : str = None
     use_beta = False
     use_multiple = True
@@ -121,7 +120,6 @@ class SessionModelDCF():
         if "credential_file_path" not in config_dict :
             raise KeyError("Missing credential_file_path definition in input")
         
-
         self.connect()
 
     def connect(self) :
@@ -139,8 +137,7 @@ class SessionModelDCF():
         credentials = build_credentials(location=self.credential_file_path )
         self.trading_api = API(credentials = credentials )
         self.trading_api.connect()
-
-   
+        print(self.trading_api.get_client_details())
     
     def update_rate_dic(self, currency_1, currency_2, ):
         """
