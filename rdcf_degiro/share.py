@@ -348,8 +348,8 @@ class ShareDCFModule():
     financial_forcasts : FinancialForcast
     identity : ShareIdentity
     values : ShareValues
-    g : float = np.nan
-    g_ttm : float = np.nan
+    g           : float = np.nan
+    g_ttm       : float = np.nan
     # g_incf : float = np.nan
     # g_incf_ttm : float = np.nan
     g_delta_forcasted_assumed : float = np.nan
@@ -359,7 +359,8 @@ class ShareDCFModule():
     def forcasted_capital_cost(self):
         total_debt =  self.values.total_debt
         stock_equity =  self.values.stock_equity
-        print(self.forcasted_wacc)
+        if np.isnan(self.forcasted_wacc) :
+            return np.nan
         if stock_equity >= 0 :
             return (self.forcasted_wacc - \
                     self.session_model.rate_info.debt_cost * (1-self.session_model.taxe_rate) *\
@@ -396,12 +397,11 @@ class ShareDCFModule():
         else :
             self.g = minimize_scalar(_residual_dcf_on_g, args=(self, fcf,  False),
                                 method= 'bounded', bounds = (-1, up_bound)).x
-            
-            self.forcasted_wacc = minimize_scalar(_residual_dcf_on_wacc, args=(self, fcf,  False),
-                                method= 'bounded', bounds = (-1, 2)).x
+            if not np.isnan(self.financial_forcasts.forcasted_sal_growth)  :
+                self.forcasted_wacc = minimize_scalar(_residual_dcf_on_wacc, args=(self, fcf,  False),
+                                    method= 'bounded', bounds = (-1, 2)).x
 
-
-            self.g_delta_forcasted_assumed = self.financial_forcasts.forcasted_sal_growth - self.g
+                self.g_delta_forcasted_assumed = self.financial_forcasts.forcasted_sal_growth - self.g
 
         # # compute g from income cash flow
         
@@ -523,10 +523,9 @@ def _residual_dcf_on_wacc(wacc, *data):
     dcf : ShareDCFModule = data[0]
     fcf : float = data[1]
     pr = data[2]
-
     return dcf.residual_dcf(g = dcf.financial_forcasts.forcasted_sal_growth,
-                        fcf = fcf, 
-                        wacc = wacc, 
+                        fcf = fcf,
+                        wacc = wacc,
                         pr = pr)
 
 def _residual_dincf_on_g(g, *data):

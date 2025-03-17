@@ -1,5 +1,6 @@
-import sys
-sys.path.append(r"C:\Users\SAFCOB009150\Downloads\dcf-main")
+import sys, os 
+
+sys.path.append(r"C:\Users\SAFCOB009150\rdcf\rdcf_degiro")
 import pandas as pd
 
 import os
@@ -24,22 +25,23 @@ from rdcf_degiro.dcf_degiro import RDCFAnal
 
 yahoo_symbol_cor = {
 
-    'RIGD' : 'RIGD.IL'
+    'RIGD' : 'RIGD.IL',
+    'MAU' : 'MAU.PA',
 }
 
 config_dict = {
     'credential_file_path'          : os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json"),
     'use_beta'     : False,
     'use_multiple'                  : True,
-    'terminal_price_to_fcf_bounds'  : [1, 70],
+    'terminal_price_to_fcf_bounds'  : [1, 50],
     'history_avg_nb_year'           : 3,
-    # 'delta_avg_nb_year'             : 3,
-    'output_value_files'            : False,
     'use_last_intraday_price'       : True,
     'output_folder'                 : r'C:\Users\SAFCOB009150\OneDrive - Saipem\Documents\rdcf_degiro_out',
     'taxe_rate'                     : 0.25,
     'output_name'                   : 'rdcf',
-    'yahoo_symbol_cor'              : yahoo_symbol_cor
+    'yahoo_symbol_cor'              : yahoo_symbol_cor,
+    "update_market_rate"            : False,
+    'update_statements'             : False,
 }
 # outfile = os.path.join(os.environ["USERPROFILE"], r"Documents\rdcf.xlsx")
 
@@ -47,7 +49,7 @@ if __name__ == "__main__":
 
     rdcf_anal = RDCFAnal(config_dict)
 
-    # rdcf_anal.share_list = [ s for s in rdcf_anal.share_list if s.symbol in [ "BY6"] ]
+    # rdcf_anal.share_list = [ s for s in rdcf_anal.share_list if s.symbol in [ "ALSTI"] ]
     
     # rdcf_anal.load_df()
     rdcf_anal.process()

@@ -137,7 +137,6 @@ class SessionModelDCF():
         credentials = build_credentials(location=self.credential_file_path )
         self.trading_api = API(credentials = credentials )
         self.trading_api.connect()
-        print(self.trading_api.get_client_details())
     
     def update_rate_dic(self, currency_1, currency_2, ):
         """
