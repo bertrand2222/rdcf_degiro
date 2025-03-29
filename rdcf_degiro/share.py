@@ -10,7 +10,7 @@ from dateutil.relativedelta import relativedelta
 from tabulate import tabulate
 
 from rdcf_degiro.session_model_dcf import SessionModelDCF
-from rdcf_degiro.financial_statements import FinancialStatements, DegiroFinancialStatements, YahooFinancialStatements, FinancialForcast
+from rdcf_degiro.financial_statements import FinancialStatements, FinancialForcast
 from rdcf_degiro.share_identity import ShareIdentity
 
 ERROR_QUERRY_PRICE = 2
@@ -39,47 +39,18 @@ def last_day_of_month(any_day):
     # subtracting the number of the current day brings us back one month
     return next_month - timedelta(days=next_month.day)
 
-class SharePrice():
+class SharePrice(ShareIdentity):
     history : pd.DataFrame = None
     history_in_financial_currency : pd.DataFrame = None
     current_price : float = None
+    price_series_str : str = None
 
-    def __init__(self, session_model : SessionModelDCF,
-                 identity : ShareIdentity,
-        ):
-        self.session_model = session_model
-        self.identity = identity
-
-        # series_id_name = "issueid"
-        # serie_id = self.identity.vwd_id
-
-        series_id_name = self.identity.vwd_identifier_type
-        serie_id = self.identity.vwd_id
-
-        # if self.identity.vwd_identifier_type_secondary =='issueid':
-        #     serie_id = self.identity.vwd_id_secondary
-
-        # if self.identity.vwd_identifier_type =='vwdkey':
-        #     series_id_name = "vwdkey"
-        #     serie_id = self.identity.vwd_id
-
-        try :
-            self.price_series_str = f"price:{series_id_name}:{serie_id}"
-        except TypeError as e:
-            raise TypeError(
-            f"not valid {series_id_name} type : {type(serie_id)}  history\
-                             chart not available for the quote") from e
-        
-        try:
-            self.retrieve_history()
-        except (KeyError) as e:
-            raise KeyError(f'error while retrieving price history, {e}') from e
-
+    
     def retrieve_history(self):
         """
         retrive current history from charts
         """
-        print(f'{self.identity.name} : retrieves price history                      ', flush= True, end = "\r")
+        print(f'{self.name} : retrieves price history                      ', flush= True, end = "\r")
 
         chart_request = ChartRequest(
             culture="fr-FR",
@@ -142,19 +113,13 @@ class SharePrice():
         try :
             self.current_price = chart.series[0].data[-1][-1]
         except IndexError :
-            print(f'{self.identity.name} : warning, not enought data to retrieve intra day price')
+            print(f'{self.name} : warning, not enought data to retrieve intra day price')
 
 
-@dataclass
-class ShareValues():
+class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
     """
     Data retrieved from degiro api with get_company_ratio
     """
-    session_model : SessionModelDCF
-    price_data : SharePrice
-    financial_statements : FinancialStatements
-    financial_forcasts : FinancialForcast
-    identity : ShareIdentity
     market_cap : float = None
     roic: float = np.nan
     roe : float = np.nan
@@ -166,20 +131,15 @@ class ShareValues():
 
     # history_growth : float = None # free oerating cash flow compound annual  growth
 
-    def __post_init__(self):
-
-        self.retrieve()
-        self.compute_complementary_values()
         
-        
-    def retrieve(self):
+    def retrieve_values(self):
         """
         retrieve ratio values
         """
         try:
             self.degiro_retrieve()
         except KeyError as e:
-            print(f'{self.identity.name} : can not retrieve value ratios from degiro api, {e}     ')
+            print(f'{self.name} : can not retrieve value ratios from degiro api, {e}     ')
         else:
             return
         
@@ -187,24 +147,24 @@ class ShareValues():
         # try:
         #     self.yahoo_retrieve()
         # except (KeyError,TypeError) as e:
-        #     raise TypeError(f'{self.identity.name} : error while retrieving value ratios from yahoo, {e}     ') from e
+        #     raise TypeError(f'{self.name} : error while retrieving value ratios from yahoo, {e}     ') from e
         
 
     def degiro_retrieve(self):
         """
         retrieve company ratios fom degiro api
         """
-        print(f'{self.identity.name} : retrieves ratio from degiro              ', flush= True, end = "\r")
+        print(f'{self.name} : retrieves ratio from degiro              ', flush= True, end = "\r")
 
         statement_path = os.path.join(self.session_model.output_folder, 
-                                   f"{self.identity.symbol}_company_ratio.json")
+                                   f"{self.symbol}_company_ratio.json")
         if self.session_model.update_statements or (not os.path.isfile(statement_path)):
             _ratios = self.session_model.trading_api.get_company_ratios(
-                product_isin=self.identity.isin, 
+                product_isin=self.isin, 
                 raw = True
             )
             if 'data' not in _ratios:
-                raise KeyError(f'ratio data not available for isin {self.identity.isin}')
+                raise KeyError(f'ratio data not available for isin {self.isin}')
             ratios = _ratios['data']
             with open(statement_path, 
                         "w", 
@@ -214,7 +174,7 @@ class ShareValues():
             with open(statement_path, "r", encoding= "utf8") as json_file:
                 ratios = json.load(json_file) 
 
-        self.market_cap = self.financial_statements.nb_shares * self.price_data.current_price 
+        self.market_cap = self.nb_shares * self.current_price 
 
         ratio_dic = {}
         for rg in ratios['currentRatios']['ratiosGroups'] :
@@ -223,7 +183,7 @@ class ShareValues():
                     if 'value' in item:
                         ratio_dic[item['id']] = item['value']
                     else:
-                        print(f"{self.identity.name} : Warning {item['id']} value not found")
+                        print(f"{self.name} : Warning {item['id']} value not found")
 
 
         if 'BETA' in ratio_dic:
@@ -247,14 +207,14 @@ class ShareValues():
         """
         compute ratios from degiro statements
         """
-        print(f'{self.identity.name} : retrieves ratio from yahoo              ', flush= True, end = "\r")
-        net_income = self.financial_statements.inc_ttm_statements['NINC']
+        print(f'{self.name} : retrieves ratio from yahoo              ', flush= True, end = "\r")
+        net_income = self.inc_ttm_statements['NINC']
 
-        self.market_cap = self.financial_statements.nb_shares * self.price_data.current_price
+        self.market_cap = self.nb_shares * self.current_price
         self.per = self.market_cap / net_income
         
         # return on invested capital
-        invested_capital = self.financial_statements.last_bal_statements['InvestedCapital']
+        invested_capital = self.last_bal_statements['InvestedCapital']
         if invested_capital > 0 :
             self.roic = net_income / invested_capital
 
@@ -264,16 +224,16 @@ class ShareValues():
 
     @property
     def total_debt(self):
-        return self.financial_statements.last_bal_statements['STLD']
+        return self.last_bal_statements['STLD']
     
     @property
     def net_debt(self):
                 #net debt     =  total_debt - cash and cash equivalent
-        return  self.total_debt - self.financial_statements.last_bal_statements[
-                self.financial_statements.cash_code]
+        return  self.total_debt - self.last_bal_statements[
+                self.cash_code]
     @property
     def stock_equity(self):
-        return self.financial_statements.last_bal_statements['QTLE']
+        return self.last_bal_statements['QTLE']
     
     @property
     def market_capital_cost(self):
@@ -317,13 +277,13 @@ class ShareValues():
         compute value and ratios from financial statements and market infos 
         before dcf calculation
         """
-        print(f'{self.identity.name} : compute complementary values                     ', flush= True, end='\r')
-        if self.financial_statements.y_statements is None:
-            self.financial_statements.retrieve()
+        print(f'{self.name} : compute complementary values                     ', flush= True, end='\r')
+        if self.y_statements is None:
+            self.retrieve_financials()
 
-        y_statements = self.financial_statements.y_statements
+        y_statements = self.y_statements
 
-        df_multiple = pd.concat([self.price_data.history_in_financial_currency, 
+        df_multiple = pd.concat([self.history_in_financial_currency, 
                                 y_statements[["QTCO" , 'FCFL']]
                                 ], axis = 0).sort_index().ffill().dropna()
 
@@ -340,14 +300,9 @@ class ShareValues():
 
         return(0)
 
-@dataclass
-class ShareDCFModule():
 
-    session_model : SessionModelDCF
-    financial_statements : FinancialStatements
-    financial_forcasts : FinancialForcast
-    identity : ShareIdentity
-    values : ShareValues
+class ShareDCFModule(ShareValues):
+
     g           : float = np.nan
     g_ttm       : float = np.nan
     # g_incf : float = np.nan
@@ -357,8 +312,8 @@ class ShareDCFModule():
 
     @property
     def forcasted_capital_cost(self):
-        total_debt =  self.values.total_debt
-        stock_equity =  self.values.stock_equity
+        total_debt =  self.total_debt
+        stock_equity =  self.stock_equity
         if np.isnan(self.forcasted_wacc) :
             return np.nan
         if stock_equity >= 0 :
@@ -371,57 +326,56 @@ class ShareDCFModule():
                     self.session_model.rate_info.debt_cost * (1-self.session_model.taxe_rate) *\
                         (total_debt + stock_equity) /total_debt ) *\
                         - stock_equity /(total_debt + stock_equity)
-    def __post_init__(self):
-        self.compute()
+
 
     def compute(self, start_fcf : float = None):
 
         """
         Evaluate company assumed growth rate from fundamental financial data
         """
-        print(f'{self.identity.name} : compute dcf values                     ', )
-        fcf = start_fcf  if start_fcf else self.financial_statements.fcf
+        print(f'{self.name} : compute dcf values                     ', )
+        fcf = start_fcf  if start_fcf else self.fcf
  
         if self.session_model.use_multiple:
             up_bound = 2
         else :
-            up_bound = self.values.market_wacc
+            up_bound = self.market_wacc
 
         if self.session_model.use_multiple :
-            if self.values.price_to_fcf_terminal < 0:
-                print(f"{self.identity.name} negative terminal price to fcf multiple, can not compute RDCF")
+            if self.price_to_fcf_terminal < 0:
+                print(f"{self.name} negative terminal price to fcf multiple, can not compute RDCF")
                 return
         # compute g from mean fcf
         if fcf < 0 :
-            print(f"{self.identity.name} : negative free cash flow mean, can not compute RDCF")
+            print(f"{self.name} : negative free cash flow mean, can not compute RDCF")
         else :
             self.g = minimize_scalar(_residual_dcf_on_g, args=(self, fcf,  False),
                                 method= 'bounded', bounds = (-1, up_bound)).x
-            if not np.isnan(self.financial_forcasts.forcasted_sal_growth)  :
+            if not np.isnan(self.forcasted_sal_growth)  :
                 self.forcasted_wacc = minimize_scalar(_residual_dcf_on_wacc, args=(self, fcf,  False),
                                     method= 'bounded', bounds = (-1, 2)).x
 
-                self.g_delta_forcasted_assumed = self.financial_forcasts.forcasted_sal_growth - self.g
+                self.g_delta_forcasted_assumed = self.forcasted_sal_growth - self.g
 
         # # compute g from income cash flow
         
         # if self.financial_statements.focf < 0 :
-        #     print(f"{self.identity.name} : negative cash flow from income mean, can not compute RDINCF")
+        #     print(f"{self.name} : negative cash flow from income mean, can not compute RDINCF")
         # else :
         #     self.g_incf = minimize_scalar(_residual_dincf_on_g, args=(self, self.financial_statements.focf),
         #                         method= 'bounded', bounds = (-1, up_bound)).x
 
-        if  self.financial_statements.q_cashflow_available :
+        if  self.q_cashflow_available :
             # compute g_from_ttm from last fcf
-            if self.financial_statements.fcf_ttm < 0:
-                print(f"{self.identity.name} : negative TTM free cash flow, can not compute TTM RDCF")
+            if self.fcf_ttm < 0:
+                print(f"{self.name} : negative TTM free cash flow, can not compute TTM RDCF")
             else :
-                self.g_ttm = minimize_scalar(_residual_dcf_on_g, args=(self, self.financial_statements.fcf_ttm,  False),
+                self.g_ttm = minimize_scalar(_residual_dcf_on_g, args=(self, self.fcf_ttm,  False),
                                     method= 'bounded', bounds = (-1, up_bound)).x
         
             # # compute g_from_ttm from last incf
             # if self.financial_statements.focf_ttm < 0:
-            #     print(f"{self.identity.name} : negative TTM cash flow from income mean, can not compute TTM RDINCF")
+            #     print(f"{self.name} : negative TTM cash flow from income mean, can not compute TTM RDINCF")
             # else :
             #     self.g_incf_ttm = minimize_scalar(_residual_dincf_on_g, args=(self, self.financial_statements.focf_ttm),
             #                     method= 'bounded', bounds = (-1, up_bound)).x
@@ -438,7 +392,7 @@ class ShareDCFModule():
 
         nb_year_dcf = self.session_model.nb_year_dcf
         if self.session_model.use_multiple :
-            vt = fcf * (1+g)**(nb_year_dcf ) * self.values.price_to_fcf_terminal
+            vt = fcf * (1+g)**(nb_year_dcf ) * self.price_to_fcf_terminal
         else :
             vt = fcf * (1+g)**(nb_year_dcf ) / (wacc - g)
         vt_act = vt / (1+wacc)**(nb_year_dcf)
@@ -464,9 +418,9 @@ class ShareDCFModule():
         #                    showindex= [ "Free Cash Flow", "Free Cash Flow actualisé"],
         #                    headers= annees))
 
-            # print(f"Valeur DCF de l'action: {val_share:.2f} {self.identity.currency:s}")
+            # print(f"Valeur DCF de l'action: {val_share:.2f} {self.currency:s}")
 
-        return (enterprise_value / self.values.net_market_cap - 1)**2
+        return (enterprise_value / self.net_market_cap - 1)**2
     
     def eval_dincf(self, g :  float, incf : float):
         """
@@ -475,7 +429,7 @@ class ShareDCFModule():
         to the market value of the company
         return : 0 when the growth rate g correspond to the one assumed by the market price.
         """
-        cmpc = self.values.market_wacc
+        cmpc = self.market_wacc
         if isinstance(g, (list, np.ndarray)):
             g = g[0]
 
@@ -483,15 +437,15 @@ class ShareDCFModule():
 
         if self.session_model.use_multiple :
             # fcf = incf + nincf
-            vt = (incf * (1+g)**(nb_year_dcf)  + self.financial_statements.nincf) * self.values.price_to_fcf_terminal
+            vt = (incf * (1+g)**(nb_year_dcf)  + self.nincf) * self.price_to_fcf_terminal
         else :
-            vt = (incf * (1+g)**(nb_year_dcf)  + self.financial_statements.nincf) / (cmpc - g)
+            vt = (incf * (1+g)**(nb_year_dcf)  + self.nincf) / (cmpc - g)
         vt_act = vt / (1+cmpc)**(nb_year_dcf)
 
         a = (1+g)/(1+cmpc)
         b = 1/(1+cmpc)
         fcf_act_sum = incf * ((a**nb_year_dcf - 1)/(a-1) - 1 + a**(nb_year_dcf)) + \
-                    self.financial_statements.nincf * ((b**nb_year_dcf - 1)/(b-1) - 1 + b**(nb_year_dcf))
+                    self.nincf * ((b**nb_year_dcf - 1)/(b-1) - 1 + b**(nb_year_dcf))
 
         # a = (1+g)/(1+cmpc)
         # b = 1/(1+cmpc)
@@ -501,7 +455,7 @@ class ShareDCFModule():
 
         enterprise_value = fcf_act_sum + vt_act
 
-        return (enterprise_value / self.values.net_market_cap - 1)**2
+        return (enterprise_value / self.net_market_cap - 1)**2
 
 def _residual_dcf_on_g(g, *data):
     """
@@ -513,7 +467,7 @@ def _residual_dcf_on_g(g, *data):
 
     return dcf.residual_dcf(g = g,
                         fcf = fcf,
-                        wacc = dcf.values.market_wacc, 
+                        wacc = dcf.market_wacc, 
                         pr = pr)
 
 def _residual_dcf_on_wacc(wacc, *data):
@@ -528,16 +482,16 @@ def _residual_dcf_on_wacc(wacc, *data):
                         wacc = wacc,
                         pr = pr)
 
-def _residual_dincf_on_g(g, *data):
-    """
-    reformated Share.eval_dcf() function for compatibility with minimize_scalar
-    """
-    sharevalues : ShareValues = data[0]
-    incf : float = data[1]
+# def _residual_dincf_on_g(g, *data):
+#     """
+#     reformated Share.eval_dcf() function for compatibility with minimize_scalar
+#     """
+#     sharevalues : ShareValues = data[0]
+#     incf : float = data[1]
 
-    return sharevalues.eval_dincf(g = g, incf = incf)
+#     return sharevalues.eval_dincf(g = g, incf = incf)
 
-class Share():
+class Share(ShareDCFModule):
     """
     Object containing a share and its financial informations
     """
@@ -545,71 +499,53 @@ class Share():
     product_type :str = None
     exchange_id : str = None
     currency :str = None
-    price_data : SharePrice = None
-    financial_statements : FinancialStatements = None
-    financial_forcasts : FinancialForcast = None
-    values : ShareValues = None
-    dcf : ShareDCFModule = None
 
     def __init__(self, s_dict : dict = None,
             session_model : SessionModelDCF  = None):
 
         self.__dict__.update(s_dict)
         self.session_model = session_model
-        self.identity = ShareIdentity(s_dict)
+        # if self.vwd_identifier_type_secondary =='issueid':
+        #     serie_id = self.vwd_id_secondary
 
-    def retrieves_financials(self):
-        
-        try:
-            self.financial_statements = DegiroFinancialStatements(
-                self.session_model,
-                self.identity )
-        except KeyError as e:
-            print(f'{self.identity.name} : can not retrieve financial data from degiro, {e}')
-        else:
-            return
-        
-        # try:
-        self.financial_statements = YahooFinancialStatements(
-                self.session_model,
-                self.identity )
-        # except (AttributeError, KeyError) as e:
-        #     raise KeyError(f'{self.identity.name} : error while retrieving financial from yahoo, {e}') from e
-        # except (TypeError) as e:
-        #     raise TypeError(f'{self.identity.name} : error while retrieving financial from yahoo, {e}') from e
+        # if self.vwd_identifier_type =='vwdkey':
+        #     series_id_name = "vwdkey"
+        #     serie_id = self.vwd_id
 
+        series_id_name = self.vwd_identifier_type
+        serie_id = self.vwd_id
+        try :
+            self.price_series_str = f"price:{series_id_name}:{serie_id}"
+        except TypeError as e:
+            raise TypeError(
+            f"not valid {series_id_name} type : {type(serie_id)}  history\
+                             chart not available for the quote") from e
 
     def retrieves_all_values(self,):
         """
         Get all the share associated financial infos from degiro api 
         """
 
-        self.retrieves_financials()
+        self.retrieve_financials()
 
         ## forcast
-        self.financial_forcasts = FinancialForcast(
-            self.session_model,
-            self.identity )
-        
-        self.price_data = SharePrice(self.session_model,
-                                     self.identity,
-                                     )
         try :
-            self.values = ShareValues(
-                session_model= self.session_model,
-                price_data= self.price_data,
-                financial_statements= self.financial_statements,
-                financial_forcasts= self.financial_forcasts,
-                identity= self.identity,
-            )
-        except (KeyError, TypeError) as e:
-            raise KeyError(f"{self.identity.name} : error while generating values \n {type(e).__name__} : {e}") from e
+            self.retrieve_forcasts()
+        except KeyError as e:
+            print(f'{self.name} : can not retrieve financial forcast from degiro, {e}')
 
-        self.dcf = ShareDCFModule(
-            session_model= self.session_model,
-            financial_statements= self.financial_statements,
-            financial_forcasts= self.financial_forcasts,
-            identity= self.identity,
-            values= self.values
-        )
+        try:
+            self.retrieve_history()
+        except (KeyError) as e:
+            raise KeyError(f'error while retrieving price history, {e}') from e
+        
+        try :
+            self.retrieve_values()
+            self.compute_complementary_values()
+    
+        except (KeyError, TypeError) as e:
+            raise KeyError(f"{self.name} : error while generating values \n {type(e).__name__} : {e}") from e
+        
+        self.compute()
+
         # self.eval_beta()

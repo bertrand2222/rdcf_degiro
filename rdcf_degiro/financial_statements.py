@@ -74,16 +74,11 @@ SPECIAL_CURRENCIES = {
 
 class YahooRetrieveError(Exception):
     pass
-class Statements():
+class Statements(ShareIdentity):
 
     currency :str = None
     rate_factor = 1
     rate_symb = None
-
-    def __init__(self, session_model : SessionModelDCF, identity : ShareIdentity):
-        
-        self.session_model = session_model
-        self.identity = identity
 
     def convert_to_price_currency(self):
 
@@ -91,16 +86,16 @@ class Statements():
         Convert financial statement from statement curency to share price history 
         curency considering the change rate history over the period
         """
-        if self.currency == self.identity.currency:
+        if self.currency == self.currency:
             return
-        print(f'{self.identity.name} : convert statement to price currency                                  ')
-        share_currency = self.identity.currency
-        if self.identity.currency in  SPECIAL_CURRENCIES :
-            share_currency = SPECIAL_CURRENCIES[self.identity.currency]['real']
-            self.rate_factor = SPECIAL_CURRENCIES[self.identity.currency]['rate_factor']
+        print(f'{self.name} : convert statement to price currency                                  ')
+        share_currency = self.currency
+        if self.currency in  SPECIAL_CURRENCIES :
+            share_currency = SPECIAL_CURRENCIES[self.currency]['real']
+            self.rate_factor = SPECIAL_CURRENCIES[self.currency]['rate_factor']
         
         if share_currency != self.currency:
-            print(f'{self.identity.name} : retrieve {self.currency}/{share_currency} history                    ')
+            print(f'{self.name} : retrieve {self.currency}/{share_currency} history                    ')
             self.session_model.update_rate_dic(  self.currency, share_currency
                                                             )
             self.rate_symb = self.currency +  share_currency   + "=X"
@@ -134,38 +129,27 @@ class Statements():
         p_df.loc[:,convert_value_cols] /= self.rate_factor
         return p_df
 
-
 class FinancialForcast(Statements):
 
     y_forcasts : pd.DataFrame = None
     _forcasted_sal_growth : float = None
     _forcasted_cpx_growth : float = None
-    def __init__(self, session_model : SessionModelDCF, identity : ShareIdentity):
 
-        super().__init__(session_model= session_model, identity= identity)
-        
-        try :
-            self.retrieve()
-        except KeyError as e:
-            print(f'{self.identity.name} : can not retrieve financial forcast from degiro, {e}')
-        else:
-            self.convert_to_price_currency()
+    def retrieve_forcasts(self):
 
-    def retrieve(self):
-
-        print(f'{self.identity.name} : retrieves forcast                    ',
+        print(f'{self.name} : retrieves forcast                    ',
                 flush= True, end = "\r")
         statement_path = os.path.join(self.session_model.output_folder, 
-                                    f"{self.identity.symbol}_company_forcast.json")
+                                    f"{self.symbol}_company_forcast.json")
         if self.session_model.update_statements or (not os.path.isfile(statement_path)):
             try:
                 estimates_summaries = self.session_model.trading_api.get_estimates_summaries(
-                product_isin= self.identity.isin,
+                product_isin= self.isin,
                 raw=True,
                 )['data']
 
             except KeyError as e:
-                raise KeyError(f'no forcast statement found for isin {self.identity.isin}') from e
+                raise KeyError(f'no forcast statement found for isin {self.isin}') from e
                 
             with open(statement_path,
                         "w", 
@@ -190,6 +174,7 @@ class FinancialForcast(Statements):
             data).set_index('endDate').sort_index().dropna()
         self.currency = estimates_summaries['currency']
 
+        self.convert_to_price_currency()
 
     @property
     def forcasted_sal_growth(self):
@@ -213,7 +198,7 @@ class FinancialForcast(Statements):
                 y = np.log(self.y_forcasts[val].values / self.y_forcasts[val].iloc[0])
                 break
         if y is None :# no valid values 
-            print(f"{self.identity.symbol} no valid value to compute estimate")
+            print(f"{self.symbol} no valid value to compute estimate")
             return np.nan
 
         x = np.arange(len(self.y_forcasts.index))
@@ -248,7 +233,7 @@ class FinancialForcast(Statements):
                 y = np.log(self.y_forcasts[val].values / self.y_forcasts[val].iloc[0])
                 break
         if y is None :# no valid values 
-            print(f"{self.identity.symbol} no valid value to compute estimate")
+            print(f"{self.symbol} no valid value to compute estimate")
             return np.nan
 
         x = np.arange(len(self.y_forcasts.index))
@@ -281,13 +266,19 @@ class FinancialStatements(Statements):
     # focf : float = None
     nincf : float = None
     _history_growth : float = None
+    last_bal_statements : pd.Series = None 
+    q_cashflow_available : bool = None
+    _y_inc_complete_statements : pd.DataFrame = None
     # ttm_inc_period : float = None
 
-    def __init__(self, session_model : SessionModelDCF, identity : ShareIdentity):
+    def retrieve_financials(self):
         
-        super().__init__(session_model= session_model, identity= identity)
-
-        self.retrieve()
+        try :
+            self.degiro_retrieve()
+        except KeyError as e:
+            print(f'{self.name} : can not retrieve financial data from degiro, {e}')
+            self.yahoo_retrieve()
+        
         
         self.y_statements.loc[:,'periodLength'] = 12
         self.y_statements.loc[:,'periodType'] = 'M'
@@ -307,10 +298,6 @@ class FinancialStatements(Statements):
         
         self.compute_avg_values()
 
-    def retrieve(self):
-        """
-        retrieve financial statement from web API
-        """
 
     def compute_avg_values(self):
         """
@@ -339,9 +326,6 @@ class FinancialStatements(Statements):
         #             ) / q_cas_nb_year_avg
         # self.nincf = self.fcf - self.focf
 
-    @property
-    def last_bal_statements(self) -> pd.Series :
-        return None
     @property
     def inc_ttm_statements(self) -> pd.Series :
         return self._inc_ttm_statements_df.iloc[-1]
@@ -391,32 +375,27 @@ class FinancialStatements(Statements):
         df = df.dropna(subset = self.total_revenue_code)
         y = np.log(df[self.total_revenue_code].astype('float64'))
         if y is None:
-            print(f'{self.identity.name} no valid values to compute history growth')
+            print(f'{self.name} no valid values to compute history growth')
             return np.nan
 
         z = np.polyfit(df['year'],y, deg = 1)
         return np.exp(z[0]) - 1
 
-class YahooFinancialStatements(FinancialStatements):
-
-    def __init__(self, session_model : SessionModelDCF, identity : ShareIdentity):
-        super().__init__(session_model= session_model, identity= identity) 
-
-    def retrieve(self):
+    def yahoo_retrieve(self):
 
         """
         Get the share associated financial infos from yahoo finance api 
         """
-        print(f'{self.identity.name} : retrieves financial statement from yahoo             ', flush= True, end = "\r")
+        print(f'{self.name} : retrieves financial statement from yahoo             ', flush= True, end = "\r")
         
-        symb = self.identity.symbol
-        if self.identity.symbol in self.session_model.yahoo_symbol_cor:
+        symb = self.symbol
+        if self.symbol in self.session_model.yahoo_symbol_cor:
             symb = self.session_model.yahoo_symbol_cor[symb]
         
         y_statements_path = os.path.join(self.session_model.output_folder, 
-                                         f"{self.identity.symbol}_y_statement.pckl")
+                                         f"{self.symbol}_y_statement.pckl")
         q_statements_path = os.path.join(self.session_model.output_folder, 
-                                         f"{self.identity.symbol}_q_statement.pckl")
+                                         f"{self.symbol}_q_statement.pckl")
         
         if self.session_model.update_statements or (not os.path.isfile(y_statements_path)):
             tk = yq.Ticker(symb)
@@ -430,7 +409,7 @@ class YahooFinancialStatements(FinancialStatements):
             
             q_statements.to_pickle(q_statements_path)
         else:
-            print(f'{self.identity.name} read data frame')
+            print(f'{self.name} read data frame')
             y_statements : pd.DataFrame = pd.read_pickle(y_statements_path)
             q_statements : pd.DataFrame = pd.read_pickle(q_statements_path)
 
@@ -482,29 +461,21 @@ class YahooFinancialStatements(FinancialStatements):
         self.nb_shares = self.y_statements["QTCO"].iloc[-1]
 
         self.currency = y_statements['currencyCode'].iloc[-1]
-
-    @property
-    def last_bal_statements(self) -> pd.Series :
-        return self.y_statements.iloc[-1]
-        
-class DegiroFinancialStatements(FinancialStatements):
-
-    def __init__(self, session_model : SessionModelDCF, identity : ShareIdentity):
-        super().__init__(session_model= session_model, identity= identity)
+        self.last_bal_statements = self.y_statements.iloc[-1]
 
 
-    def retrieve(self):
+    def degiro_retrieve(self):
         """
         Retrieve financial statements from degiro api
         """
-        print(f'{self.identity.name} : retrieves financial statement from degiro            ', flush= True, end = "\r")
+        print(f'{self.name} : retrieves financial statement from degiro            ', flush= True, end = "\r")
         statement_path = os.path.join(self.session_model.output_folder, 
-                                    f"{self.identity.symbol}_company_financial.json")
+                                    f"{self.symbol}_company_financial.json")
         # print(os.path.isfile(statement_path))
         if self.session_model.update_statements or (not os.path.isfile(statement_path)):
 
             r_financial_st = self.session_model.trading_api.get_financial_statements(
-                        product_isin= self.identity.isin,
+                        product_isin= self.isin,
                         raw= True
                     )
             if r_financial_st is None:
@@ -512,7 +483,7 @@ class DegiroFinancialStatements(FinancialStatements):
             try:
                 financial_st = r_financial_st['data']
             except KeyError as e:
-                raise KeyError(f'no financial statement found for isin {self.identity.isin}') from e
+                raise KeyError(f'no financial statement found for isin {self.isin}') from e
             
             with open(statement_path,
                         "w", 
@@ -524,17 +495,14 @@ class DegiroFinancialStatements(FinancialStatements):
 
         self.currency = financial_st['currency']
 
-        self.retrieve_annual(financial_st= financial_st)
-        self.retrieve_quarterly(financial_st= financial_st)
+        self.degiro_retrieve_annual(financial_st= financial_st)
+        self.degiro_retrieve_quarterly(financial_st= financial_st)
 
         
+        self.last_bal_statements = self.q_bal_statements.iloc[-1]
 
-    @property
-    def last_bal_statements(self):
-        return self.q_bal_statements.iloc[-1]
-        
 
-    def retrieve_annual(self, financial_st : dict):
+    def degiro_retrieve_annual(self, financial_st : dict):
         """
         Retrieve annual data
         """
@@ -571,7 +539,7 @@ class DegiroFinancialStatements(FinancialStatements):
 
         self.y_statements = y_statements
 
-    def retrieve_quarterly(self, financial_st :dict):
+    def degiro_retrieve_quarterly(self, financial_st :dict):
         """
         Retrive quarterly data
         """

@@ -130,7 +130,7 @@ class RDCFAnal():
             try :
                 s.retrieves_all_values()
             except (YahooRetrieveError) as e:
-                print(f"{s.identity.name} : error while retrieving values from yahoo \n {type(e).__name__} : {e}   ")
+                print(f"{s.name} : error while retrieving values from yahoo \n {type(e).__name__} : {e}   ")
                 continue
         
             valid_share_list.append(s)
@@ -141,30 +141,30 @@ class RDCFAnal():
             print('no valid share')
             return
 
-        df = pd.DataFrame.from_records(index = [s.identity.symbol for s in valid_share_list],
+        df = pd.DataFrame.from_records(index = [s.symbol for s in valid_share_list],
                           data= [
                               {
-                                'short_name' :          s.identity.name  ,
-                                'current_price' :       s.price_data.current_price ,
+                                'short_name' :          s.name  ,
+                                'current_price' :       s.current_price ,
                                 'currency' :            s.currency ,
-                                'beta' :                s.values.beta ,
-                                'price_to_fcf' :        s.values.price_to_fcf,
-                                'market_capital_cost' :   s.values.market_capital_cost,
-                                'wacc' :                s.values.market_wacc ,
+                                'beta' :                s.beta ,
+                                'price_to_fcf' :        s.price_to_fcf,
+                                'market_capital_cost' :   s.market_capital_cost,
+                                'wacc' :                s.market_wacc ,
                                 'assumed_g' :           s.dcf.g ,  
                                 'assumed_g_ttm' :       s.dcf.g_ttm,  
                                 # 'assumed_g_incf' :        s.dcf.g_incf ,
                                 # 'assumed_g_incf_ttm' :    s.dcf.g_incf_ttm,
-                                'history_growth'         : s.financial_statements.history_growth,
-                                "forcast_growth" :       s.financial_forcasts.forcasted_sal_growth,
+                                'history_growth'         : s.history_growth,
+                                "forcast_growth" :       s.forcasted_sal_growth,
                                 'diff_g_cacgr'         : s.dcf.g_delta_forcasted_assumed,
                                 'forcasted_capital_cost'         : s.dcf.forcasted_capital_cost,
-                                'per' :                 s.values.per,
-                                'roe' :                s.values.roe , 
-                                'roic' :                s.values.roic , 
-                                'debt_to_equity' :      s.values.debt_to_equity,
-                                'price_to_book' :       s.values.price_to_book ,
-                                'total_payout_ratio' :  s.financial_statements.total_payout_ratio,
+                                'per' :                 s.per,
+                                'roe' :                s.roe , 
+                                'roic' :                s.roic , 
+                                'debt_to_equity' :      s.debt_to_equity,
+                                'price_to_book' :       s.price_to_book ,
+                                'total_payout_ratio' :  s.total_payout_ratio,
               
                                     } for s in valid_share_list])
 

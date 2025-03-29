@@ -1,6 +1,9 @@
-import dataclasses
+# import dataclasses
 
-@dataclasses.dataclass
+# @dataclasses.dataclass
+from rdcf_degiro.session_model_dcf import SessionModelDCF
+
+
 class ShareIdentity():
     """
     object containing constant identity attributes of a share
@@ -13,7 +16,5 @@ class ShareIdentity():
     currency : str = None
     vwd_identifier_type : str = None
     vwd_identifier_type_secondary : str = None
+    session_model : SessionModelDCF = None
 
-    def __init__(self, s_dict : dict):
-
-        self.__dict__.update(s_dict)
