@@ -48,7 +48,7 @@ class SharePrice(ShareIdentity):
     
     def retrieve_history(self):
         """
-        retrive current history from charts
+        retrieve current history from charts
         """
         print(f'{self.name} : retrieves price history                      ', flush= True, end = "\r")
 
@@ -91,7 +91,7 @@ class SharePrice(ShareIdentity):
     
     def retrieve_intra_day_price(self):
         """
-        retrive current price from charts
+        retrieve current price from charts
         """
 
         chart_request = ChartRequest(
@@ -137,20 +137,20 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
         retrieve ratio values
         """
         try:
-            self.degiro_retrieve()
+            self.degiro_values_retrieve()
         except KeyError as e:
             print(f'{self.name} : can not retrieve value ratios from degiro api, {e}     ')
         else:
             return
         
-        self.yahoo_retrieve()
+        self.yahoo_values_retrieve()
         # try:
         #     self.yahoo_retrieve()
         # except (KeyError,TypeError) as e:
         #     raise TypeError(f'{self.name} : error while retrieving value ratios from yahoo, {e}     ') from e
         
 
-    def degiro_retrieve(self):
+    def degiro_values_retrieve(self):
         """
         retrieve company ratios fom degiro api
         """
@@ -203,7 +203,7 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
         #     self.retrieve_current_price()
 
 
-    def yahoo_retrieve(self):
+    def yahoo_values_retrieve(self):
         """
         compute ratios from degiro statements
         """

@@ -274,10 +274,10 @@ class FinancialStatements(Statements):
     def retrieve_financials(self):
         
         try :
-            self.degiro_retrieve()
+            self.degiro_financial_retrieve()
         except KeyError as e:
             print(f'{self.name} : can not retrieve financial data from degiro, {e}')
-            self.yahoo_retrieve()
+            self.yahoo_financial_retrieve()
         
         
         self.y_statements.loc[:,'periodLength'] = 12
@@ -381,7 +381,7 @@ class FinancialStatements(Statements):
         z = np.polyfit(df['year'],y, deg = 1)
         return np.exp(z[0]) - 1
 
-    def yahoo_retrieve(self):
+    def yahoo_financial_retrieve(self):
 
         """
         Get the share associated financial infos from yahoo finance api 
@@ -464,7 +464,7 @@ class FinancialStatements(Statements):
         self.last_bal_statements = self.y_statements.iloc[-1]
 
 
-    def degiro_retrieve(self):
+    def degiro_financial_retrieve(self):
         """
         Retrieve financial statements from degiro api
         """
@@ -541,7 +541,7 @@ class FinancialStatements(Statements):
 
     def degiro_retrieve_quarterly(self, financial_st :dict):
         """
-        Retrive quarterly data
+        Retrieve quarterly data
         """
         int_data = []
         for q in financial_st['interim'] :
