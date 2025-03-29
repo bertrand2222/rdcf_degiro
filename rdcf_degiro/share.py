@@ -328,7 +328,7 @@ class ShareDCFModule(ShareValues):
                         - stock_equity /(total_debt + stock_equity)
 
 
-    def compute(self, start_fcf : float = None):
+    def compute_dcf(self, start_fcf : float = None):
 
         """
         Evaluate company assumed growth rate from fundamental financial data
@@ -542,10 +542,9 @@ class Share(ShareDCFModule):
         try :
             self.retrieve_values()
             self.compute_complementary_values()
-    
         except (KeyError, TypeError) as e:
             raise KeyError(f"{self.name} : error while generating values \n {type(e).__name__} : {e}") from e
         
-        self.compute()
+        self.compute_dcf()
 
         # self.eval_beta()
