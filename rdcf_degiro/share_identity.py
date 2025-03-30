@@ -13,7 +13,7 @@ class ShareIdentity():
     vwd_id : str = None
     vwd_id_secondary : str = None
     symbol : str = None
-    currency : str = None
+    share_currency : str = None
     vwd_identifier_type : str = None
     vwd_identifier_type_secondary : str = None
     session_model : SessionModelDCF = None

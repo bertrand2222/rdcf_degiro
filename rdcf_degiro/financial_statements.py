@@ -76,7 +76,7 @@ class YahooRetrieveError(Exception):
     pass
 class Statements(ShareIdentity):
 
-    currency :str = None
+    statements_currency :str = None
     rate_factor = 1
     rate_symb = None
 
@@ -86,24 +86,22 @@ class Statements(ShareIdentity):
         Convert financial statement from statement curency to share price history 
         curency considering the change rate history over the period
         """
-        if self.currency == self.currency:
+        if self.statements_currency == self.share_currency:
             return
         print(f'{self.name} : convert statement to price currency                                  ')
-        share_currency = self.currency
-        if self.currency in  SPECIAL_CURRENCIES :
-            share_currency = SPECIAL_CURRENCIES[self.currency]['real']
-            self.rate_factor = SPECIAL_CURRENCIES[self.currency]['rate_factor']
+        share_currency_special = self.share_currency
+        if self.share_currency in  SPECIAL_CURRENCIES :
+            share_currency_special = SPECIAL_CURRENCIES[self.share_currency]['real']
+            self.rate_factor = SPECIAL_CURRENCIES[self.share_currency]['rate_factor']
         
-        if share_currency != self.currency:
-            print(f'{self.name} : retrieve {self.currency}/{share_currency} history                    ')
-            self.session_model.update_rate_dic(  self.currency, share_currency
+        if share_currency_special != self.statements_currency:
+            print(f'{self.name} : retrieve {self.statements_currency}/{share_currency_special} history                    ')
+            self.session_model.update_rate_dic(  self.statements_currency, share_currency_special
                                                             )
-            self.rate_symb = self.currency +  share_currency   + "=X"
-
+            self.rate_symb = self.statements_currency +  share_currency_special   + "=X"
         df_attr_list = [k for k, v in self.__dict__.items() if isinstance(v, pd.DataFrame)]
         for  attr in df_attr_list:
             self.__dict__[attr] = self.convert_to_price_curency_df(self.__dict__[attr])
-            # self.__setattr__(attr, self.convert_to_price_curency_df(self.__getattribute__(attr)))
 
     def convert_to_price_curency_df(self, p_df):
         """
@@ -172,7 +170,7 @@ class FinancialForcast(Statements):
 
         self.y_forcasts = pd.DataFrame.from_records(
             data).set_index('endDate').sort_index().dropna()
-        self.currency = estimates_summaries['currency']
+        self.statements_currency = estimates_summaries['currency']
 
         self.convert_to_price_currency()
 
@@ -460,7 +458,7 @@ class FinancialStatements(Statements):
 
         self.nb_shares = self.y_statements["QTCO"].iloc[-1]
 
-        self.currency = y_statements['currencyCode'].iloc[-1]
+        self.statements_currency = y_statements['currencyCode'].iloc[-1]
         self.last_bal_statements = self.y_statements.iloc[-1]
 
 
@@ -493,7 +491,7 @@ class FinancialStatements(Statements):
             with open(statement_path, "r", encoding= "utf8") as json_file:
                 financial_st = json.load(json_file)
 
-        self.currency = financial_st['currency']
+        self.statements_currency = financial_st['currency']
 
         self.degiro_retrieve_annual(financial_st= financial_st)
         self.degiro_retrieve_quarterly(financial_st= financial_st)

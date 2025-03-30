@@ -146,7 +146,7 @@ class RDCFAnal():
                               {
                                 'short_name' :          s.name  ,
                                 'current_price' :       s.current_price ,
-                                'currency' :            s.currency ,
+                                'currency' :            s.share_currency ,
                                 'beta' :                s.beta ,
                                 'price_to_fcf' :        s.price_to_fcf,
                                 'market_capital_cost' :   s.market_capital_cost,

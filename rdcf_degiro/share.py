@@ -287,7 +287,6 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
                                 y_statements[["QTCO" , 'FCFL']]
                                 ], axis = 0).sort_index().ffill().dropna()
 
-
         df_multiple['price_to_fcf'] = df_multiple['QTCO'] * df_multiple['close'] / df_multiple['FCFL']
 
         # price to fcf multilple calculated as harmonic mean of history:
@@ -498,12 +497,13 @@ class Share(ShareDCFModule):
 
     product_type :str = None
     exchange_id : str = None
-    currency :str = None
+    share_currency :str = None
 
     def __init__(self, s_dict : dict = None,
             session_model : SessionModelDCF  = None):
 
         self.__dict__.update(s_dict)
+        self.share_currency = s_dict['currency']
         self.session_model = session_model
         # if self.vwd_identifier_type_secondary =='issueid':
         #     serie_id = self.vwd_id_secondary
