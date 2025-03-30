@@ -5,14 +5,11 @@ import pandas as pd
 
 import os
 import json
-from degiro_connector.trading.api import API , Credentials
-from degiro_connector.trading.models.credentials import build_credentials
 from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
 # from degiro_connector.quotecast.tools.ticker_fetcher import TickerFetcher
 import yahooquery as yq
 import polars as pl
 from importlib import reload
-from rdcf_degiro.financial_statements import TYPES
 from rdcf_degiro.dcf_degiro import RDCFAnal
 
 # credentials_path = os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json")
@@ -49,7 +46,7 @@ if __name__ == "__main__":
 
     rdcf_anal = RDCFAnal(config_dict)
 
-    # rdcf_anal.share_list = [ s for s in rdcf_anal.share_list if s.symbol in [ "ALSTI"] ]
+    rdcf_anal.share_list = [ s for s in rdcf_anal.share_list if s.symbol in [ "INFY"] ]
     
     # rdcf_anal.load_df()
     rdcf_anal.process()
