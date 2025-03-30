@@ -477,7 +477,7 @@ def _residual_dcf_on_wacc(wacc, *data):
     dcf : ShareDCFModule = data[0]
     fcf : float = data[1]
     pr = data[2]
-    return dcf.residual_dcf(g = dcf.financial_forcasts.forcasted_sal_growth,
+    return dcf.residual_dcf(g = dcf.forcasted_sal_growth,
                         fcf = fcf,
                         wacc = wacc,
                         pr = pr)
