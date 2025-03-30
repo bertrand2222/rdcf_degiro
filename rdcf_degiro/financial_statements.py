@@ -6,6 +6,7 @@ import json, os
 from dateutil.relativedelta import relativedelta
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 from rdcf_degiro.share_identity import ShareIdentity
+from typing import List
 # from sklearn.linear_model import LinearRegression
 # import matplotlib.pylab as plt
 import numpy as np
@@ -80,7 +81,7 @@ class Statements(ShareIdentity):
     rate_factor = 1
     rate_symb = None
 
-    def convert_to_price_currency(self):
+    def convert_to_price_currency(self, df_attr_list : List[str]):
 
         """
         Convert financial statement from statement curency to share price history 
@@ -99,7 +100,6 @@ class Statements(ShareIdentity):
             self.session_model.update_rate_dic(  self.statements_currency, share_currency_special
                                                             )
             self.rate_symb = self.statements_currency +  share_currency_special   + "=X"
-        df_attr_list = [k for k, v in self.__dict__.items() if isinstance(v, pd.DataFrame)]
         for  attr in df_attr_list:
             self.__dict__[attr] = self.convert_to_price_curency_df(self.__dict__[attr])
 
@@ -172,7 +172,7 @@ class FinancialForcast(Statements):
             data).set_index('endDate').sort_index().dropna()
         self.statements_currency = estimates_summaries['currency']
 
-        self.convert_to_price_currency()
+        self.convert_to_price_currency(['y_forcast'])
 
     @property
     def forcasted_sal_growth(self):
@@ -281,7 +281,6 @@ class FinancialStatements(Statements):
         self.y_statements.loc[:,'periodLength'] = 12
         self.y_statements.loc[:,'periodType'] = 'M'
         
-        self.convert_to_price_currency()
 
         self.q_cashflow_available = ('OTLO' in self.q_cas_statements.columns)
         # compute cash flow from income
@@ -459,6 +458,14 @@ class FinancialStatements(Statements):
         self.nb_shares = self.y_statements["QTCO"].iloc[-1]
 
         self.statements_currency = y_statements['currencyCode'].iloc[-1]
+        self.convert_to_price_currency(['y_statements',
+                                        'q_inc_statements', 
+                                        'q_bal_statements', 
+                                        'q_cas_statements',
+                                        '_inc_ttm_statements_df',
+                                        '_cas_ttm_statements_df'
+                                        ])
+
         self.last_bal_statements = self.y_statements.iloc[-1]
 
 
@@ -496,6 +503,13 @@ class FinancialStatements(Statements):
         self.degiro_retrieve_annual(financial_st= financial_st)
         self.degiro_retrieve_quarterly(financial_st= financial_st)
 
+        self.convert_to_price_currency(['y_statements',
+                                        'q_inc_statements', 
+                                        'q_bal_statements', 
+                                        'q_cas_statements',
+                                        '_inc_ttm_statements_df',
+                                        '_cas_ttm_statements_df'
+                                        ])
         
         self.last_bal_statements = self.q_bal_statements.iloc[-1]
 
