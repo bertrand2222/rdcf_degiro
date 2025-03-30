@@ -76,7 +76,7 @@ class RateInfos():
             self.__dict__.update(json.load( readfile))
 
 
-class SessionModelDCF():
+class SessionModelDCF(API):
 
     """
     Object containing all global data
@@ -99,13 +99,26 @@ class SessionModelDCF():
     rate_history_dic = {}
     rate_current_dic = {}
     chart_fetcher : ChartFetcher = None
-    trading_api : API = None
     
     def __init__(self, config_dict : dict):
 
         self.__dict__.update(config_dict)
         self.config_dict = self.__dict__.copy()
 
+       # Connexion
+        print("connect to degiro trading API")
+
+        if "credential_file_path" not in config_dict :
+            raise KeyError("Missing credential_file_path definition in input")
+        with open(self.credential_file_path, encoding= "utf8") as config_file:
+            config_dict = json.load(config_file)
+
+        user_token = config_dict.get("user_token")
+        self.chart_fetcher = ChartFetcher(user_token=user_token)
+
+        credentials = build_credentials(location=self.credential_file_path )
+        super().__init__(credentials = credentials )
+        
         self.rate_info = RateInfos()
         market_info_path = os.path.join(self.output_folder,"market_info.json")
         if self.update_market_rate or (not os.path.isfile(market_info_path)):
@@ -117,26 +130,7 @@ class SessionModelDCF():
         if not os.path.isdir(self.output_folder):
             raise FileNotFoundError(f"The specified output folder does not exist {self.output_folder}")
         
-        if "credential_file_path" not in config_dict :
-            raise KeyError("Missing credential_file_path definition in input")
-        
         self.connect()
-
-    def connect(self) :
-        """
-        Connexion
-        """
-        print("connect to degiro trading API")
-
-        with open(self.credential_file_path, encoding= "utf8") as config_file:
-            config_dict = json.load(config_file)
-
-        user_token = config_dict.get("user_token")
-        self.chart_fetcher = ChartFetcher(user_token=user_token)
-
-        credentials = build_credentials(location=self.credential_file_path )
-        self.trading_api = API(credentials = credentials )
-        self.trading_api.connect()
     
     def update_rate_dic(self, currency_1, currency_2, ):
         """

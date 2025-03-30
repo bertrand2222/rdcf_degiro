@@ -141,7 +141,7 @@ class FinancialForcast(Statements):
                                     f"{self.symbol}_company_forcast.json")
         if self.session_model.update_statements or (not os.path.isfile(statement_path)):
             try:
-                estimates_summaries = self.session_model.trading_api.get_estimates_summaries(
+                estimates_summaries = self.session_model.get_estimates_summaries(
                 product_isin= self.isin,
                 raw=True,
                 )['data']
@@ -479,7 +479,7 @@ class FinancialStatements(Statements):
         # print(os.path.isfile(statement_path))
         if self.session_model.update_statements or (not os.path.isfile(statement_path)):
 
-            r_financial_st = self.session_model.trading_api.get_financial_statements(
+            r_financial_st = self.session_model.get_financial_statements(
                         product_isin= self.isin,
                         raw= True
                     )

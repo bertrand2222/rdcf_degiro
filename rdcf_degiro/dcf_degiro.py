@@ -46,14 +46,12 @@ class RDCFAnal():
         reload(pd)
         self.df : pd.DataFrame = None
         self.share_list : List[Share] = []
-        self.trading_api : API = None
         # self.ids : List[int] = None
         self.__dict__.update(config_dict)
 
         self.session_model = SessionModelDCF(config_dict)
 
-        self.trading_api = self.session_model.trading_api
-        self.get_client_details_table = self.trading_api.get_client_details
+        self.get_client_details_table = self.session_model.get_client_details
         if self.session_model.retrieve_shares_from_favorites:
             self.retrieve_shares_from_favorites()
         if self.session_model.retrieve_shares_from_portfolio:
@@ -63,11 +61,11 @@ class RDCFAnal():
         """
         Retrieve stock and fund ids recorded in Degiro account favorite list
         """
-        favorite_batch = self.trading_api.get_favorite(raw=False)
+        favorite_batch = self.session_model.get_favorite(raw=False)
         ids = favorite_batch.data[0].product_ids
 
         # FETCH PRODUCT INFO
-        product_info = self.trading_api.get_products_info(
+        product_info = self.session_model.get_products_info(
             product_list= ids,
             raw=False,
         )
@@ -83,7 +81,7 @@ class RDCFAnal():
         Retrieve stock and fund ids recorded in Degiro account portfolio
         """
         
-        account_update = self.trading_api.get_update(
+        account_update = self.session_model.get_update(
         request_list=[
             UpdateRequest(
                 option=UpdateOption.PORTFOLIO,
@@ -104,7 +102,7 @@ class RDCFAnal():
                         break
         
         # FETCH PRODUCT INFO
-        product_info = self.trading_api.get_products_info(
+        product_info = self.session_model.get_products_info(
             product_list= ids,
             raw=False,
         )
@@ -169,7 +167,7 @@ class RDCFAnal():
                                     } for s in valid_share_list])
 
 
-        self.trading_api.logout()
+        self.session_model.logout()
 
         df.sort_values(by = ['forcasted_capital_cost',]  , inplace= True, ascending= False)
 

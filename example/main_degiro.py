@@ -1,14 +1,8 @@
 import sys, os 
 
 sys.path.append(r"C:\Users\SAFCOB009150\rdcf\rdcf_degiro")
-import pandas as pd
 
 import os
-import json
-from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
-# from degiro_connector.quotecast.tools.ticker_fetcher import TickerFetcher
-import yahooquery as yq
-import polars as pl
 from importlib import reload
 from rdcf_degiro.dcf_degiro import RDCFAnal
 
