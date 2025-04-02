@@ -4,7 +4,6 @@ import yahooquery as yq
 from datetime import datetime, timedelta, date
 import json, os
 from dateutil.relativedelta import relativedelta
-from rdcf_degiro.session_model_dcf import SessionModelDCF
 from rdcf_degiro.share_identity import ShareIdentity
 from typing import List
 # from sklearn.linear_model import LinearRegression
@@ -139,7 +138,7 @@ class FinancialForcast(Statements):
                 flush= True, end = "\r")
         statement_path = os.path.join(self.session_model.output_folder, 
                                     f"{self.symbol}_company_forcast.json")
-        if self.session_model.update_statements or (not os.path.isfile(statement_path)):
+        if self.session_model.update_statements_need(statement_path):
             try:
                 estimates_summaries = self.session_model.get_estimates_summaries(
                 product_isin= self.isin,
@@ -172,7 +171,7 @@ class FinancialForcast(Statements):
             data).set_index('endDate').sort_index().dropna()
         self.statements_currency = estimates_summaries['currency']
 
-        self.convert_to_price_currency(['y_forcast'])
+        self.convert_to_price_currency(['y_forcasts'])
 
     @property
     def forcasted_sal_growth(self):
@@ -394,7 +393,7 @@ class FinancialStatements(Statements):
         q_statements_path = os.path.join(self.session_model.output_folder, 
                                          f"{self.symbol}_q_statement.pckl")
         
-        if self.session_model.update_statements or (not os.path.isfile(y_statements_path)):
+        if self.session_model.update_statements_need(y_statements_path):
             tk = yq.Ticker(symb)
             y_statements : pd.DataFrame = tk.get_financial_data(TYPES)
             if not isinstance(y_statements, pd.DataFrame):
@@ -477,7 +476,7 @@ class FinancialStatements(Statements):
         statement_path = os.path.join(self.session_model.output_folder, 
                                     f"{self.symbol}_company_financial.json")
         # print(os.path.isfile(statement_path))
-        if self.session_model.update_statements or (not os.path.isfile(statement_path)):
+        if self.session_model.update_statements_need(statement_path):
 
             r_financial_st = self.session_model.get_financial_statements(
                         product_isin= self.isin,

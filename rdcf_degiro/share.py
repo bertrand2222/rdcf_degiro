@@ -1,13 +1,10 @@
 import json, os
-from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Callable
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize_scalar
 from degiro_connector.quotecast.models.chart import ChartRequest, Interval
 from dateutil.relativedelta import relativedelta
-from tabulate import tabulate
 
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 from rdcf_degiro.financial_statements import FinancialStatements, FinancialForcast
@@ -158,7 +155,7 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
 
         statement_path = os.path.join(self.session_model.output_folder, 
                                    f"{self.symbol}_company_ratio.json")
-        if self.session_model.update_statements or (not os.path.isfile(statement_path)):
+        if self.session_model.update_statements_need(statement_path):
             _ratios = self.session_model.get_company_ratios(
                 product_isin=self.isin, 
                 raw = True

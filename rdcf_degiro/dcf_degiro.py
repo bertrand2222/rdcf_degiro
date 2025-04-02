@@ -7,12 +7,11 @@ from typing import List
 import warnings
 import urllib3
 import pandas as pd
+from importlib import reload
 # from colorama import Fore
-from degiro_connector.trading.api import API
 from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
 from rdcf_degiro.share import Share
 from rdcf_degiro.session_model_dcf import SessionModelDCF
-from importlib import reload
 from rdcf_degiro.financial_statements import YahooRetrieveError
 warnings.simplefilter(action='ignore', category=FutureWarning)
 

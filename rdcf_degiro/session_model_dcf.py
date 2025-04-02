@@ -1,4 +1,4 @@
-import os, json
+import os, json, time
 from dataclasses import dataclass
 import requests
 from lxml import html
@@ -99,6 +99,8 @@ class SessionModelDCF(API):
     rate_history_dic = {}
     rate_current_dic = {}
     chart_fetcher : ChartFetcher = None
+    nb_days_update : int = 30
+    current_timestamp = time.time()
     
     def __init__(self, config_dict : dict):
 
@@ -121,7 +123,7 @@ class SessionModelDCF(API):
         
         self.rate_info = RateInfos()
         market_info_path = os.path.join(self.output_folder,"market_info.json")
-        if self.update_market_rate or (not os.path.isfile(market_info_path)):
+        if self.update_market_rate_need(market_info_path):
             self.rate_info.retrieve()
             self.rate_info.save(market_info_path)
         else:
@@ -159,3 +161,43 @@ class SessionModelDCF(API):
                     pd.to_datetime(currency_history.index[:-1]))
             self.rate_current_dic[rate_symb] = currency_history["close"].iloc[-1]
 
+    def update_statements_need(self, path: str) -> bool :
+        """
+        Checks if statements file need to be updated
+        Args:
+            path (str): path of file.
+        Returns:
+            bool: answer
+        """
+        if self.update_statements:
+            return True
+        return self.update_file_date_need(path)
+    
+    def update_market_rate_need(self, path : str) -> bool:
+        """
+        Checks if market date file need to be updated.
+
+        Args:
+            path (str): path of file.
+        Returns:
+            bool: answer
+        """
+        if self.update_market_rate:
+            return True
+        return self.update_file_date_need(path)
+    
+    def update_file_date_need(self, path : str) -> bool :
+        """
+        Checks if file is old enough to be updated
+        Args:
+            path (str): path of file.
+        Returns:
+            bool: answer
+        """
+        if not os.path.isfile(path):
+            return True
+        
+        days_old =  (self.current_timestamp - os.path.getmtime(path)) / (3600 * 24)
+        if days_old > self.nb_days_update:
+            return True
+        return False
