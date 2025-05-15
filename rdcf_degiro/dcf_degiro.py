@@ -30,18 +30,16 @@ urllib3.disable_warnings()
 
 PKL_NAME = "df_save.pkl"
 IS = 0.25
-NB_YEAR_DCF = 10
-
 
 class RDCFAnal():
     """
     object containing a reverse dcf analysis and all its context
     """
-    
+
     def __init__(self,
                  config_dict : dict = None,
              ) -> None:
-        
+
         reload(pd)
         self.df : pd.DataFrame = None
         self.share_list : List[Share] = []
@@ -55,7 +53,7 @@ class RDCFAnal():
             self.retrieve_shares_from_favorites()
         if self.session_model.retrieve_shares_from_portfolio:
             self.retrieve_shares_from_portfolio()
-        
+
     def retrieve_shares_from_favorites(self):
         """
         Retrieve stock and fund ids recorded in Degiro account favorite list
@@ -153,7 +151,7 @@ class RDCFAnal():
                                 # 'assumed_g_incf' :        s.dcf.g_incf ,
                                 # 'assumed_g_incf_ttm' :    s.dcf.g_incf_ttm,
                                 'history_growth'         : s.history_growth,
-                                "forcast_growth" :       s.forcasted_sal_growth,
+                                "forcast_growth" :       s.forcasted_ocf_growth,
                                 'diff_g_cacgr'         : s.g_delta_forcasted_assumed,
                                 'forcasted_capital_cost'         : s.forcasted_capital_cost,
                                 'per' :                 s.per,
@@ -221,7 +219,9 @@ class RDCFAnal():
 
         # add hyperlink
         for i, s in enumerate(df.index):
-            worksheet.write_url(f'B{i+2}', fr'https://www.tradingview.com/symbols/{s}/', string= df.loc[s, 'short_name'] )
+            worksheet.write_url(f'B{i+2}', 
+                                fr'https://www.tradingview.com/symbols/{s}/', 
+                                string= df.loc[s, 'short_name'] )
 
         worksheet.add_table(0,0,len(df.index),len(df.columns) ,
                             {"columns" : [{'header' : 'symbol'}]
@@ -233,9 +233,12 @@ class RDCFAnal():
         worksheet.set_column(
             f"{col_letter['beta']}:{col_letter['price_to_fcf']}", 8, number)
         # worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_ttm']}", 11, percent)
-        worksheet.set_column(f"{col_letter['market_capital_cost']}:{col_letter['forcasted_capital_cost']}", 11, percent)
-        worksheet.set_column(f"{col_letter['per']}:{col_letter['price_to_book']}", 11, number)
-        worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}", 11, percent )
+        worksheet.set_column(f"{col_letter['market_capital_cost']}:{col_letter['forcasted_capital_cost']}",
+                             11, percent)
+        worksheet.set_column(f"{col_letter['per']}:{col_letter['price_to_book']}", 
+                             11, number)
+        worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}",
+                             11, percent )
         worksheet.set_column(f"{col_letter['roe']}:{col_letter['roic']}", 11, percent )
         # worksheet.set_column(f"{col_letter['mean_g_fcf']}:{col_letter['diff_g']}", 13, percent )
 

@@ -1,18 +1,19 @@
+import os
+import json
+import re
+from datetime import datetime
+from typing import List
 import pandas as pd
 import numpy as np
 import yahooquery as yq
-from datetime import datetime, timedelta, date
-import json, os
 from dateutil.relativedelta import relativedelta
 from rdcf_degiro.share_identity import ShareIdentity
-from typing import List
 # from sklearn.linear_model import LinearRegression
 # import matplotlib.pylab as plt
-import numpy as np
-import re
 OVERLAPING_DAYS_TOL = 7
 
-YA_INCOME_INFOS = [ 'FreeCashFlow','TotalRevenue', "NetIncome", "OperatingCashFlow", 'CapitalExpenditure', 'ChangeInWorkingCapital']
+YA_INCOME_INFOS = [ 'FreeCashFlow','TotalRevenue', "NetIncome",
+                    "OperatingCashFlow", 'CapitalExpenditure', 'ChangeInWorkingCapital']
 YA_PAYOUT_INFOS = [ 'RepurchaseOfCapitalStock', 'CashDividendsPaid', 'CommonStockIssuance']
 YA_BALANCE_INFOS = ['currencyCode', 'TotalDebt', 'CashAndCashEquivalents',
                  'CommonStockEquity', "InvestedCapital",  "BasicAverageShares"]
@@ -52,7 +53,7 @@ PAYOUT_INFOS = ["FCDP", "FPSS" ]
 
 FINANCIAL_ST_CODES =   INC_CODES + BAL_CODES + CASH_CODES
 
-FINANCIAL_FCST_CODES =  ['NET', 'SAL', 'PRE', 'CPX']
+FINANCIAL_FCST_CODES =  ['NET', 'SAL', 'PRE', 'CPX', 'CPS']
 RENAME_DIC = {
     "TotalRevenue" :                "RTLR",
     "OperatingCashFlow" :           "OTLO",
@@ -73,8 +74,14 @@ SPECIAL_CURRENCIES = {
 }
 
 class YahooRetrieveError(Exception):
-    pass
+    """
+    Exception relative to yahooretrieve function
+    """
+
 class Statements(ShareIdentity):
+    """
+    class containing statements
+    """
 
     statements_currency :str = None
     rate_factor = 1
@@ -88,14 +95,14 @@ class Statements(ShareIdentity):
         """
         if self.statements_currency == self.share_currency:
             return
-        print(f'{self.name} : convert statement to price currency                                  ')
+        print(f'{self.name} : convert statement to price currency                               ')
         share_currency_special = self.share_currency
         if self.share_currency in  SPECIAL_CURRENCIES :
             share_currency_special = SPECIAL_CURRENCIES[self.share_currency]['real']
             self.rate_factor = SPECIAL_CURRENCIES[self.share_currency]['rate_factor']
-        
+
         if share_currency_special != self.statements_currency:
-            print(f'{self.name} : retrieve {self.statements_currency}/{share_currency_special} history                    ')
+            print(f'{self.name} : retrieve {self.statements_currency}/{share_currency_special} history       ')
             self.session_model.update_rate_dic(  self.statements_currency, share_currency_special
                                                             )
             self.rate_symb = self.statements_currency +  share_currency_special   + "=X"
@@ -118,25 +125,34 @@ class Statements(ShareIdentity):
                     ], axis = 0
                     ).sort_index()
             new_df['change_rate'] = new_df['change_rate'].ffill()
-            new_df = new_df.dropna(axis=0, subset= convert_value_cols )     
-            new_df[convert_value_cols] = new_df[convert_value_cols].multiply(new_df['change_rate'], axis= 0)
+            new_df = new_df.dropna(axis=0, subset= convert_value_cols )
+            new_df[convert_value_cols] = new_df[convert_value_cols].multiply(
+                new_df['change_rate'], axis= 0)
 
             return new_df
-            
+
         p_df.loc[:,convert_value_cols] /= self.rate_factor
         return p_df
 
 class FinancialForcast(Statements):
+    """
+    Class computing and containing fincancial forcast
+    """
 
     y_forcasts : pd.DataFrame = None
-    _forcasted_sal_growth : float = None
-    _forcasted_cpx_growth : float = None
+    _forcasted_ocf_growth : float = None
+    _forcasted_cex_growth : float = None
+    _forcasted_ocf : np.ndarray = None
+    _forcasted_cex : np.ndarray = None
 
     def retrieve_forcasts(self):
+        """
+        retrive forcated financial data
+        """
 
         print(f'{self.name} : retrieves forcast                    ',
                 flush= True, end = "\r")
-        statement_path = os.path.join(self.session_model.output_folder, 
+        statement_path = os.path.join(self.session_model.output_folder,
                                     f"{self.symbol}_company_forcast.json")
         if self.session_model.update_statements_need(statement_path):
             try:
@@ -147,7 +163,7 @@ class FinancialForcast(Statements):
 
             except KeyError as e:
                 raise KeyError(f'no forcast statement found for isin {self.isin}') from e
-                
+
             with open(statement_path,
                         "w", 
                         encoding= "utf8") as json_file: 
@@ -168,87 +184,106 @@ class FinancialForcast(Statements):
             data.append(y_dict)
 
         self.y_forcasts = pd.DataFrame.from_records(
-            data).set_index('endDate').sort_index().dropna()
+            data).set_index('endDate').sort_index()
         self.statements_currency = estimates_summaries['currency']
 
         self.convert_to_price_currency(['y_forcasts'])
 
     @property
-    def forcasted_sal_growth(self):
+    def forcasted_ocf_growth(self):
         """
         forcasted annual growth rate
         """
-        if self._forcasted_sal_growth is None :
-            self._forcasted_sal_growth = self._get_forcast_sal_growth()
-        return self._forcasted_sal_growth
-    
-    def _get_forcast_sal_growth(self):
+        if self._forcasted_ocf_growth is None :
+            self._forcasted_ocf_growth = self._get_forcasted_ocf_growth()
+        return self._forcasted_ocf_growth
+
+    def _get_forcasted_ocf_growth(self):
         """
         retruned growth rate fited from estimate 
         """
-        
+
         if self.y_forcasts is None:
             return np.nan
         y = None
-        for val in ['SAL', 'PRE', 'NET'] :
-            if val in self.y_forcasts and self.y_forcasts[val].min() > 0 : 
-                y = np.log(self.y_forcasts[val].values / self.y_forcasts[val].iloc[0])
-                break
-        if y is None :# no valid values 
-            print(f"{self.symbol} no valid value to compute estimate")
+        for val in ['CPS', 'SAL', 'NET', 'PRE' ] :
+            if val in self.y_forcasts :
+                ys  = self.y_forcasts[val].dropna()
+                if len(ys) >1 and  ys.min() > 0 :
+                    y = np.log(ys.values / ys.iloc[0])
+                    break
+        if y is None :# no valid values
+            print(f"{self.symbol} no valid value to compute OCF growth estimate")
             return np.nan
 
-        x = np.arange(len(self.y_forcasts.index))
-        
+        x = np.arange(len(y))
         # x = x[:, np.newaxis]
         # a, _, _, _ = np.linalg.lstsq(x,y)
         # g= np.exp(a[0]) - 1
-        
         z = np.polyfit(x,y, deg = 1)
-        g = np.exp(z[0]) - 1 
+        g = np.exp(z[0]) - 1
         return g
-    
+
+    def _set_forcasted_cex(self):
+        """
+        retruned growth rate fited from estimate 
+        """
+        self._forcasted_cex_growth = np.nan
+        if self.y_forcasts is None:
+            return
+
+        y = None
+        ys = None
+        val = 'CPX'
+        if val in self.y_forcasts:
+            ys = self.y_forcasts[val].dropna()
+            if len(ys)> 1 and ys.min() > 0 :
+                y = np.log(ys.values / ys.iloc[0])
+
+        if y is None :# no valid values
+            print(f"{self.symbol} no valid value to compute CPX forcast")
+            return
+
+        x = np.arange(len(y))
+        # x = x[:, np.newaxis]
+        # a, _, _, _ = np.linalg.lstsq(x,y)
+        # g= np.exp(a[0]) - 1
+
+        z = np.polyfit(x,y, deg = 1)
+        g = np.exp(z[0]) - 1
+        g = min(g,2)  #bound growth rate to 2
+        self._forcasted_cex_growth = g
+        ys = np.concat([
+                ys,
+                ys[-1] * (1+ g)**np.arange(
+                    1,
+                    1 + self.session_model.nb_year_dcf - len(ys))])
+        self._forcasted_cex = ys
+
     @property
-    def forcasted_cpx_growth(self):
+    def forcasted_cex_growth(self):
         """
         forcasted annual growth rate
         """
-        if self._forcasted_cpx_growth is None :
-            self._forcasted_cpx_growth = self._get_forcast_cpx_growth()
-        return self._forcasted_cpx_growth
-    
-    def _get_forcast_cpx_growth(self):
-        """
-        retruned growth rate fited from estimate 
-        """
-        
-        if self.y_forcasts is None:
-            return np.nan
-        y = None
-        for val in ['CPX',] :
-            if val in self.y_forcasts and self.y_forcasts[val].min() > 0 : 
-                y = np.log(self.y_forcasts[val].values / self.y_forcasts[val].iloc[0])
-                break
-        if y is None :# no valid values 
-            print(f"{self.symbol} no valid value to compute estimate")
-            return np.nan
+        if self._forcasted_cex_growth is None :
+            self._set_forcasted_cex()
+        return self._forcasted_cex_growth
 
-        x = np.arange(len(self.y_forcasts.index))
-        # x = x[:, np.newaxis]
-        # a, _, _, _ = np.linalg.lstsq(x,y)
-        # g= np.exp(a[0]) - 1
-        
-        z = np.polyfit(x,y, deg = 1)
-        g = np.exp(z[0]) - 1 
-        return g
-
+    @property
+    def forcasted_cex(self) -> np.ndarray:
+        """
+        array of forcasted cpx
+        """
+        if self._forcasted_cex is None:
+            self._set_forcasted_cex()
+        return self._forcasted_cex
 
 class FinancialStatements(Statements):
     """
     Share financial statement from degiro
     
     """
-    
+
     y_statements : pd.DataFrame = None
     q_inc_statements : pd.DataFrame = None
     q_bal_statements : pd.DataFrame = None     
@@ -259,29 +294,30 @@ class FinancialStatements(Statements):
     cash_code : str = 'ACAE'
     total_revenue_code : str = 'RTLR'
     # gross_profit_code : str = 'SGRP'
-    fcf : float = None
-    # focf : float = None
+    fcf : float = None # free cash flow
+    ocf : float = None # operating cash flow
+    cex : float = None # capital expenditure
     nincf : float = None
     _history_growth : float = None
     last_bal_statements : pd.Series = None 
     q_cashflow_available : bool = None
     _y_inc_complete_statements : pd.DataFrame = None
-    # ttm_inc_period : float = None
 
     def retrieve_financials(self):
-        
+        """
+        Retrieve financial statements
+        """
+
         try :
             self.degiro_financial_retrieve()
         except KeyError as e:
             print(f'{self.name} : can not retrieve financial data from degiro, {e}')
             self.yahoo_financial_retrieve()
-        
-        
+
         self.y_statements.loc[:,'periodLength'] = 12
         self.y_statements.loc[:,'periodType'] = 'M'
-        
 
-        self.q_cashflow_available = ('OTLO' in self.q_cas_statements.columns)
+        self.q_cashflow_available = 'OTLO' in self.q_cas_statements.columns
         # compute cash flow from income
         # self.y_statements.loc[:,'FOCF'] = self.y_statements.loc[:,"OTLO"] - self.y_statements.loc[:,"SOCF"]
         # if "OTLO" in self.q_cas_statements.columns:
@@ -291,7 +327,7 @@ class FinancialStatements(Statements):
 
         # self._y_cas_complete_statements = pd.concat([self.y_statements,
         #                             self._cas_ttm_statements_df]).dropna(subset= CASH_CODES)
-        
+
         self.compute_avg_values()
 
 
@@ -300,11 +336,9 @@ class FinancialStatements(Statements):
         Evaluate averaged values and ratios from financial statements
         """
         q_cas_statements =  self.q_cas_statements
-        q_inc_statements =  self.q_inc_statements
+        # q_inc_statements =  self.q_inc_statements
         y_statements = self.y_statements
-        
-        complement_q_inc = q_inc_statements.loc[q_inc_statements.index
-                                                            > y_statements.index[-1]]
+
         history_avg_nb_year = min(self.session_model.history_avg_nb_year, len(y_statements.index))
 
         all_cas = pd.concat([y_statements.iloc[-history_avg_nb_year:],
@@ -316,24 +350,28 @@ class FinancialStatements(Statements):
                                 all_cas.loc[all_cas['periodType'] == 'W','periodLength'].sum() /52
 
         self.fcf = all_cas.loc[:,'FCFL'].sum() / all_cas_time
+        self.ocf = all_cas.loc[:,'OTLO'].sum() / all_cas_time
+        self.cex = self.ocf - self.fcf
 
-        # self.focf = (y_statements.loc[:,'FOCF'].iloc[-history_avg_nb_year:].sum() \
-        #             + complement_q_cas_focf
-        #             ) / q_cas_nb_year_avg
-        # self.nincf = self.fcf - self.focf
 
     @property
     def inc_ttm_statements(self) -> pd.Series :
+        """
+        ttm income statements
+        """
         return self._inc_ttm_statements_df.iloc[-1]
     @property
     def cas_ttm_statements(self) -> pd.Series :
+        """
+        ttm cash flow statements
+        """
         return self._cas_ttm_statements_df.iloc[-1]
-    @property    
+    @property
     def fcf_ttm(self):
+        """
+        ttm free cash flow
+        """
         return self.cas_ttm_statements['FCFL']
-    # @property
-    # def focf_ttm(self):
-    #     return self.cas_ttm_statements['FOCF']
 
     @property
     def total_payout_ratio(self) -> float:
@@ -342,11 +380,16 @@ class FinancialStatements(Statements):
         """
         payout = 0
         for info in list(set(PAYOUT_INFOS) & set(self.y_statements.columns)) :
-            payout -= self.y_statements.loc[:,info].iloc[-self.session_model.history_avg_nb_year:].sum()
-        return payout / self.y_statements.loc[:,'NINC'].iloc[-self.session_model.history_avg_nb_year:].sum()
-    
+            payout -= self.y_statements.loc[:,info].iloc[
+                -self.session_model.history_avg_nb_year:].sum()
+        return payout / self.y_statements.loc[:,'NINC'].iloc[
+            -self.session_model.history_avg_nb_year:].sum()
+
     @property
     def history_growth(self):
+        """
+        history growth rate
+        """
         if self._history_growth is None :
             self._history_growth = self._get_history_growth()
         return self._history_growth
@@ -355,7 +398,7 @@ class FinancialStatements(Statements):
         """
         Return : revenu history growth calculated by logaritmic fit
         """
-        
+
         y = None
         # df = self._y_cas_complete_statements
         # df['year'] = (df.index - df.index[0]).days / 365
@@ -382,19 +425,20 @@ class FinancialStatements(Statements):
         """
         Get the share associated financial infos from yahoo finance api 
         """
-        print(f'{self.name} : retrieves financial statement from yahoo             ', flush= True, end = "\r")
-        
+        print(f'{self.name} :\
+               retrieves financial statement from yahoo             ', flush= True, end = "\r")
+
         symb = self.symbol
         if self.symbol in self.session_model.yahoo_symbol_cor:
             symb = self.session_model.yahoo_symbol_cor[symb]
-        
-        y_statements_path = os.path.join(self.session_model.output_folder, 
+
+        y_statements_path = os.path.join(self.session_model.output_folder,
                                          f"{self.symbol}_y_statement.pckl")
-        q_statements_path = os.path.join(self.session_model.output_folder, 
+        q_statements_path = os.path.join(self.session_model.output_folder,
                                          f"{self.symbol}_q_statement.pckl")
-        
+
         if self.session_model.update_statements_need(y_statements_path):
-            tk = yq.Ticker(symb)
+            tk = yq.Ticker(symb, asynchronous=True)
             y_statements : pd.DataFrame = tk.get_financial_data(TYPES)
             if not isinstance(y_statements, pd.DataFrame):
                 raise YahooRetrieveError(
@@ -402,39 +446,41 @@ class FinancialStatements(Statements):
             y_statements.to_pickle(y_statements_path)
             q_statements : pd.DataFrame = tk.get_financial_data(TYPES , frequency= "q",
                                                         trailing= False).set_index('asOfDate')
-            
+
             q_statements.to_pickle(q_statements_path)
         else:
-            print(f'{self.name} read data frame')
             y_statements : pd.DataFrame = pd.read_pickle(y_statements_path)
             q_statements : pd.DataFrame = pd.read_pickle(q_statements_path)
 
         if not isinstance(y_statements, pd.DataFrame):
             raise TypeError('financial data is not a valid dataframe')
 
-        currency = y_statements.dropna(subset="FreeCashFlow")["currencyCode"].value_counts().idxmax()
-        y_statements = y_statements.sort_values(by = ['asOfDate' , 'BasicAverageShares'], ascending=[1, 0])
+        currency = y_statements.dropna(
+            subset="FreeCashFlow")["currencyCode"].value_counts().idxmax()
+        y_statements = y_statements.sort_values(
+            by = ['asOfDate' , 'BasicAverageShares'], ascending=[1, 0])
 
         y_statements['BasicAverageShares'] = y_statements['BasicAverageShares'].ffill(axis = 0, )
         y_statements = y_statements.loc[y_statements['currencyCode'] == currency ]
-        
+
         y_statements = y_statements.rename(columns= RENAME_DIC)
         q_statements = q_statements.rename(columns= RENAME_DIC)
-        
+
         y_statements = y_statements.ffill(axis = 0).drop_duplicates(
                                                                 subset = ['asOfDate', ],
                                                                 keep= 'last').set_index('asOfDate')
-            
+
         q_statements = q_statements.loc[q_statements['currencyCode'] == currency ]
         y_statements[[c for c in y_statements.columns if c not in ['periodType', 'currencyCode']]] *= 1e-6
         q_statements[[c for c in q_statements.columns if c not in ['periodType', 'currencyCode']]] *= 1e-6
-   
-        self._inc_ttm_statements_df = y_statements.loc[y_statements['periodType'] == 'TTM'].iloc[[-1]]
+
+        self._inc_ttm_statements_df = y_statements.loc[
+            y_statements['periodType'] == 'TTM'].iloc[[-1]]
         self._cas_ttm_statements_df = self._inc_ttm_statements_df
 
         max_occur_month = y_statements.index.month.value_counts().idxmax()
         y_statements = y_statements.loc[y_statements.index.month == max_occur_month ]
-        
+
         if isinstance(q_statements, pd.DataFrame) :
             q_statements.ffill(axis = 0, inplace = True)
             last_date_y = y_statements.index[-1]
@@ -443,22 +489,25 @@ class FinancialStatements(Statements):
             for d in YA_BALANCE_INFOS:
                 if d in q_statements.columns :
                     y_statements.loc[last_date_y , d] = q_statements.loc[last_date_q , d]
-        
+
         self.y_statements = y_statements
-        
 
-        q_statements['periodLength'] = q_statements['periodType'].apply(lambda x : int(re.search('^[0-9]+',x).group()))
-        q_statements['periodType'] = q_statements['periodType'].apply(lambda x : re.search('[A-Z]+$',x).group())
+        q_statements['periodLength'] = q_statements['periodType'].apply(
+            lambda x : int(re.search('^[0-9]+',x).group()))
+        q_statements['periodType'] = q_statements['periodType'].apply(
+            lambda x : re.search('[A-Z]+$',x).group())
 
-        self.q_inc_statements = q_statements[['periodLength' , 'periodType'] + list(set(INC_CODES) & set(q_statements.columns))]
+        self.q_inc_statements = q_statements[
+            ['periodLength' , 'periodType'] + list(set(INC_CODES) & set(q_statements.columns))]
         self.q_bal_statements = q_statements[list(set(BAL_CODES) & set(q_statements.columns))]
-        self.q_cas_statements = q_statements[['periodLength' , 'periodType'] + list(set(CASH_CODES) & set(q_statements.columns))] 
+        self.q_cas_statements = q_statements[
+            ['periodLength' , 'periodType'] + list(set(CASH_CODES) & set(q_statements.columns))]
 
         self.nb_shares = self.y_statements["QTCO"].iloc[-1]
 
         self.statements_currency = y_statements['currencyCode'].iloc[-1]
         self.convert_to_price_currency(['y_statements',
-                                        'q_inc_statements', 
+                                        'q_inc_statements',
                                         'q_bal_statements', 
                                         'q_cas_statements',
                                         '_inc_ttm_statements_df',
@@ -472,7 +521,8 @@ class FinancialStatements(Statements):
         """
         Retrieve financial statements from degiro api
         """
-        print(f'{self.name} : retrieves financial statement from degiro            ', flush= True, end = "\r")
+        print(f'{self.name} : retrieves financial statement from degiro            ',
+              flush= True, end = "\r")
         statement_path = os.path.join(self.session_model.output_folder, 
                                     f"{self.symbol}_company_financial.json")
         # print(os.path.isfile(statement_path))
@@ -488,7 +538,7 @@ class FinancialStatements(Statements):
                 financial_st = r_financial_st['data']
             except KeyError as e:
                 raise KeyError(f'no financial statement found for isin {self.isin}') from e
-            
+
             with open(statement_path,
                         "w", 
                         encoding= "utf8") as outfile: 
@@ -509,7 +559,7 @@ class FinancialStatements(Statements):
                                         '_inc_ttm_statements_df',
                                         '_cas_ttm_statements_df'
                                         ])
-        
+
         self.last_bal_statements = self.q_bal_statements.iloc[-1]
 
 
@@ -535,14 +585,13 @@ class FinancialStatements(Statements):
             set(FINANCIAL_ST_CODES) & set(y_statements.columns))]
         if 'RTLR' not in y_statements.columns :
             self.total_revenue_code = 'SIIB'
-        
-    
-        # free cash flow            = Cash from Operating Activities + Capital Expenditures( negative), 
+
+        # free cash flow = Cash from Operating Activities + Capital Expenditures( negative),
         bal_cols = list(set(BAL_CODES) & set(y_statements.columns))
         y_statements[bal_cols] = y_statements[bal_cols].ffill().bfill()
         inc_cols = list(set(CASH_CODES + INC_CODES) & set(y_statements.columns))
         y_statements[inc_cols] = y_statements[inc_cols].fillna(0)
-        
+
         # compute free cash flow
         y_statements['FCFL'] = y_statements["OTLO"]
         if "SCEX" in y_statements:
@@ -563,13 +612,13 @@ class FinancialStatements(Statements):
                 for k, v in statement.items():
                     if k != "items" :
                         q_dict[k] = v
-                 
+
                 for  item in  statement['items'] :
                     if item['code'] in FINANCIAL_ST_CODES:
-                        q_dict[item["code"]] = item["value"]             
+                        q_dict[item["code"]] = item["value"]
 
                 int_data.append(q_dict)
-         
+
         df = pd.DataFrame.from_records(int_data).iloc[::-1]
         df['endDate'] = pd.to_datetime(df['endDate'])
         gb = df.groupby('type')
@@ -582,11 +631,11 @@ class FinancialStatements(Statements):
             if key  in q_bal_statements.columns:
                 self.cash_code = key
                 break
-        
+
         q_inc_statements = remove_overlapping_data(q_inc_statements)
         q_cas_statements = remove_overlapping_data(q_cas_statements)
 
-        # free cash flow            = Cash from Operating Activities - Capital Expenditures, 
+        # free cash flow            = Cash from Operating Activities - Capital Expenditures,
         q_cas_statements['FCFL'] = q_cas_statements["OTLO"] 
         if "SCEX" in q_cas_statements:
             q_cas_statements['FCFL'] += q_cas_statements["SCEX"]
@@ -603,7 +652,7 @@ class FinancialStatements(Statements):
         ttm_start_time = q_inc_statements.index[-1] - relativedelta(years= 1)
         q_inc_ttm_statements  = q_inc_statements.loc[
             q_inc_statements.index > ttm_start_time]
-        
+
         self._inc_ttm_statements_df = q_inc_ttm_statements.sum().to_frame().T
         self._inc_ttm_statements_df.index = [q_inc_statements.index[-1]]
 
@@ -615,15 +664,16 @@ class FinancialStatements(Statements):
         ttm_start_time = q_cas_statements.index[-1] - relativedelta(years= 1)
         q_cas_ttm_statements = q_cas_statements.loc[
             q_cas_statements.index > ttm_start_time]
-        
+
         self._cas_ttm_statements_df = q_cas_ttm_statements.sum().to_frame().T
         self._cas_ttm_statements_df.index = [q_cas_ttm_statements.index[-1]]
 
         ttm_period = (((q_cas_ttm_statements['periodType'] == 'M') * q_cas_ttm_statements['periodLength']).sum() /12 + (
                 (q_cas_ttm_statements['periodType'] == 'W') * q_cas_ttm_statements['periodLength']).sum() /52)
-        
-        self._cas_ttm_statements_df[list(set(CASH_CODES) & set(self._cas_ttm_statements_df.columns))] /= ttm_period
-        
+
+        self._cas_ttm_statements_df[
+            list(set(CASH_CODES) & set(self._cas_ttm_statements_df.columns))] /= ttm_period
+
         self.q_inc_statements = q_inc_statements
         self.q_bal_statements = q_bal_statements
         self.q_cas_statements = q_cas_statements
@@ -635,10 +685,11 @@ def remove_overlapping_data(p_df:pd.DataFrame):
     value_cols = ["periodLength"] + [c for c in p_df.columns if c in FINANCIAL_ST_CODES]
 
     #### eval coresponding startDate from end date and periodLength
-    p_df['startDate'] = p_df.apply(lambda x : get_date_shift_back(x.endDate,
-                                                                    months = (x.periodType == 'M') * x.periodLength,
-                                                                    weeks = (x.periodType == 'W') * x.periodLength,
-                                                                    ), axis = 1)
+    p_df['startDate'] = p_df.apply(lambda x : get_date_shift_back(
+            x.endDate,
+            months = (x.periodType == 'M') * x.periodLength,
+            weeks = (x.periodType == 'W') * x.periodLength,
+            ), axis = 1)
     p_df['startDate_shift'] = p_df['startDate'].shift()
     #### apply overlaping tolerance of OVERLAPING_DAYS_TOL days
     p_df['startDate_shift'] = p_df['startDate_shift'].apply(

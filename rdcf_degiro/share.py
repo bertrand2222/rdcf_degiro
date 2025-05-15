@@ -1,5 +1,5 @@
 import json, os
-from datetime import datetime, timedelta
+from datetime import  timedelta
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize_scalar
@@ -11,7 +11,7 @@ from rdcf_degiro.financial_statements import FinancialStatements, FinancialForca
 from rdcf_degiro.share_identity import ShareIdentity
 
 ERROR_QUERRY_PRICE = 2
-
+TOLERANCE_MINIMIZE = 1e-2
 # EURONEXT_ID = '710'
 # NASDAQ_ID = '663'
 
@@ -145,7 +145,6 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
         #     self.yahoo_retrieve()
         # except (KeyError,TypeError) as e:
         #     raise TypeError(f'{self.name} : error while retrieving value ratios from yahoo, {e}     ') from e
-        
 
     def degiro_values_retrieve(self):
         """
@@ -163,15 +162,14 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
             if 'data' not in _ratios:
                 raise KeyError(f'ratio data not available for isin {self.isin}')
             ratios = _ratios['data']
-            with open(statement_path, 
-                        "w", 
-                        encoding= "utf8") as outfile: 
+            with open(statement_path, "w", 
+                        encoding= "utf8") as outfile:
                 json.dump(ratios, outfile, indent = 4)
         else:
             with open(statement_path, "r", encoding= "utf8") as json_file:
-                ratios = json.load(json_file) 
+                ratios = json.load(json_file)
 
-        self.market_cap = self.nb_shares * self.current_price 
+        self.market_cap = self.nb_shares * self.current_price
 
         ratio_dic = {}
         for rg in ratios['currentRatios']['ratiosGroups'] :
@@ -198,7 +196,6 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
         #     self.history_growth = float(ratio_dic['FOCF_AYr5CAGR']) / 100 # return on investec capital - TTM
         # if not self.current_price:
         #     self.retrieve_current_price()
-
 
     def yahoo_values_retrieve(self):
         """
@@ -301,6 +298,7 @@ class ShareDCFModule(ShareValues):
 
     g           : float = np.nan
     g_ttm       : float = np.nan
+    _vt         : float = None
     # g_incf : float = np.nan
     # g_incf_ttm : float = np.nan
     g_delta_forcasted_assumed : float = np.nan
@@ -308,6 +306,12 @@ class ShareDCFModule(ShareValues):
 
     @property
     def forcasted_capital_cost(self):
+        """
+        compute capital cost from wacc
+
+        Returns:
+            capital_cost(float)
+        """
         total_debt =  self.total_debt
         stock_equity =  self.stock_equity
         if np.isnan(self.forcasted_wacc) :
@@ -317,67 +321,112 @@ class ShareDCFModule(ShareValues):
                     self.session_model.rate_info.debt_cost * (1-self.session_model.taxe_rate) *\
                         total_debt/(total_debt + stock_equity)) *\
                         (total_debt + stock_equity)/stock_equity
-        
+
         return (self.forcasted_wacc - \
                     self.session_model.rate_info.debt_cost * (1-self.session_model.taxe_rate) *\
                         (total_debt + stock_equity) /total_debt ) *\
                         - stock_equity /(total_debt + stock_equity)
 
+    @property
+    def vt(self):
+        """
+        return unactuated terminal value
+        """
+        if self._vt is None:
+            ocf_g = self.forcasted_ocf_growth
+            cex_g = self.forcasted_cex_growth
+            nb_year_dcf = self.session_model.nb_year_dcf
+            vt = (self.ocf * (1+ocf_g)**nb_year_dcf) * self.price_to_fcf_terminal
+            if not self.forcasted_cex is None :
+                # vt -= (self.cex * (1+cex_g)**nb_year_dcf) * self.price_to_fcf_terminal
+                vt -= self.forcasted_cex[-1] * self.price_to_fcf_terminal
+            self._vt =  max(0,vt)
+        return self._vt
+
+    def _compute_forcasted_wacc(self):
+        if self.ocf < 0 :
+            return
+        if np.isnan(self.forcasted_ocf_growth)  :
+            return
+
+        self.g_delta_forcasted_assumed = self.forcasted_ocf_growth - self.g
+
+        if not np.isnan(self.forcasted_cex_growth) :
+            # print(self.ocf)
+            # print(self.cex)
+            # print(self.forcasted_ocf_growth)
+            # print(self.forcasted_cpx_growth)
+            fw_pos = minimize_scalar(_residual_dcf_on_wacc_ocf_cex, args=(self),
+                                method= 'bounded', bounds = (0, 2)).x
+            err_pos =  _residual_dcf_on_wacc_ocf_cex(fw_pos, self)
+            if err_pos <= TOLERANCE_MINIMIZE:
+                self.forcasted_wacc = fw_pos
+                return
+
+            # if positive wacc assumption doesn't work search negative wacc 
+            fw_neg = minimize_scalar(_residual_dcf_on_wacc_ocf_cex, args=(self),
+                            method= 'bounded', bounds = (-1, 0)).x
+            err_neg = _residual_dcf_on_wacc_ocf_cex(fw_neg, self)
+            if err_neg <= TOLERANCE_MINIMIZE:
+                self.forcasted_wacc = fw_neg
+                return
+
+        if self.fcf < 0 :
+            return
+        self.forcasted_wacc = minimize_scalar(
+            _residual_dcf_on_wacc, args=(self, self.fcf,  False),
+                            method= 'bounded', bounds = (-1, 2)).x
+
+    def _compute_g(self, fcf :float, up_bound : float):
+        """
+        compute g from mean fcf
+        """
+        if fcf < 0 :
+            print(f"{self.name} : negative free cash flow mean, can not compute assumed growth")
+            return
+        self.g = minimize_scalar(_residual_dcf_on_g, args=(self, fcf,  False),
+                            method= 'bounded', bounds = (-1, up_bound)).x
+
+    def _compute_g_ttm(self, up_bound :float):
+        """
+        compute g_from_ttm from last fcf
+        """
+
+        if  not self.q_cashflow_available :
+            return
+        if self.fcf_ttm < 0:
+            print(f"{self.name} : negative TTM free cash flow, can not compute TTM assumed growth")
+            return
+
+        self.g_ttm = minimize_scalar(_residual_dcf_on_g, args=(self, self.fcf_ttm,  False),
+                                method= 'bounded', bounds = (-1, up_bound)).x
+
+        # # compute g_from_ttm from last incf
+        # if self.financial_statements.focf_ttm < 0:
+        #     print(f"{self.name} : negative TTM cash flow from income mean, can not compute TTM RDINCF")
+        # else :
+        #     self.g_incf_ttm = minimize_scalar(_residual_dincf_on_g, args=(self, self.financial_statements.focf_ttm),
+        #                     method= 'bounded', bounds = (-1, up_bound)).x
 
     def compute_dcf(self, start_fcf : float = None):
-
         """
         Evaluate company assumed growth rate from fundamental financial data
         """
-        print(f'{self.name} : compute dcf values                     ', )
-        fcf = start_fcf  if start_fcf else self.fcf
- 
-        if self.session_model.use_multiple:
-            up_bound = 2
-        else :
-            up_bound = self.market_wacc
+        print(f'{self.name} : compute dcf values                        ')
+        fcf = start_fcf or self.fcf
 
-        if self.session_model.use_multiple :
-            if self.price_to_fcf_terminal < 0:
-                print(f"{self.name} negative terminal price to fcf multiple, can not compute RDCF")
-                return
-        # compute g from mean fcf
-        if fcf < 0 :
-            print(f"{self.name} : negative free cash flow mean, can not compute RDCF")
-        else :
-            self.g = minimize_scalar(_residual_dcf_on_g, args=(self, fcf,  False),
-                                method= 'bounded', bounds = (-1, up_bound)).x
-            if not np.isnan(self.forcasted_sal_growth)  :
-                self.forcasted_wacc = minimize_scalar(_residual_dcf_on_wacc, args=(self, fcf,  False),
-                                    method= 'bounded', bounds = (-1, 2)).x
+        up_bound = 2 if self.session_model.use_multiple else self.market_wacc
 
-                self.g_delta_forcasted_assumed = self.forcasted_sal_growth - self.g
+        if self.session_model.use_multiple and (self.price_to_fcf_terminal < 0) :
+            print(f"{self.name} negative terminal price to fcf multiple, can not compute RDCF")
+            return
 
-        # # compute g from income cash flow
-        
-        # if self.financial_statements.focf < 0 :
-        #     print(f"{self.name} : negative cash flow from income mean, can not compute RDINCF")
-        # else :
-        #     self.g_incf = minimize_scalar(_residual_dincf_on_g, args=(self, self.financial_statements.focf),
-        #                         method= 'bounded', bounds = (-1, up_bound)).x
+        self._compute_g(fcf, up_bound= up_bound)
+        self._compute_g_ttm(up_bound= up_bound)
+        self._compute_forcasted_wacc()
 
-        if  self.q_cashflow_available :
-            # compute g_from_ttm from last fcf
-            if self.fcf_ttm < 0:
-                print(f"{self.name} : negative TTM free cash flow, can not compute TTM RDCF")
-            else :
-                self.g_ttm = minimize_scalar(_residual_dcf_on_g, args=(self, self.fcf_ttm,  False),
-                                    method= 'bounded', bounds = (-1, up_bound)).x
-        
-            # # compute g_from_ttm from last incf
-            # if self.financial_statements.focf_ttm < 0:
-            #     print(f"{self.name} : negative TTM cash flow from income mean, can not compute TTM RDINCF")
-            # else :
-            #     self.g_incf_ttm = minimize_scalar(_residual_dincf_on_g, args=(self, self.financial_statements.focf_ttm),
-            #                     method= 'bounded', bounds = (-1, up_bound)).x
-            
 
-    def residual_dcf(self, g :  float, fcf : float, wacc : float , pr = False,):
+    def residual_dcf(self, g :  float, fcf : float, wacc : float, vt : float = None):
         """
         compute company value regarding its actuated free cash flows and compare it 
         to the market value of the company
@@ -387,17 +436,17 @@ class ShareDCFModule(ShareValues):
             g = g[0]
 
         nb_year_dcf = self.session_model.nb_year_dcf
-        if self.session_model.use_multiple :
-            vt = fcf * (1+g)**(nb_year_dcf ) * self.price_to_fcf_terminal
-        else :
-            vt = fcf * (1+g)**(nb_year_dcf ) / (wacc - g)
+        if vt is None:
+            if self.session_model.use_multiple :
+                vt = fcf * (1+g)**(nb_year_dcf ) * self.price_to_fcf_terminal
+            else :
+                vt = fcf * (1+g)**(nb_year_dcf ) / (wacc - g)
         vt_act = vt / (1+wacc)**(nb_year_dcf)
 
         a = (1+g)/(1+wacc)
         # fcf * sum of a**k for k from 1 to nb_year_dcf 
         fcf_act_sum = fcf * ((a**nb_year_dcf - 1)/(a-1) - 1 + a**(nb_year_dcf))
         enterprise_value = fcf_act_sum + vt_act
-     
 
         # if pr :
         #     fcf_ar = np.array([fcf * (1+g)**(k) for k in range(1,1 + nb_year_dcf)])
@@ -418,40 +467,29 @@ class ShareDCFModule(ShareValues):
 
         return (enterprise_value / self.net_market_cap - 1)**2
     
-    def eval_dincf(self, g :  float, incf : float):
+    def residual_dcf_ocf_cex(self, wacc : float ):
         """
-        computes company value regarding its actuated free cash flows assuming growing gross profit 
-        and constant difference between gross profit and fcf and compares it 
-        to the market value of the company
-        return : 0 when the growth rate g correspond to the one assumed by the market price.
-        """
-        cmpc = self.market_wacc
-        if isinstance(g, (list, np.ndarray)):
-            g = g[0]
+        compute company value regarding its actuated operating cash flows and capital expenditure
+        compare it to the market value of the company
 
+        Returns:
+            square error between enterprise actuated value corresponds 
+                    to the one assumed by the market price.
+        """
+        ocf_g = self.forcasted_ocf_growth
+        # cex_g = self.forcasted_cpx_growth
         nb_year_dcf = self.session_model.nb_year_dcf
-
-        if self.session_model.use_multiple :
-            # fcf = incf + nincf
-            vt = (incf * (1+g)**(nb_year_dcf)  + self.nincf) * self.price_to_fcf_terminal
-        else :
-            vt = (incf * (1+g)**(nb_year_dcf)  + self.nincf) / (cmpc - g)
-        vt_act = vt / (1+cmpc)**(nb_year_dcf)
-
-        a = (1+g)/(1+cmpc)
-        b = 1/(1+cmpc)
-        fcf_act_sum = incf * ((a**nb_year_dcf - 1)/(a-1) - 1 + a**(nb_year_dcf)) + \
-                    self.nincf * ((b**nb_year_dcf - 1)/(b-1) - 1 + b**(nb_year_dcf))
-
-        # a = (1+g)/(1+cmpc)
-        # b = 1/(1+cmpc)
-        # fcf_act_sum = gp * ((a**nb_year_dcf - 1)/(a-1) - 1 + a**(nb_year_dcf)) - self.gp_m_fcf * ((b**nb_year_dcf - 1)/(b-1) - 1 + b**(nb_year_dcf))
-        # fcf_act_sum = np.array([(gp * (1+g)**k - self.gp_m_fcf)/(1+cmpc)**k for k in range(1,1 + nb_year_dcf)]).sum()
-
-
+        vt_act = self.vt / (1+wacc)**(nb_year_dcf)
+        ocf_a = (1+ocf_g)/(1+wacc)
+        # cex_a = (1+cex_g)/(1+wacc)
+        #               fcf * sum of a**k for k from 1 to nb_year_dcf
+        fcf_act_sum = self.ocf * ((ocf_a**nb_year_dcf - 1)/(ocf_a-1) - 1 + ocf_a**(nb_year_dcf))
+        # fcf_act_sum -= self.cex * ((cex_a**nb_year_dcf - 1)/(cex_a-1) - 1 + cex_a**(nb_year_dcf))
+        cex_act = self.forcasted_cex / (1+wacc)**np.arange(nb_year_dcf)
+        fcf_act_sum -= cex_act.sum()
         enterprise_value = fcf_act_sum + vt_act
-
         return (enterprise_value / self.net_market_cap - 1)**2
+
 
 def _residual_dcf_on_g(g, *data):
     """
@@ -459,12 +497,11 @@ def _residual_dcf_on_g(g, *data):
     """
     dcf : ShareDCFModule = data[0]
     fcf : float = data[1]
-    pr = data[2]
 
     return dcf.residual_dcf(g = g,
                         fcf = fcf,
-                        wacc = dcf.market_wacc, 
-                        pr = pr)
+                        wacc = dcf.market_wacc,
+                        )
 
 def _residual_dcf_on_wacc(wacc, *data):
     """
@@ -472,20 +509,19 @@ def _residual_dcf_on_wacc(wacc, *data):
     """
     dcf : ShareDCFModule = data[0]
     fcf : float = data[1]
-    pr = data[2]
-    return dcf.residual_dcf(g = dcf.forcasted_sal_growth,
+    return dcf.residual_dcf(g = dcf.forcasted_ocf_growth,
                         fcf = fcf,
                         wacc = wacc,
-                        pr = pr)
+                        vt = dcf.vt)
 
-# def _residual_dincf_on_g(g, *data):
-#     """
-#     reformated Share.eval_dcf() function for compatibility with minimize_scalar
-#     """
-#     sharevalues : ShareValues = data[0]
-#     incf : float = data[1]
+def _residual_dcf_on_wacc_ocf_cex(wacc, *data):
+    """
+    reformated Share.eval_dcf() function for compatibility with minimize_scalar
+    """
+    dcf : ShareDCFModule = data[0]
+    return dcf.residual_dcf_ocf_cex(
+                        wacc = wacc)
 
-#     return sharevalues.eval_dincf(g = g, incf = incf)
 
 class Share(ShareDCFModule):
     """

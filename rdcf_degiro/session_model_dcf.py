@@ -8,6 +8,8 @@ from dateutil.relativedelta import relativedelta
 from degiro_connector.trading.api import API
 from degiro_connector.quotecast.tools.chart_fetcher import ChartFetcher
 from degiro_connector.trading.models.credentials import build_credentials
+from curl_cffi import requests
+
 
 ERROR_SYMBOL = 1
 MARKET_CURRENCY = "USD"
@@ -41,11 +43,11 @@ class RateInfos():
 
         ### get free risk rate
         #us treasury ten years yield
-        self.free_risk_rate = yq.Ticker("^TNX").history(period = '1y', ).loc["^TNX"]["close"].iloc[-1]/100
+        self.free_risk_rate = yq.Ticker("^TNX", asynchronous=True).history(period = '1y', ).loc["^TNX"]["close"].iloc[-1]/100
         print(f"free risk rate = {self.free_risk_rate*100:.2f}%")
 
         ### eval market rate
-        sptr_6y = yq.Ticker("^SP500TR").history(period = '6y', interval= "1mo").loc["^SP500TR"]
+        sptr_6y = yq.Ticker("^SP500TR", asynchronous=True).history(period = '6y', interval= "1mo").loc["^SP500TR"]
         sptr_6y_rm = sptr_6y.rolling(2).mean()
         # sptr = yq.Ticker("^SP500TR").history(period = '5y', interval= "1mo").loc["^SP500TR"]
 
@@ -146,7 +148,7 @@ class SessionModelDCF(API):
             if self.update_statements or( not os.path.isfile(rate_path)):
                 try :
                     
-                    currency_history = yq.Ticker(rate_symb).history(period= '6y',
+                    currency_history = yq.Ticker(rate_symb, asynchronous=True, session=self.request_session).history(period= '6y',
                                                                     interval= "1mo", 
                                                                     ).loc[rate_symb]
                 except KeyError as e:
