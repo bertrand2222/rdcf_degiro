@@ -82,7 +82,8 @@ class Statements(ShareIdentity):
     """
     class containing statements
     """
-
+    ocf : float = None # operating cash flow
+    cex : float = None # capital expenditure
     statements_currency :str = None
     rate_factor = 1
     rate_symb = None
@@ -217,9 +218,6 @@ class FinancialForcast(Statements):
             return np.nan
 
         x = np.arange(len(y))
-        # x = x[:, np.newaxis]
-        # a, _, _, _ = np.linalg.lstsq(x,y)
-        # g= np.exp(a[0]) - 1
         z = np.polyfit(x,y, deg = 1)
         g = np.exp(z[0]) - 1
         return g
@@ -241,7 +239,8 @@ class FinancialForcast(Statements):
                 y = np.log(ys.values / ys.iloc[0])
 
         if y is None :# no valid values
-            print(f"{self.symbol} no valid value to compute CPX forcast")
+            self._forcasted_cex_growth = self.forcasted_ocf_growth
+            self._forcasted_cex = self.cex * (1 + self._forcasted_cex_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
             return
 
         x = np.arange(len(y))
@@ -295,8 +294,6 @@ class FinancialStatements(Statements):
     total_revenue_code : str = 'RTLR'
     # gross_profit_code : str = 'SGRP'
     fcf : float = None # free cash flow
-    ocf : float = None # operating cash flow
-    cex : float = None # capital expenditure
     nincf : float = None
     _history_growth : float = None
     last_bal_statements : pd.Series = None 

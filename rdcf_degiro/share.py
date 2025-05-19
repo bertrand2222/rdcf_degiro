@@ -334,12 +334,13 @@ class ShareDCFModule(ShareValues):
         """
         if self._vt is None:
             ocf_g = self.forcasted_ocf_growth
-            cex_g = self.forcasted_cex_growth
             nb_year_dcf = self.session_model.nb_year_dcf
             vt = (self.ocf * (1+ocf_g)**nb_year_dcf) * self.price_to_fcf_terminal
             if not self.forcasted_cex is None :
                 # vt -= (self.cex * (1+cex_g)**nb_year_dcf) * self.price_to_fcf_terminal
                 vt -= self.forcasted_cex[-1] * self.price_to_fcf_terminal
+            else:
+                vt -= (self.cex * (1+ocf_g)**nb_year_dcf) * self.price_to_fcf_terminal
             self._vt =  max(0,vt)
         return self._vt
 
@@ -351,31 +352,25 @@ class ShareDCFModule(ShareValues):
 
         self.g_delta_forcasted_assumed = self.forcasted_ocf_growth - self.g
 
-        if not np.isnan(self.forcasted_cex_growth) :
-            # print(self.ocf)
-            # print(self.cex)
-            # print(self.forcasted_ocf_growth)
-            # print(self.forcasted_cpx_growth)
-            fw_pos = minimize_scalar(_residual_dcf_on_wacc_ocf_cex, args=(self),
-                                method= 'bounded', bounds = (0, 2)).x
-            err_pos =  _residual_dcf_on_wacc_ocf_cex(fw_pos, self)
-            if err_pos <= TOLERANCE_MINIMIZE:
-                self.forcasted_wacc = fw_pos
-                return
-
-            # if positive wacc assumption doesn't work search negative wacc 
-            fw_neg = minimize_scalar(_residual_dcf_on_wacc_ocf_cex, args=(self),
-                            method= 'bounded', bounds = (-1, 0)).x
-            err_neg = _residual_dcf_on_wacc_ocf_cex(fw_neg, self)
-            if err_neg <= TOLERANCE_MINIMIZE:
-                self.forcasted_wacc = fw_neg
-                return
-
-        if self.fcf < 0 :
+        if np.isnan(self.forcasted_cex_growth) :
             return
-        self.forcasted_wacc = minimize_scalar(
-            _residual_dcf_on_wacc, args=(self, self.fcf,  False),
-                            method= 'bounded', bounds = (-1, 2)).x
+        # print(self.ocf)
+        # print(self.cex)
+        # print(self.forcasted_ocf_growth)
+        # print(self.forcasted_cex)
+        fw = minimize_scalar(_residual_dcf_on_wacc_ocf_cex, args=(self),
+                            method= 'bounded', bounds = (-1, 3)).x
+        # err =  _residual_dcf_on_wacc_ocf_cex(fw, self)
+        # print(err)
+        # if err <= TOLERANCE_MINIMIZE:
+        self.forcasted_wacc = fw
+
+        # if self.fcf < 0 :
+        #     return
+        # self.forcasted_wacc = minimize_scalar(
+        #     _residual_dcf_on_wacc, args=(self, self.fcf),
+        #                     method= 'bounded', bounds = (-1, 2)).x
+        
 
     def _compute_g(self, fcf :float, up_bound : float):
         """
@@ -443,13 +438,12 @@ class ShareDCFModule(ShareValues):
                 vt = fcf * (1+g)**(nb_year_dcf ) / (wacc - g)
         vt_act = vt / (1+wacc)**(nb_year_dcf)
 
-        a = (1+g)/(1+wacc)
         # fcf * sum of a**k for k from 1 to nb_year_dcf 
-        fcf_act_sum = fcf * ((a**nb_year_dcf - 1)/(a-1) - 1 + a**(nb_year_dcf))
+        fcf_ar = fcf * (1+g) ** np.arange(1,1 + nb_year_dcf)
+        fcf_act_sum = fcf_ar.sum()
         enterprise_value = fcf_act_sum + vt_act
 
         # if pr :
-        #     fcf_ar = np.array([fcf * (1+g)**(k) for k in range(1,1 + nb_year_dcf)])
         #     act_vec = np.array([1/((1+cmpc)**k) for k in range(1,1 + nb_year_dcf)])
         #     fcf_act = fcf_ar * act_vec
         #     print("\r")
@@ -480,6 +474,7 @@ class ShareDCFModule(ShareValues):
         # cex_g = self.forcasted_cpx_growth
         nb_year_dcf = self.session_model.nb_year_dcf
         vt_act = self.vt / (1+wacc)**(nb_year_dcf)
+
         ocf_a = (1+ocf_g)/(1+wacc)
         # cex_a = (1+cex_g)/(1+wacc)
         #               fcf * sum of a**k for k from 1 to nb_year_dcf
