@@ -153,6 +153,7 @@ class RDCFAnal():
                                 'history_growth'         : s.history_growth,
                                 "forcast_growth" :       s.forcasted_ocf_growth,
                                 'diff_g_cacgr'         : s.g_delta_forcasted_assumed,
+                                'forcasted_wacc'         : s.forcasted_wacc,
                                 'forcasted_capital_cost'         : s.forcasted_capital_cost,
                                 'per' :                 s.per,
                                 'roe' :                s.roe , 
@@ -260,17 +261,11 @@ class RDCFAnal():
             'min_value' : -0.2, 'mid_value' : 50,  
             'min_color' : '#63BE7B', "max_color" : '#F8696B', 
             "mid_color" : "#FFFFFF"})
-        # # format assumed g_focf
-        # worksheet.conditional_format(
-        #     f"{col_letter['assumed_g_incf']}2:{col_letter['assumed_g_incf_ttm']}{len(df.index)+1}",
-        #     {"type": "3_color_scale", 'min_type': 'num',
-        #     'max_type': 'max', 'mid_type' : 'percentile',
-        #     'min_value' : -0.2, 'mid_value' : 50,  
-        #     'min_color' : '#63BE7B', "max_color" : '#F8696B', 
-        #     "mid_color" : "#FFFFFF"})
+
    
         format_max_min_green_red(worksheet, 'history_growth', 'forcast_growth')
         format_max_min_green_red(worksheet, 'diff_g_cacgr')
+        format_max_min_green_red(worksheet, 'forcasted_wacc')
         format_max_min_green_red(worksheet, 'forcasted_capital_cost')
 
 
