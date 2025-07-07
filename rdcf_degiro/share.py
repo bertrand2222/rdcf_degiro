@@ -333,26 +333,22 @@ class ShareDCFModule(ShareValues):
         return unactuated terminal value
         """
         if self._vt is None:
-            ocf_g = self.forcasted_ocf_growth
-            nb_year_dcf = self.session_model.nb_year_dcf
-            vt = (self.ocf * (1+ocf_g)**nb_year_dcf) * self.price_to_fcf_terminal
-            if not self.forcasted_cex is None :
-                # vt -= (self.cex * (1+cex_g)**nb_year_dcf) * self.price_to_fcf_terminal
-                vt -= self.forcasted_cex[-1] * self.price_to_fcf_terminal
-            else:
-                vt -= (self.cex * (1+ocf_g)**nb_year_dcf) * self.price_to_fcf_terminal
+            # vt = (self.ocf * (1+ocf_g)**nb_year_dcf) * self.price_to_fcf_terminal
+            # vt -= (self.cex * (1+cex_g)**nb_year_dcf) * self.price_to_fcf_terminal
+            vt = (self.forcasted_ocf[-1] - self.forcasted_cex[-1])* self.price_to_fcf_terminal
+
             self._vt =  max(0,vt)
         return self._vt
 
     def _compute_forcasted_wacc(self):
         if self.ocf < 0 :
             return
-        if np.isnan(self.forcasted_ocf_growth)  :
+        if self.forcasted_ocf_growth is None  :
             return
 
         self.g_delta_forcasted_assumed = self.forcasted_ocf_growth - self.g
 
-        if np.isnan(self.forcasted_cex_growth) :
+        if self.forcasted_cex_growth is None :
             return
         # print(self.ocf)
         # print(self.cex)
@@ -360,17 +356,8 @@ class ShareDCFModule(ShareValues):
         # print(self.forcasted_cex)
         fw = minimize_scalar(_residual_dcf_on_wacc_ocf_cex, args=(self),
                             method= 'bounded', bounds = (-1, 3)).x
-        # err =  _residual_dcf_on_wacc_ocf_cex(fw, self)
-        # print(err)
-        # if err <= TOLERANCE_MINIMIZE:
-        self.forcasted_wacc = fw
 
-        # if self.fcf < 0 :
-        #     return
-        # self.forcasted_wacc = minimize_scalar(
-        #     _residual_dcf_on_wacc, args=(self, self.fcf),
-        #                     method= 'bounded', bounds = (-1, 2)).x
-        
+        self.forcasted_wacc = fw
 
     def _compute_g(self, fcf :float, up_bound : float):
         """
@@ -470,18 +457,18 @@ class ShareDCFModule(ShareValues):
             square error between enterprise actuated value corresponds 
                     to the one assumed by the market price.
         """
-        ocf_g = self.forcasted_ocf_growth
-        # cex_g = self.forcasted_cpx_growth
+        # ocf_g = self.forcasted_ocf_growth
+
         nb_year_dcf = self.session_model.nb_year_dcf
         vt_act = self.vt / (1+wacc)**(nb_year_dcf)
 
-        ocf_a = (1+ocf_g)/(1+wacc)
-        # cex_a = (1+cex_g)/(1+wacc)
+        # ocf_a = (1+ocf_g)/(1+wacc)
         #               fcf * sum of a**k for k from 1 to nb_year_dcf
-        fcf_act_sum = self.ocf * ((ocf_a**nb_year_dcf - 1)/(ocf_a-1) - 1 + ocf_a**(nb_year_dcf))
+        # fcf_act_sum = self.ocf * ((ocf_a**nb_year_dcf - 1)/(ocf_a-1) - 1 + ocf_a**(nb_year_dcf))
         # fcf_act_sum -= self.cex * ((cex_a**nb_year_dcf - 1)/(cex_a-1) - 1 + cex_a**(nb_year_dcf))
+        ocf_act = self.forcasted_ocf / (1+wacc)**np.arange(nb_year_dcf)
         cex_act = self.forcasted_cex / (1+wacc)**np.arange(nb_year_dcf)
-        fcf_act_sum -= cex_act.sum()
+        fcf_act_sum = (ocf_act - cex_act).sum()
         enterprise_value = fcf_act_sum + vt_act
         return (enterprise_value / self.net_market_cap - 1)**2
 

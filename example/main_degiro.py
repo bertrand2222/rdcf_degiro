@@ -1,9 +1,8 @@
-import sys, os 
+import sys
+import os 
 
 sys.path.append(r"C:\Users\SAFCOB009150\rdcf\rdcf_degiro")
 
-import os
-from importlib import reload
 from rdcf_degiro.dcf_degiro import RDCFAnal
 
 # credentials_path = os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json")
