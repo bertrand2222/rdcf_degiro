@@ -40,7 +40,6 @@ class RDCFAnal():
                  config_dict : dict = None,
              ) -> None:
 
-        reload(pd)
         self.df : pd.DataFrame = None
         self.share_list : List[Share] = []
         # self.ids : List[int] = None

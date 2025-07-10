@@ -82,20 +82,19 @@ class Statements(ShareIdentity):
     """
     class containing statements
     """
+    y_statements : pd.DataFrame = None
     ocf : float = None # operating cash flow
     cex : float = None # capital expenditure
-    statements_currency :str = None
     rate_factor = 1
-    rate_symb = None
-    nb_shares = None
+    nb_shares : float = None
 
-    def convert_to_price_currency(self, df_attr_list : List[str]):
+    def convert_to_price_currency(self, df_attr_list : List[str], statements_currency: str = None):
 
         """
         Convert financial statement from statement curency to share price history 
         curency considering the change rate history over the period
         """
-        if self.statements_currency == self.share_currency:
+        if statements_currency == self.share_currency:
             return
         print(f'{self.name} : convert statement to price currency                               ')
         share_currency_special = self.share_currency
@@ -103,15 +102,16 @@ class Statements(ShareIdentity):
             share_currency_special = SPECIAL_CURRENCIES[self.share_currency]['real']
             self.rate_factor = SPECIAL_CURRENCIES[self.share_currency]['rate_factor']
 
-        if share_currency_special != self.statements_currency:
-            print(f'{self.name} : retrieve {self.statements_currency}/{share_currency_special} history       ')
-            self.session_model.update_rate_dic(  self.statements_currency, share_currency_special
+        rate_symb = None
+        if share_currency_special != statements_currency:
+            print(f'{self.name} : retrieve {statements_currency}/{share_currency_special} history       ')
+            self.session_model.update_rate_dic(  statements_currency, share_currency_special
                                                             )
-            self.rate_symb = self.statements_currency +  share_currency_special   + "=X"
+            rate_symb = statements_currency +  share_currency_special   + "=X"
         for  attr in df_attr_list:
-            self.__dict__[attr] = self.convert_to_price_curency_df(self.__dict__[attr])
+            self.__dict__[attr] = self.convert_to_price_curency_df(self.__dict__[attr], rate_symb)
 
-    def convert_to_price_curency_df(self, p_df: pd.DataFrame):
+    def convert_to_price_curency_df(self, p_df: pd.DataFrame, rate_symb: str = None) -> pd.DataFrame:
         """
         convert a single dataframe currency
         """
@@ -119,11 +119,11 @@ class Statements(ShareIdentity):
             c in FINANCIAL_ST_CODES + FINANCIAL_FCST_CODES ) and (c != "QTCO")]
         if not convert_value_cols:
             return p_df
-        if  self.rate_symb :
+        if  rate_symb :
             new_df  = pd.concat(
                 [
                     p_df,
-                    self.session_model.rate_history_dic[self.rate_symb] / self.rate_factor
+                    self.session_model.rate_history_dic[rate_symb] / self.rate_factor
                     ], axis = 0
                     ).sort_index()
             new_df['change_rate'] = new_df['change_rate'].ffill()
@@ -187,9 +187,9 @@ class FinancialForcast(Statements):
 
         self.y_forcasts = pd.DataFrame.from_records(
             data).set_index('endDate').sort_index()
-        self.statements_currency = estimates_summaries['currency']
+        statements_currency = estimates_summaries['currency']
 
-        self.convert_to_price_currency(['y_forcasts'])
+        self.convert_to_price_currency(['y_forcasts'], statements_currency)
 
     @property
     def forcasted_ocf_growth(self):
@@ -207,21 +207,19 @@ class FinancialForcast(Statements):
 
         if self.y_forcasts is None:
             return
-        y = None
-        for val in ['CPS', 'SAL', 'NET', 'PRE' ] :
+
+        for val in ['CPS',  'NET', 'PRE', 'SAL', ] :
             if val in self.y_forcasts :
                 ys  = self.y_forcasts[val].dropna()
                 if len(ys) >1 and  ys.min() > 0 :
                     y = np.log(ys.values / ys.iloc[0])
-                    break
-        if y is None :# no valid values
-            print(f"{self.symbol} no valid value to compute OCF growth estimate")
-            return
-
-        x = np.arange(len(y))
-        z = np.polyfit(x,y, deg = 1)
-        g = np.exp(z[0]) - 1
-        self._forcasted_ocf_growth = g
+                    x = np.arange(len(y))
+                    z = np.polyfit(x,y, deg = 1)
+                    g = np.exp(z[0]) - 1
+                    self._forcasted_ocf_growth = g
+                    return
+        
+        print(f"{self.symbol} no valid value to compute OCF growth estimate")
         return
 
     def _set_forcasted_ocf(self):
@@ -231,17 +229,27 @@ class FinancialForcast(Statements):
         if self.y_forcasts is None:
             return
 
-        if 'CPS' in self.y_forcasts:
-            ys = self.y_forcasts['CPS'].dropna() * self.nb_shares
+        ys = None
+        for val in ['CPS', 'NET', 'PRE', 'SAL' ] :
+            if val in self.y_forcasts:
+                ys = self.y_forcasts[val].dropna()
+                ratio = self.y_statements['OTLO'].iloc[-1]/ys.iloc[0]
+                if (ys.index[0].year == self.y_statements.index[-1].year) and ratio > 0:
+                    ys *= ratio
+                elif val == 'CPS' :
+                    ys *= self.nb_shares
+                else:
+                    continue
 
-            # complete forcasted ocf array with value extrapolated from forcasted growth rate
-            ys = np.concat([
-                    ys,
-                    ys[-1] * (1+ self.forcasted_ocf_growth)**np.arange(
-                        1,
-                        1 + self.session_model.nb_year_dcf - len(ys))])
-            self._forcasted_ocf = ys
-            return
+                # complete forcasted ocf array with value extrapolated from forcasted growth rate
+                ys = np.concat([
+                        ys,
+                        ys[-1] * (1+ self.forcasted_ocf_growth)**np.arange(
+                            1,
+                            1 + self.session_model.nb_year_dcf - len(ys))])
+                
+                self._forcasted_ocf = ys
+                return
 
         # no forcasted cash flow per share provided
         self._forcasted_ocf = self.ocf * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
@@ -253,34 +261,33 @@ class FinancialForcast(Statements):
         if self.y_forcasts is None:
             return
 
-        y = None
-        ys = None
         if 'CPX' in self.y_forcasts:
             ys = self.y_forcasts['CPX'].dropna()
             if len(ys)> 1 and ys.min() > 0 :
                 y = np.log(ys.values / ys.iloc[0])
+                # complete forcasted cex array with value extrapolated from forcasted growth rate
+                x = np.arange(len(y))
+                # x = x[:, np.newaxis]
+                # a, _, _, _ = np.linalg.lstsq(x,y)
+                # g= np.exp(a[0]) - 1
 
-        if y is None :# no valid values
-            self._forcasted_cex_growth = self.forcasted_ocf_growth
-            self._forcasted_cex = self.cex * (1 + self._forcasted_cex_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
-            return
+                z = np.polyfit(x,y, deg = 1)
+                g = np.exp(z[0]) - 1
+                g = min(g,2)  #bound growth rate to 2
+                self._forcasted_cex_growth = g
+                ys = np.concat([
+                        ys,
+                        ys[-1] * (1+ g)**np.arange(
+                            1,
+                            1 + self.session_model.nb_year_dcf - len(ys))])
+                self._forcasted_cex = ys
+                return
 
-        # complete forcasted cex array with value extrapolated from forcasted growth rate
-        x = np.arange(len(y))
-        # x = x[:, np.newaxis]
-        # a, _, _, _ = np.linalg.lstsq(x,y)
-        # g= np.exp(a[0]) - 1
+        # can not compute forcasted capital expenditure growth from itself
+        self._forcasted_cex_growth = self.forcasted_ocf_growth
+        self._forcasted_cex = self.cex * (1 + self._forcasted_cex_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
 
-        z = np.polyfit(x,y, deg = 1)
-        g = np.exp(z[0]) - 1
-        g = min(g,2)  #bound growth rate to 2
-        self._forcasted_cex_growth = g
-        ys = np.concat([
-                ys,
-                ys[-1] * (1+ g)**np.arange(
-                    1,
-                    1 + self.session_model.nb_year_dcf - len(ys))])
-        self._forcasted_cex = ys
+        
 
     @property
     def forcasted_cex_growth(self):
@@ -301,6 +308,10 @@ class FinancialForcast(Statements):
         return self._forcasted_ocf
     
     @property
+    def forcasted_focf(self):
+        return self.forcasted_ocf - self.forcasted_cex
+    
+    @property
     def forcasted_cex(self) -> np.ndarray:
         """
         array of forcasted cpx
@@ -315,7 +326,6 @@ class FinancialStatements(Statements):
     
     """
 
-    y_statements : pd.DataFrame = None
     q_inc_statements : pd.DataFrame = None
     q_bal_statements : pd.DataFrame = None     
     q_cas_statements : pd.DataFrame = None
@@ -347,14 +357,8 @@ class FinancialStatements(Statements):
 
         self.q_cashflow_available = 'OTLO' in self.q_cas_statements.columns
         # compute cash flow from income
-        # self.y_statements.loc[:,'FOCF'] = self.y_statements.loc[:,"OTLO"] - self.y_statements.loc[:,"SOCF"]
-        # if "OTLO" in self.q_cas_statements.columns:
-        #     self.q_cas_statements.loc[:,'FOCF'] = self.q_cas_statements.loc[:,"OTLO"] - self.q_cas_statements.loc[:,"SOCF"]
         self._y_inc_complete_statements = pd.concat([self.y_statements,
                                          self._inc_ttm_statements_df])
-
-        # self._y_cas_complete_statements = pd.concat([self.y_statements,
-        #                             self._cas_ttm_statements_df]).dropna(subset= CASH_CODES)
 
         self.compute_avg_values()
 
@@ -436,9 +440,7 @@ class FinancialStatements(Statements):
         # else:
         df = self._y_inc_complete_statements
         df['year'] = (df.index - df.index[0]).days / 365
-        # for val in [self.total_revenue_code, ]:
-        #     df = df.dropna(subset = val)
-        #     if val in df and  df[val].min() > 0:
+     
         df = df.dropna(subset = self.total_revenue_code)
         y = np.log(df[self.total_revenue_code].astype('float64'))
         if y is None:
@@ -453,8 +455,7 @@ class FinancialStatements(Statements):
         """
         Get the share associated financial infos from yahoo finance api 
         """
-        print(f'{self.name} :\
-               retrieves financial statement from yahoo             ', flush= True, end = "\r")
+        print(f'{self.name} : retrieves financial statement from yahoo             ', flush= True, end = "\r")
 
         symb = self.symbol
         if self.symbol in self.session_model.yahoo_symbol_cor:
@@ -533,14 +534,14 @@ class FinancialStatements(Statements):
 
         self.nb_shares = self.y_statements["QTCO"].iloc[-1]
 
-        self.statements_currency = y_statements['currencyCode'].iloc[-1]
+        statements_currency = y_statements['currencyCode'].iloc[-1]
         self.convert_to_price_currency(['y_statements',
                                         'q_inc_statements',
                                         'q_bal_statements', 
                                         'q_cas_statements',
                                         '_inc_ttm_statements_df',
                                         '_cas_ttm_statements_df'
-                                        ])
+                                        ], statements_currency )
 
         self.last_bal_statements = self.y_statements.iloc[-1]
 
@@ -575,7 +576,7 @@ class FinancialStatements(Statements):
             with open(statement_path, "r", encoding= "utf8") as json_file:
                 financial_st = json.load(json_file)
 
-        self.statements_currency = financial_st['currency']
+        statements_currency = financial_st['currency']
 
         self.degiro_retrieve_annual(financial_st= financial_st)
         self.degiro_retrieve_quarterly(financial_st= financial_st)
@@ -586,7 +587,7 @@ class FinancialStatements(Statements):
                                         'q_cas_statements',
                                         '_inc_ttm_statements_df',
                                         '_cas_ttm_statements_df'
-                                        ])
+                                        ], statements_currency)
 
         self.last_bal_statements = self.q_bal_statements.iloc[-1]
 

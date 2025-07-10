@@ -62,8 +62,6 @@ class RateInfos():
         self.market_rate =  (sptr_rm.loc[last_date]['close'] / sptr_rm.loc[past_date]['close'])**(1/time_delta) - 1 # S&P 500 mean year rate over 5 years
         print(f"market rate = {self.market_rate*100:.2f}%")
 
-        # self.month_change_rate = sptr["adjclose"][:-1].pct_change(periods = 1).rename('rm')
-        # self.var_rm = self.month_change_rate.var()
     
     def save(self,path:str):
         with open(os.path.join(path),

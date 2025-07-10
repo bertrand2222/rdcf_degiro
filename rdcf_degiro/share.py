@@ -2,6 +2,7 @@ import json, os
 from datetime import  timedelta
 import numpy as np
 import pandas as pd
+import numpy_financial as npf
 from scipy.optimize import minimize_scalar
 from degiro_connector.quotecast.models.chart import ChartRequest, Interval
 from dateutil.relativedelta import relativedelta
@@ -25,10 +26,6 @@ RATIO_CODES = [
     # "FOCF_AYr5CAGR" #"Free Operating Cash Flow, 5 Year CAGR",
     ]
 
-
-SPECIAL_CURRENCIES = {
-    'GBX' : {'real' : 'GBP', 'rate_factor' : 0.01}
-}
 
 def last_day_of_month(any_day):
     # The day 28 exists in every month. 4 days later, it's always next month
@@ -335,9 +332,7 @@ class ShareDCFModule(ShareValues):
         if self._vt is None:
             # vt = (self.ocf * (1+ocf_g)**nb_year_dcf) * self.price_to_fcf_terminal
             # vt -= (self.cex * (1+cex_g)**nb_year_dcf) * self.price_to_fcf_terminal
-            vt = (self.forcasted_ocf[-1] - self.forcasted_cex[-1])* self.price_to_fcf_terminal
-
-            self._vt =  max(0,vt)
+            self._vt = max(self.forcasted_focf[-1]* self.price_to_fcf_terminal,0)
         return self._vt
 
     def _compute_forcasted_wacc(self):
@@ -350,12 +345,18 @@ class ShareDCFModule(ShareValues):
 
         if self.forcasted_cex_growth is None :
             return
-        # print(self.ocf)
-        # print(self.cex)
         # print(self.forcasted_ocf_growth)
         # print(self.forcasted_cex)
-        fw = minimize_scalar(_residual_dcf_on_wacc_ocf_cex, args=(self),
-                            method= 'bounded', bounds = (-1, 3)).x
+        if self.net_market_cap < 0:
+            self.forcasted_wacc = 1
+            return
+
+        arr = np.concatenate([np.array([-self.net_market_cap]), 
+                              self.forcasted_focf, 
+                              np.array([self.vt])])
+        fw = npf.irr(arr)
+        # fw = minimize_scalar(_residual_dcf_on_wacc_ocf_cex, args=(self),
+        #                     method= 'bounded', bounds = (-1, 3)).x
 
         self.forcasted_wacc = fw
 
@@ -462,15 +463,10 @@ class ShareDCFModule(ShareValues):
         nb_year_dcf = self.session_model.nb_year_dcf
         vt_act = self.vt / (1+wacc)**(nb_year_dcf)
 
-        # ocf_a = (1+ocf_g)/(1+wacc)
-        #               fcf * sum of a**k for k from 1 to nb_year_dcf
-        # fcf_act_sum = self.ocf * ((ocf_a**nb_year_dcf - 1)/(ocf_a-1) - 1 + ocf_a**(nb_year_dcf))
-        # fcf_act_sum -= self.cex * ((cex_a**nb_year_dcf - 1)/(cex_a-1) - 1 + cex_a**(nb_year_dcf))
-        ocf_act = self.forcasted_ocf / (1+wacc)**np.arange(nb_year_dcf)
-        cex_act = self.forcasted_cex / (1+wacc)**np.arange(nb_year_dcf)
-        fcf_act_sum = (ocf_act - cex_act).sum()
+        focf_act = self.forcasted_focf / (1+wacc)**np.arange(nb_year_dcf)
+        fcf_act_sum = focf_act.sum()
         enterprise_value = fcf_act_sum + vt_act
-        return (enterprise_value / self.net_market_cap - 1)**2
+        return (enterprise_value - self.net_market_cap )**2
 
 
 def _residual_dcf_on_g(g, *data):
@@ -485,24 +481,24 @@ def _residual_dcf_on_g(g, *data):
                         wacc = dcf.market_wacc,
                         )
 
-def _residual_dcf_on_wacc(wacc, *data):
-    """
-    reformated Share.eval_dcf() function for compatibility with minimize_scalar
-    """
-    dcf : ShareDCFModule = data[0]
-    fcf : float = data[1]
-    return dcf.residual_dcf(g = dcf.forcasted_ocf_growth,
-                        fcf = fcf,
-                        wacc = wacc,
-                        vt = dcf.vt)
+# def _residual_dcf_on_wacc(wacc, *data):
+#     """
+#     reformated Share.eval_dcf() function for compatibility with minimize_scalar
+#     """
+#     dcf : ShareDCFModule = data[0]
+#     fcf : float = data[1]
+#     return dcf.residual_dcf(g = dcf.forcasted_ocf_growth,
+#                         fcf = fcf,
+#                         wacc = wacc,
+#                         vt = dcf.vt)
 
-def _residual_dcf_on_wacc_ocf_cex(wacc, *data):
-    """
-    reformated Share.eval_dcf() function for compatibility with minimize_scalar
-    """
-    dcf : ShareDCFModule = data[0]
-    return dcf.residual_dcf_ocf_cex(
-                        wacc = wacc)
+# def _residual_dcf_on_wacc_ocf_cex(wacc, *data):
+#     """
+#     reformated Share.eval_dcf() function for compatibility with minimize_scalar
+#     """
+#     dcf : ShareDCFModule = data[0]
+#     return dcf.residual_dcf_ocf_cex(
+#                         wacc = wacc)
 
 
 class Share(ShareDCFModule):
