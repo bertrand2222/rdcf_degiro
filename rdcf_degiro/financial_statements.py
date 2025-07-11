@@ -88,7 +88,7 @@ class Statements(ShareIdentity):
     rate_factor = 1
     nb_shares : float = None
 
-    def convert_to_price_currency(self, df_attr_list : List[str], statements_currency: str = None):
+    def convert_to_price_currency(self, attr_list : List[str], statements_currency: str = None):
 
         """
         Convert financial statement from statement curency to share price history 
@@ -108,21 +108,26 @@ class Statements(ShareIdentity):
             self.session_model.update_rate_dic(  statements_currency, share_currency_special
                                                             )
             rate_symb = statements_currency +  share_currency_special   + "=X"
-        for  attr in df_attr_list:
-            self.__dict__[attr] = self.convert_to_price_curency_df(self.__dict__[attr], rate_symb)
+        for  attr in attr_list:
+            self.__dict__[attr] = self._convert_to_price_curency_attr(self.__dict__[attr], rate_symb)
 
-    def convert_to_price_curency_df(self, p_df: pd.DataFrame, rate_symb: str = None) -> pd.DataFrame:
+    def _convert_to_price_curency_attr(self, val: float | pd.DataFrame, rate_symb: str = None) -> pd.DataFrame:
         """
         convert a single dataframe currency
         """
-        convert_value_cols = [c for c in p_df.columns if (
+
+        if isinstance(val, float):
+            if  rate_symb:
+                return val * self.session_model.rate_history_dic[rate_symb]['change_rate'][-1] / self.rate_factor
+            return val / self.rate_factor
+        
+        convert_value_cols = [c for c in val.columns if (
             c in FINANCIAL_ST_CODES + FINANCIAL_FCST_CODES ) and (c != "QTCO")]
         if not convert_value_cols:
-            return p_df
+            return val
         if  rate_symb :
-            new_df  = pd.concat(
-                [
-                    p_df,
+            new_df  = pd.concat([
+                    val,
                     self.session_model.rate_history_dic[rate_symb] / self.rate_factor
                     ], axis = 0
                     ).sort_index()
@@ -133,8 +138,8 @@ class Statements(ShareIdentity):
 
             return new_df
 
-        p_df.loc[:,convert_value_cols] /= self.rate_factor
-        return p_df
+        val.loc[:,convert_value_cols] /= self.rate_factor
+        return val
 
 class FinancialForcast(Statements):
     """

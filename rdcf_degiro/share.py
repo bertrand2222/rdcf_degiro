@@ -23,6 +23,7 @@ RATIO_CODES = [
     # "APRFCFPS", # "Price to Free Cash Flow per Share - most recent fiscal year",
     "TTMROIPCT" ,# "Return on investment - trailing 12 month",
     "TTMROEPCT", # return on equity
+    "MKTCAP", # market cap
     # "FOCF_AYr5CAGR" #"Free Operating Cash Flow, 5 Year CAGR",
     ]
 
@@ -33,6 +34,8 @@ def last_day_of_month(any_day):
     # subtracting the number of the current day brings us back one month
     return next_month - timedelta(days=next_month.day)
 
+class DegiroRetrieveError(Exception):
+    pass
 class SharePrice(ShareIdentity):
     history : pd.DataFrame = None
     history_in_financial_currency : pd.DataFrame = None
@@ -115,6 +118,7 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
     Data retrieved from degiro api with get_company_ratio
     """
     market_cap : float = None
+    market_cap_reported : float = None
     roic: float = np.nan
     roe : float = np.nan
     beta : float = None
@@ -132,7 +136,7 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
         """
         try:
             self.degiro_values_retrieve()
-        except KeyError as e:
+        except DegiroRetrieveError as e:
             print(f'{self.name} : can not retrieve value ratios from degiro api, {e}     ')
         else:
             return
@@ -157,7 +161,7 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
                 raw = True
             )
             if 'data' not in _ratios:
-                raise KeyError(f'ratio data not available for isin {self.isin}')
+                raise DegiroRetrieveError(f'ratio data not available for isin {self.isin}')
             ratios = _ratios['data']
             with open(statement_path, "w", 
                         encoding= "utf8") as outfile:
@@ -168,6 +172,7 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
 
         self.market_cap = self.nb_shares * self.current_price
 
+        statement_currency = ratios['currentRatios']['currency']
         ratio_dic = {}
         for rg in ratios['currentRatios']['ratiosGroups'] :
             for item in rg['items']:
@@ -188,6 +193,14 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
             self.roic = float(ratio_dic['TTMROIPCT']) / 100 # return on investec capital - TTM
         if "TTMROEPCT" in ratio_dic : 
             self.roe = float(ratio_dic['TTMROEPCT']) / 100 # return on equity - TTM
+
+        if "MKTCAP" in ratio_dic : 
+            self.market_cap_reported = float(ratio_dic['MKTCAP']) *1e-6# market cap
+            self.convert_to_price_currency(["market_cap_reported"], statement_currency)
+            err_market_cap = abs(self.market_cap - self.market_cap_reported)/min(self.market_cap_reported, self.market_cap )
+            if err_market_cap > 1 :
+                print(self.name , " err_market_cap:  " , err_market_cap, self.market_cap_reported, self.market_cap)
+
 
         # if "FOCF_AYr5CAGR" in ratio_dic : 
         #     self.history_growth = float(ratio_dic['FOCF_AYr5CAGR']) / 100 # return on investec capital - TTM
@@ -459,24 +472,6 @@ def _residual_dcf_on_g(g, *data):
                         wacc = dcf.market_wacc,
                         )
 
-# def _residual_dcf_on_wacc(wacc, *data):
-#     """
-#     reformated Share.eval_dcf() function for compatibility with minimize_scalar
-#     """
-#     dcf : ShareDCFModule = data[0]
-#     fcf : float = data[1]
-#     return dcf.residual_dcf(g = dcf.forcasted_ocf_growth,
-#                         fcf = fcf,
-#                         wacc = wacc,
-#                         vt = dcf.vt)
-
-# def _residual_dcf_on_wacc_ocf_cex(wacc, *data):
-#     """
-#     reformated Share.eval_dcf() function for compatibility with minimize_scalar
-#     """
-#     dcf : ShareDCFModule = data[0]
-#     return dcf.residual_dcf_ocf_cex(
-#                         wacc = wacc)
 
 
 class Share(ShareDCFModule):
