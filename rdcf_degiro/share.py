@@ -345,18 +345,14 @@ class ShareDCFModule(ShareValues):
 
         if self.forcasted_cex_growth is None :
             return
-        # print(self.forcasted_ocf_growth)
-        # print(self.forcasted_cex)
         if self.net_market_cap < 0:
             self.forcasted_wacc = 1
             return
 
         arr = np.concatenate([np.array([-self.net_market_cap]), 
-                              self.forcasted_focf, 
+                              self.forcasted_focf[:-1], 
                               np.array([self.vt])])
         fw = npf.irr(arr)
-        # fw = minimize_scalar(_residual_dcf_on_wacc_ocf_cex, args=(self),
-        #                     method= 'bounded', bounds = (-1, 3)).x
 
         self.forcasted_wacc = fw
 
@@ -449,24 +445,6 @@ class ShareDCFModule(ShareValues):
 
         return (enterprise_value / self.net_market_cap - 1)**2
     
-    def residual_dcf_ocf_cex(self, wacc : float ):
-        """
-        compute company value regarding its actuated operating cash flows and capital expenditure
-        compare it to the market value of the company
-
-        Returns:
-            square error between enterprise actuated value corresponds 
-                    to the one assumed by the market price.
-        """
-        # ocf_g = self.forcasted_ocf_growth
-
-        nb_year_dcf = self.session_model.nb_year_dcf
-        vt_act = self.vt / (1+wacc)**(nb_year_dcf)
-
-        focf_act = self.forcasted_focf / (1+wacc)**np.arange(nb_year_dcf)
-        fcf_act_sum = focf_act.sum()
-        enterprise_value = fcf_act_sum + vt_act
-        return (enterprise_value - self.net_market_cap )**2
 
 
 def _residual_dcf_on_g(g, *data):

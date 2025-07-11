@@ -242,15 +242,20 @@ class RDCFAnal():
         worksheet.set_column(f"{col_letter['roe']}:{col_letter['roic']}", 11, percent )
         # worksheet.set_column(f"{col_letter['mean_g_fcf']}:{col_letter['diff_g']}", 13, percent )
 
-        def format_max_min_green_red(ws, col_s : str, col_e : str = None):
+        def format_max_min_green_red(ws, col_s : str, col_e : str = None, 
+                                     max_type : str = 'max', 
+                                     max_value : float = None):
             if col_e is None:
                 col_e = col_s
-            ws.conditional_format(
-                f"{col_letter[col_s]}2:{col_letter[col_e]}{len(df.index)+1}",
-                {"type": "3_color_scale", 'min_type': 'min',
-                'max_type': 'max', 'mid_type' : 'percentile',
+            format_dic = {"type": "3_color_scale", 'min_type': 'min',
+                'max_type': max_type, 'mid_type' : 'percentile',
                 'min_color' : '#F8696B', "max_color" : '#63BE7B', 
-                "mid_color" : "#FFFFFF"})
+                "mid_color" : "#FFFFFF"}
+            if max_type == 'num':
+                format_dic['max_value'] = max_value
+            ws.conditional_format(
+                f"{col_letter[col_s]}2:{col_letter[col_e]}{len(df.index)+1}", format_dic
+                )
 
         # format assumed g
         worksheet.conditional_format(
@@ -264,8 +269,8 @@ class RDCFAnal():
    
         format_max_min_green_red(worksheet, 'history_growth', 'forcast_growth')
         format_max_min_green_red(worksheet, 'diff_g_cacgr')
-        format_max_min_green_red(worksheet, 'forcasted_wacc')
-        format_max_min_green_red(worksheet, 'forcasted_capital_cost')
+        format_max_min_green_red(worksheet, 'forcasted_wacc' , max_type='num', max_value= 1)
+        format_max_min_green_red(worksheet, 'forcasted_capital_cost', max_type='num', max_value= 1)
 
 
         worksheet.conditional_format(
