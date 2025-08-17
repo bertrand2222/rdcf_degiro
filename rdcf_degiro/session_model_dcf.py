@@ -87,7 +87,7 @@ class SessionModelDCF(API):
     history_avg_nb_year : int = 3
     nb_year_dcf : int = 10
     use_last_intraday_price : bool = False
-    terminal_price_to_fcf_bounds = [1, 100]
+    terminal_price_to_ebitda_bounds = [1, 100]
     output_folder = os.getenv("TEMP")
     taxe_rate = 0.25
     output_name = "rdcf"
@@ -146,7 +146,7 @@ class SessionModelDCF(API):
             if self.update_statements or( not os.path.isfile(rate_path)):
                 try :
                     
-                    currency_history = yq.Ticker(rate_symb, asynchronous=True, session=self.request_session).history(period= '6y',
+                    currency_history = yq.Ticker(rate_symb, asynchronous=True).history(period= '6y',
                                                                     interval= "1mo", 
                                                                     ).loc[rate_symb]
                 except KeyError as e:

@@ -13,9 +13,13 @@ from rdcf_degiro.share_identity import ShareIdentity
 OVERLAPING_DAYS_TOL = 7
 
 YA_INCOME_INFOS = [ 'FreeCashFlow','TotalRevenue', "NetIncome",
-                    "OperatingCashFlow", 'CapitalExpenditure', 'ChangeInWorkingCapital']
+                    "OperatingCashFlow", 'CapitalExpenditure', 'ChangeInWorkingCapital', 
+                    # 'NormalizedEBITDA', 
+                    "EBITDA", 
+                    "PretaxIncome",
+                    "DepreciationAndAmortization"]
 YA_PAYOUT_INFOS = [ 'RepurchaseOfCapitalStock', 'CashDividendsPaid', 'CommonStockIssuance']
-YA_BALANCE_INFOS = ['currencyCode', 'TotalDebt', 'CashAndCashEquivalents',
+YA_BALANCE_INFOS = ['currencyCode', 'TotalDebt', 'CurrentLiabilities', 'CashAndCashEquivalents',
                  'CommonStockEquity', "InvestedCapital",  "BasicAverageShares"]
 
 TYPES = YA_INCOME_INFOS + YA_BALANCE_INFOS + YA_PAYOUT_INFOS
@@ -43,6 +47,7 @@ BAL_CODES = BAL_CASH_CODES + [
 ]
 CASH_CODES = [
     "OTLO", # "Cash from Operating Activities",
+    "SDED", # depreciation and amortizing
     "SOCF", # "Changes in Working Capital",
     "SCEX", # Capital Expenditures,
     "FCDP", # Total Cash Dividends Paid
@@ -53,7 +58,7 @@ PAYOUT_INFOS = ["FCDP", "FPSS" ]
 
 FINANCIAL_ST_CODES =   INC_CODES + BAL_CODES + CASH_CODES
 
-FINANCIAL_FCST_CODES =  ['NET', 'SAL', 'PRE', 'CPX', 'CPS']
+FINANCIAL_FCST_CODES =  ['NET', 'SAL', 'PRE', 'CPX', 'CPS', 'EBT']
 RENAME_DIC = {
     "TotalRevenue" :                "RTLR",
     "OperatingCashFlow" :           "OTLO",
@@ -67,7 +72,8 @@ RENAME_DIC = {
     "TotalDebt" :               "STLD", # 'TotalDebt',
     "CommonStockEquity" :       "QTLE", # "Total Equity"
     "BasicAverageShares" :      "QTCO", # "Total Common Shares Outstanding"
-    'FreeCashFlow':             "FCFL"
+    'FreeCashFlow':             "FCFL",
+    "NormalizedEBITDA"  : 'EBITDA'
 }
 SPECIAL_CURRENCIES = {
     'GBX' : {'real' : 'GBP', 'rate_factor' : 0.01}
@@ -78,13 +84,21 @@ class YahooRetrieveError(Exception):
     Exception relative to yahooretrieve function
     """
 
+class DegiroRetrieveError(Exception):
+    """
+    Exception relative to Degirotrieve function
+    """
+    pass
+
 class Statements(ShareIdentity):
     """
     class containing statements
     """
     y_statements : pd.DataFrame = None
+    ebida : float = None # operating cash flow
     ocf : float = None # operating cash flow
     cex : float = None # capital expenditure
+    ebitda : float = None # ebitda
     rate_factor = 1
     nb_shares : float = None
 
@@ -147,8 +161,10 @@ class FinancialForcast(Statements):
     """
 
     y_forcasts : pd.DataFrame = None
+    _forcasted_ebitda_growth : float = None
     _forcasted_ocf_growth : float = None
     _forcasted_cex_growth : float = None
+    _forcasted_ebitda : np.ndarray = None
     _forcasted_ocf : np.ndarray = None
     _forcasted_cex : np.ndarray = None
 
@@ -202,18 +218,26 @@ class FinancialForcast(Statements):
         forcasted annual growth rate
         """
         if self._forcasted_ocf_growth is None :
-            self._set_forcasted_ocf_growth()
+            self._forcasted_ocf_growth = self._get_forcasted_growth(['CPS', 'EBT', 'NET', 'PRE', 'SAL', ])
         return self._forcasted_ocf_growth
-
-    def _set_forcasted_ocf_growth(self):
+    
+    @property
+    def forcasted_ebitda_growth(self):
         """
-        retruned growth rate fited from estimate 
+        forcasted annual growth rate
         """
-
+        if self._forcasted_ebitda_growth is None :
+            self._forcasted_ebitda_growth = self._get_forcasted_growth(['EBT', 'PRE'])
+        return self._forcasted_ebitda_growth
+    
+    def _get_forcasted_growth(self, ls : list[str]):
+        """
+        Get the growth rate of a forcasted variable
+        """
         if self.y_forcasts is None:
-            return
-
-        for val in ['CPS',  'NET', 'PRE', 'SAL', ] :
+            return None
+        
+        for val in ls :
             if val in self.y_forcasts :
                 ys  = self.y_forcasts[val].dropna()
                 if len(ys) >1 and  ys.min() > 0 :
@@ -221,8 +245,8 @@ class FinancialForcast(Statements):
                     x = np.arange(len(y))
                     z = np.polyfit(x,y, deg = 1)
                     g = np.exp(z[0]) - 1
-                    self._forcasted_ocf_growth = g
-                    return
+                    return g
+
         
         print(f"{self.symbol} no valid value to compute OCF growth estimate")
         return
@@ -235,9 +259,12 @@ class FinancialForcast(Statements):
             return
 
         ys = None
-        for val in ['CPS', 'NET', 'PRE', 'SAL' ] :
+        for val in ['CPS', 'EBT', 'NET', 'PRE', 'SAL' ] :
             if val in self.y_forcasts:
                 ys = self.y_forcasts[val].dropna()
+
+                # rescale variable array to ratio between last stated ocf 
+                # and first variable value  
                 ratio = self.y_statements['OTLO'].iloc[-1]/ys.iloc[0]
                 if (ys.index[0].year == self.y_statements.index[-1].year) and ratio > 0:
                     ys *= ratio
@@ -245,7 +272,10 @@ class FinancialForcast(Statements):
                     ys *= self.nb_shares
                 else:
                     continue
-
+                
+                if len(ys) >= self.session_model.nb_year_dcf:
+                    self._forcasted_ocf = ys[:self.session_model.nb_year_dcf]
+                    return
                 # complete forcasted ocf array with value extrapolated from forcasted growth rate
                 ys = np.concat([
                         ys,
@@ -259,6 +289,43 @@ class FinancialForcast(Statements):
         # no forcasted cash flow per share provided
         self._forcasted_ocf = self.ocf * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
 
+    def _set_forcasted_ebidta(self):
+        """
+        retruned forcasted ocf array
+        """
+        if self.y_forcasts is None:
+            return
+
+        ys = None
+        for val in ['EBT', 'PRE',] :
+            if val in self.y_forcasts:
+                ys = self.y_forcasts[val].dropna()
+
+                if val != 'EBT' :
+                    # if forcasted metric array is not EBITDA rescale it to
+                    # ratio between last stated ebitda and first array value
+                    ratio = self.y_statements['EBITDA'].iloc[-1]/ys.iloc[0]
+                    if (ys.index[0].year == self.y_statements.index[-1].year) and ratio > 0:
+                        ys *= ratio
+                    else:
+                        continue
+                
+                if len(ys) >= self.session_model.nb_year_dcf:
+                    self._forcasted_ebitda = ys[:self.session_model.nb_year_dcf]
+                    return
+                # complete forcasted array with value extrapolated from forcasted growth rate
+                ys = np.concat([
+                        ys,
+                        ys[-1] * (1+ self.forcasted_ebitda_growth)**np.arange(
+                            1,
+                            1 + self.session_model.nb_year_dcf - len(ys))])
+                
+                self._forcasted_ebitda = ys
+                return
+
+        # no forcasted cash flow per share provided
+        self._forcasted_ebitda = self.ebitda * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
+
     def _set_forcasted_cex(self):
         """
         retruned growth rate fited from estimate 
@@ -268,18 +335,14 @@ class FinancialForcast(Statements):
 
         if 'CPX' in self.y_forcasts:
             ys = self.y_forcasts['CPX'].dropna()
-            if len(ys)> 1 and ys.min() > 0 :
-                y = np.log(ys.values / ys.iloc[0])
-                # complete forcasted cex array with value extrapolated from forcasted growth rate
-                x = np.arange(len(y))
-                # x = x[:, np.newaxis]
-                # a, _, _, _ = np.linalg.lstsq(x,y)
-                # g= np.exp(a[0]) - 1
-
-                z = np.polyfit(x,y, deg = 1)
-                g = np.exp(z[0]) - 1
-                g = min(g,2)  #bound growth rate to 2
-                self._forcasted_cex_growth = g
+            if len(ys) >= self.session_model.nb_year_dcf:
+                self._forcasted_cex = ys[:self.session_model.nb_year_dcf]
+                return
+           
+            g = self._get_forcasted_growth(['CPX'])
+            if g is not None :
+                g = min(g,2) # bound growth rate to 2
+                self._forcasted_cex_growth = g 
                 ys = np.concat([
                         ys,
                         ys[-1] * (1+ g)**np.arange(
@@ -311,6 +374,15 @@ class FinancialForcast(Statements):
         if self._forcasted_ocf is None:
             self._set_forcasted_ocf()
         return self._forcasted_ocf
+    
+    @property
+    def forcasted_ebitda(self) -> np.ndarray:
+        """
+        array of forcasted cpx
+        """
+        if self._forcasted_ebitda is None:
+            self._set_forcasted_ebidta()
+        return self._forcasted_ebitda
     
     @property
     def forcasted_focf(self):
@@ -353,9 +425,11 @@ class FinancialStatements(Statements):
 
         try :
             self.degiro_financial_retrieve()
-        except KeyError as e:
+        except DegiroRetrieveError as e:
             print(f'{self.name} : can not retrieve financial data from degiro, {e}')
             self.yahoo_financial_retrieve()
+        except Exception as e:
+            raise Exception(f'{self.name} {self.symbol} :{e}') from e
 
         self.y_statements.loc[:,'periodLength'] = 12
         self.y_statements.loc[:,'periodType'] = 'M'
@@ -389,6 +463,7 @@ class FinancialStatements(Statements):
         self.fcf = all_cas.loc[:,'FCFL'].sum() / all_cas_time
         self.ocf = all_cas.loc[:,'OTLO'].sum() / all_cas_time
         self.cex = self.ocf - self.fcf
+        self.ebitda = y_statements['EBITDA'].iloc[-1]
 
 
     @property
@@ -497,6 +572,10 @@ class FinancialStatements(Statements):
         y_statements['BasicAverageShares'] = y_statements['BasicAverageShares'].ffill(axis = 0, )
         y_statements = y_statements.loc[y_statements['currencyCode'] == currency ]
 
+        if 'TotalDebt' not in y_statements:
+            y_statements['TotalDebt'] = y_statements['CurrentLiabilities']
+        if 'TotalDebt' not in q_statements:
+            q_statements['TotalDebt'] = q_statements['CurrentLiabilities']
         y_statements = y_statements.rename(columns= RENAME_DIC)
         q_statements = q_statements.rename(columns= RENAME_DIC)
 
@@ -567,11 +646,11 @@ class FinancialStatements(Statements):
                         raw= True
                     )
             if r_financial_st is None:
-                raise KeyError('no financial statement available from degiro ')
+                raise DegiroRetrieveError('no financial statement available from degiro ')
             try:
                 financial_st = r_financial_st['data']
             except KeyError as e:
-                raise KeyError(f'no financial statement found for isin {self.isin}') from e
+                raise DegiroRetrieveError(f'no financial statement found for isin {self.isin}') from e
 
             with open(statement_path,
                         "w", 
@@ -583,6 +662,11 @@ class FinancialStatements(Statements):
 
         statements_currency = financial_st['currency']
 
+        # avoid retrieving bad total shares number from degiro for statemenet 
+        # recorded in specific curency
+        if statements_currency in ['BRL', 'TWD', 'CNY', 'JPY']:
+            raise DegiroRetrieveError(f'currency {statements_currency}')
+        
         self.degiro_retrieve_annual(financial_st= financial_st)
         self.degiro_retrieve_quarterly(financial_st= financial_st)
 
@@ -625,6 +709,13 @@ class FinancialStatements(Statements):
         y_statements[bal_cols] = y_statements[bal_cols].ffill().bfill()
         inc_cols = list(set(CASH_CODES + INC_CODES) & set(y_statements.columns))
         y_statements[inc_cols] = y_statements[inc_cols].fillna(0)
+
+        # compute EBITDA        = Operating income + depreciation and amortizing
+        op_keys = [k for k in ['SOPI', 'EIBT'] if k in y_statements]
+        da_keys = [k for k in ['SDPR', 'SDED'] if k in y_statements]
+        da = y_statements[da_keys[0]] if da_keys else 0
+
+        y_statements['EBITDA'] = y_statements[op_keys[0]] + da
 
         # compute free cash flow
         y_statements['FCFL'] = y_statements["OTLO"]

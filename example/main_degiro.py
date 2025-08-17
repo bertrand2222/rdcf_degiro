@@ -17,13 +17,17 @@ yahoo_symbol_cor = {
 
     'RIGD' : 'RIGD.IL',
     'MAU' : 'MAU.PA',
+    'BY6' : 'BYDDY',
+    'TKY' : '8035.T',
+    '3CP' : 'XIACY',
+    'MBI' : '8058.T',
 }
 
 config_dict = {
     'credential_file_path'          : os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json"),
     'use_beta'     : False,
     'use_multiple'                  : True,
-    'terminal_price_to_fcf_bounds'  : [1, 50],
+    'terminal_price_to_ebitda_bounds'  : [1, 50],
     'history_avg_nb_year'           : 3,
     'use_last_intraday_price'       : True,
     'output_folder'                 : r'C:\Users\SAFCOB009150\OneDrive - Saipem\Documents\rdcf_degiro_out',
@@ -32,6 +36,7 @@ config_dict = {
     'yahoo_symbol_cor'              : yahoo_symbol_cor,
     "update_market_rate"            : False,
     'update_statements'             : False,
+    'nb_year_dcf'                   : 10
 }
 # outfile = os.path.join(os.environ["USERPROFILE"], r"Documents\rdcf.xlsx")
 
@@ -39,7 +44,7 @@ if __name__ == "__main__":
 
     rdcf_anal = RDCFAnal(config_dict)
 
-    # rdcf_anal.share_list = [ s for s in rdcf_anal.share_list if s.symbol in [ "RR."] ]
+    # rdcf_anal.share_list = [ s for s in rdcf_anal.share_list if s.symbol in [ "MBI"] ]
     
     # rdcf_anal.load_df()
     rdcf_anal.process()

@@ -124,7 +124,7 @@ class RDCFAnal():
             try :
                 s.retrieves_all_values()
             except (YahooRetrieveError) as e:
-                print(f"{s.name} : error while retrieving values from yahoo \n {type(e).__name__} : {e}   ")
+                print(f"\033[91m{s.name} : error while retrieving values from yahoo {type(e).__name__} : {e}   \033[0m")
                 continue
         
             valid_share_list.append(s)
@@ -142,8 +142,8 @@ class RDCFAnal():
                                 'current_price' :       s.current_price ,
                                 'currency' :            s.share_currency ,
                                 'beta' :                s.beta ,
-                                'price_to_fcf' :        s.price_to_fcf,
-                                'market_capital_cost' :   s.market_capital_cost,
+                                'price_to_ebitda' :        s.price_to_ebitda,
+                                # 'market_capital_cost' :   s.market_capital_cost,
                                 'wacc' :                s.market_wacc ,
                                 'assumed_g' :           s.g ,  
                                 'assumed_g_ttm' :       s.g_ttm,  
@@ -151,7 +151,7 @@ class RDCFAnal():
                                 # 'assumed_g_incf_ttm' :    s.dcf.g_incf_ttm,
                                 'history_growth'         : s.history_growth,
                                 "forcast_growth" :       s.forcasted_ocf_growth,
-                                'diff_g_cacgr'         : s.g_delta_forcasted_assumed,
+                                'diff_g_forcasted_assumed'         : s.g_delta_forcasted_assumed,
                                 'forcasted_wacc'         : s.forcasted_wacc,
                                 'forcasted_capital_cost'         : s.forcasted_capital_cost,
                                 'per' :                 s.per,
@@ -231,9 +231,9 @@ class RDCFAnal():
         worksheet.set_column(
             f"{col_letter['current_price']}:{col_letter['current_price']}", 13, number)
         worksheet.set_column(
-            f"{col_letter['beta']}:{col_letter['price_to_fcf']}", 8, number)
+            f"{col_letter['beta']}:{col_letter['price_to_ebitda']}", 8, number)
         # worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_ttm']}", 11, percent)
-        worksheet.set_column(f"{col_letter['market_capital_cost']}:{col_letter['forcasted_capital_cost']}",
+        worksheet.set_column(f"{col_letter['wacc']}:{col_letter['forcasted_capital_cost']}",
                              11, percent)
         worksheet.set_column(f"{col_letter['per']}:{col_letter['price_to_book']}", 
                              11, number)
@@ -268,7 +268,7 @@ class RDCFAnal():
 
    
         format_max_min_green_red(worksheet, 'history_growth', 'forcast_growth')
-        format_max_min_green_red(worksheet, 'diff_g_cacgr')
+        format_max_min_green_red(worksheet, 'diff_g_forcasted_assumed')
         format_max_min_green_red(worksheet, 'forcasted_wacc' , max_type='num', max_value= 1)
         format_max_min_green_red(worksheet, 'forcasted_capital_cost', max_type='num', max_value= 1)
 
@@ -330,7 +330,9 @@ class RDCFAnal():
                                     "mid_color" : "#FFFFFF"})
                 
         ##### save config
-        df_config = pd.DataFrame.from_dict(self.session_model.config_dict, orient= 'index')
+        df_config = pd.DataFrame.from_dict({**self.session_model.config_dict, **self.session_model.rate_info.__dict__}, 
+                                           orient= 'index')
+        
         df_config.to_excel(writer, sheet_name= "config")
         worksheet = writer.sheets["config"]
         worksheet.set_column('A:A', 30, l_align)

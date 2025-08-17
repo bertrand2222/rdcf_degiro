@@ -8,7 +8,7 @@ from degiro_connector.quotecast.models.chart import ChartRequest, Interval
 from dateutil.relativedelta import relativedelta
 
 from rdcf_degiro.session_model_dcf import SessionModelDCF
-from rdcf_degiro.financial_statements import FinancialStatements, FinancialForcast
+from rdcf_degiro.financial_statements import FinancialStatements, FinancialForcast, DegiroRetrieveError
 from rdcf_degiro.share_identity import ShareIdentity
 
 ERROR_QUERRY_PRICE = 2
@@ -34,8 +34,7 @@ def last_day_of_month(any_day):
     # subtracting the number of the current day brings us back one month
     return next_month - timedelta(days=next_month.day)
 
-class DegiroRetrieveError(Exception):
-    pass
+
 class SharePrice(ShareIdentity):
     history : pd.DataFrame = None
     history_in_financial_currency : pd.DataFrame = None
@@ -76,7 +75,7 @@ class SharePrice(ShareIdentity):
         self.current_price = history['close'].iloc[-1]
 
         if self.session_model.use_last_intraday_price:
-                self.retrieve_intra_day_price()
+            self.retrieve_intra_day_price()
 
         last_day_current_month = last_day_of_month(chart.series[0].expires)
         for i in range(len(history)) :
@@ -123,8 +122,8 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
     roe : float = np.nan
     beta : float = None
     per : float = np.nan
-    price_to_fcf : float = None
-    price_to_fcf_terminal : float = None
+    price_to_ebitda : float = None
+    price_to_ebitda_terminal : float = None
     _market_wacc : float = None
 
     # history_growth : float = None # free oerating cash flow compound annual  growth
@@ -142,10 +141,6 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
             return
         
         self.yahoo_values_retrieve()
-        # try:
-        #     self.yahoo_retrieve()
-        # except (KeyError,TypeError) as e:
-        #     raise TypeError(f'{self.name} : error while retrieving value ratios from yahoo, {e}     ') from e
 
     def degiro_values_retrieve(self):
         """
@@ -172,7 +167,7 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
 
         self.market_cap = self.nb_shares * self.current_price
 
-        statement_currency = ratios['currentRatios']['currency']
+        statement_currency = ratios['currentRatios']['priceCurrency']
         ratio_dic = {}
         for rg in ratios['currentRatios']['ratiosGroups'] :
             for item in rg['items']:
@@ -255,8 +250,9 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
         return self._market_wacc
     
     @property
-    def net_market_cap(self):
+    def enterprise_cap(self):
         return self.market_cap + self.net_debt
+        # return self.market_cap 
     
     @property
     def debt_to_equity(self) :
@@ -288,17 +284,17 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
         y_statements = self.y_statements
 
         df_multiple = pd.concat([self.history_in_financial_currency, 
-                                y_statements[["QTCO" , 'FCFL']]
+                                y_statements[["QTCO" , 'EBITDA']]
                                 ], axis = 0).sort_index().ffill().dropna()
 
-        df_multiple['price_to_fcf'] = df_multiple['QTCO'] * df_multiple['close'] / df_multiple['FCFL']
+        df_multiple['price_to_ebitda'] = df_multiple['QTCO'] * df_multiple['close'] / df_multiple['EBITDA']
 
         # price to fcf multilple calculated as harmonic mean of history:
-        self.price_to_fcf = len(df_multiple) / (1 / df_multiple['price_to_fcf']).sum()
+        self.price_to_ebitda = len(df_multiple) / (1 / df_multiple['price_to_ebitda']).sum()
             
-        self.price_to_fcf_terminal = max(
-            self.session_model.terminal_price_to_fcf_bounds[0],
-            1 / max(1/self.price_to_fcf, 1/self.session_model.terminal_price_to_fcf_bounds[1])
+        self.price_to_ebitda_terminal = max(
+            self.session_model.terminal_price_to_ebitda_bounds[0],
+            1 / max(1/self.price_to_ebitda, 1/self.session_model.terminal_price_to_ebitda_bounds[1])
             )
 
         return(0)
@@ -343,9 +339,7 @@ class ShareDCFModule(ShareValues):
         return unactuated terminal value
         """
         if self._vt is None:
-            # vt = (self.ocf * (1+ocf_g)**nb_year_dcf) * self.price_to_fcf_terminal
-            # vt -= (self.cex * (1+cex_g)**nb_year_dcf) * self.price_to_fcf_terminal
-            self._vt = max(self.forcasted_focf[-1]* self.price_to_fcf_terminal,0)
+            self._vt = max(self.forcasted_ebitda[-1]* self.price_to_ebitda_terminal,0)
         return self._vt
 
     def _compute_forcasted_wacc(self):
@@ -358,11 +352,11 @@ class ShareDCFModule(ShareValues):
 
         if self.forcasted_cex_growth is None :
             return
-        if self.net_market_cap < 0:
+        if self.enterprise_cap < 0:
             self.forcasted_wacc = 1
             return
 
-        arr = np.concatenate([np.array([-self.net_market_cap]), 
+        arr = np.concatenate([np.array([-self.enterprise_cap]), 
                               self.forcasted_focf[:-1], 
                               np.array([self.vt])])
         fw = npf.irr(arr)
@@ -409,7 +403,7 @@ class ShareDCFModule(ShareValues):
 
         up_bound = 2 if self.session_model.use_multiple else self.market_wacc
 
-        if self.session_model.use_multiple and (self.price_to_fcf_terminal < 0) :
+        if self.session_model.use_multiple and (self.price_to_ebitda_terminal < 0) :
             print(f"{self.name} negative terminal price to fcf multiple, can not compute RDCF")
             return
 
@@ -430,7 +424,7 @@ class ShareDCFModule(ShareValues):
         nb_year_dcf = self.session_model.nb_year_dcf
         if vt is None:
             if self.session_model.use_multiple :
-                vt = fcf * (1+g)**(nb_year_dcf ) * self.price_to_fcf_terminal
+                vt = fcf * (1+g)**(nb_year_dcf ) * self.price_to_ebitda_terminal
             else :
                 vt = fcf * (1+g)**(nb_year_dcf ) / (wacc - g)
         vt_act = vt / (1+wacc)**(nb_year_dcf)
@@ -445,10 +439,9 @@ class ShareDCFModule(ShareValues):
         #     fcf_act = fcf_ar * act_vec
         #     print("\r")
         #     val_share = (enterprise_value - self.net_debt)/ self.financial_statements.nb_shares
-        #     nyear_disp = min(10,nb_year_dcf)
-        #     annees = list(2023 + np.arange(0, nyear_disp)) +  ["Terminal"]
-        #     table = np.array([ np.concatenate((fcf_ar[:nyear_disp] ,[vt])),
-        #                       np.concatenate((fcf_act[:nyear_disp], [vt_act]))])
+        #     annees = list(2023 + np.arange(0, nb_year_dcf)) +  ["Terminal"]
+        #     table = np.array([ np.concatenate((fcf_ar[:nb_year_dcf] ,[vt])),
+        #                       np.concatenate((fcf_act[:nb_year_dcf], [vt_act]))])
         #     print(f"Prévision pour une croissance de {g*100:.2f}% :")
         #     print(tabulate(table, floatfmt= ".4e",
         #                    showindex= [ "Free Cash Flow", "Free Cash Flow actualisé"],
@@ -456,7 +449,7 @@ class ShareDCFModule(ShareValues):
 
             # print(f"Valeur DCF de l'action: {val_share:.2f} {self.currency:s}")
 
-        return (enterprise_value / self.net_market_cap - 1)**2
+        return (enterprise_value / self.enterprise_cap - 1)**2
     
 
 
