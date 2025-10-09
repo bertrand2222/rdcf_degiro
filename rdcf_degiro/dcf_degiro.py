@@ -10,7 +10,7 @@ import pandas as pd
 from importlib import reload
 # from colorama import Fore
 from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
-from rdcf_degiro.share import Share
+from rdcf_degiro.share import Share, PriceRetrieveError
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 from rdcf_degiro.financial_statements import YahooRetrieveError
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -123,6 +123,9 @@ class RDCFAnal():
             
             try :
                 s.retrieves_all_values()
+            except (PriceRetrieveError) as e:
+                print(f"\033[91m{s.name} : error while retrieving price {type(e).__name__} : {e}   \033[0m")
+                continue
             except (YahooRetrieveError) as e:
                 print(f"\033[91m{s.name} : error while retrieving values from yahoo {type(e).__name__} : {e}   \033[0m")
                 continue
@@ -145,14 +148,15 @@ class RDCFAnal():
                                 'price_to_ebitda' :        s.price_to_ebitda,
                                 # 'market_capital_cost' :   s.market_capital_cost,
                                 'wacc' :                s.market_wacc ,
-                                'assumed_g' :           s.g ,  
-                                'assumed_g_ttm' :       s.g_ttm,  
+                                'assumed_g' :           s.assumed_g ,  
+                                'assumed_g_ttm' :       s.assumed_g_ttm,  
                                 # 'assumed_g_incf' :        s.dcf.g_incf ,
                                 # 'assumed_g_incf_ttm' :    s.dcf.g_incf_ttm,
                                 'history_growth'         : s.history_growth,
                                 "forcast_growth" :       s.forcasted_ocf_growth,
                                 'diff_g_forcasted_assumed'         : s.g_delta_forcasted_assumed,
-                                'forcasted_wacc'         : s.forcasted_wacc,
+                                'forcasted_wacc_multiple'         : s.forcasted_wacc_multiple,
+                                'forcasted_wacc_perpetual'         : s.forcasted_wacc_perpetual,
                                 'forcasted_capital_cost'         : s.forcasted_capital_cost,
                                 'per' :                 s.per,
                                 'roe' :                s.roe , 
@@ -206,6 +210,7 @@ class RDCFAnal():
         wb = writer.book
         number = wb.add_format({'num_format': '0.00'})
         percent = wb.add_format({'num_format': '0.00%'})
+        bold_percent = wb.add_format({'bold': True, 'num_format': '0.00%'})
         l_align =  wb.add_format()
         l_align.set_align('left')
         # Add a format. Light red fill with dark red text.
@@ -233,8 +238,10 @@ class RDCFAnal():
         worksheet.set_column(
             f"{col_letter['beta']}:{col_letter['price_to_ebitda']}", 8, number)
         # worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_ttm']}", 11, percent)
-        worksheet.set_column(f"{col_letter['wacc']}:{col_letter['forcasted_capital_cost']}",
+        worksheet.set_column(f"{col_letter['wacc']}:{col_letter['forcasted_wacc_perpetual']}",
                              11, percent)
+        worksheet.set_column(f"{col_letter['forcasted_capital_cost']}:{col_letter['forcasted_capital_cost']}",
+                             11, bold_percent)
         worksheet.set_column(f"{col_letter['per']}:{col_letter['price_to_book']}", 
                              11, number)
         worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}",
@@ -269,7 +276,8 @@ class RDCFAnal():
    
         format_max_min_green_red(worksheet, 'history_growth', 'forcast_growth')
         format_max_min_green_red(worksheet, 'diff_g_forcasted_assumed')
-        format_max_min_green_red(worksheet, 'forcasted_wacc' , max_type='num', max_value= 1)
+        format_max_min_green_red(worksheet, 'forcasted_wacc_multiple' , max_type='num', max_value= 1)
+        format_max_min_green_red(worksheet, 'forcasted_wacc_perpetual' , max_type='num', max_value= 1)
         format_max_min_green_red(worksheet, 'forcasted_capital_cost', max_type='num', max_value= 1)
 
 

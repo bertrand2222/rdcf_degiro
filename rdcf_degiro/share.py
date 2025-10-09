@@ -34,6 +34,8 @@ def last_day_of_month(any_day):
     # subtracting the number of the current day brings us back one month
     return next_month - timedelta(days=next_month.day)
 
+class PriceRetrieveError(Exception):
+    pass
 
 class SharePrice(ShareIdentity):
     history : pd.DataFrame = None
@@ -69,7 +71,7 @@ class SharePrice(ShareIdentity):
         )
 
         if chart is None:
-            raise ValueError('error while fetching price history chart')
+            raise PriceRetrieveError('error while fetching price history chart')
 
         history = pd.DataFrame(data=chart.series[0].data, columns = ['time', 'close'])
         self.current_price = history['close'].iloc[-1]
@@ -302,13 +304,13 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
 
 class ShareDCFModule(ShareValues):
 
-    g           : float = np.nan
-    g_ttm       : float = np.nan
-    _vt         : float = None
-    # g_incf : float = np.nan
-    # g_incf_ttm : float = np.nan
+    assumed_g           : float = np.nan
+    assumed_g_ttm       : float = np.nan
+    _multiple_vt         : float = None
+
     g_delta_forcasted_assumed : float = np.nan
-    forcasted_wacc : float = np.nan
+    forcasted_wacc_multiple : float = np.nan
+    forcasted_wacc_perpetual : float = np.nan
 
     @property
     def forcasted_capital_cost(self):
@@ -320,27 +322,27 @@ class ShareDCFModule(ShareValues):
         """
         total_debt =  self.total_debt
         stock_equity =  self.stock_equity
-        if np.isnan(self.forcasted_wacc) :
+        if np.isnan(self.forcasted_wacc_multiple) :
             return np.nan
         if stock_equity >= 0 :
-            return (self.forcasted_wacc - \
+            return (self.forcasted_wacc_multiple - \
                     self.session_model.rate_info.debt_cost * (1-self.session_model.taxe_rate) *\
                         total_debt/(total_debt + stock_equity)) *\
                         (total_debt + stock_equity)/stock_equity
 
-        return (self.forcasted_wacc - \
+        return (self.forcasted_wacc_multiple - \
                     self.session_model.rate_info.debt_cost * (1-self.session_model.taxe_rate) *\
                         (total_debt + stock_equity) /total_debt ) *\
                         - stock_equity /(total_debt + stock_equity)
 
     @property
-    def vt(self):
+    def multiple_vt(self):
         """
         return unactuated terminal value
         """
-        if self._vt is None:
-            self._vt = max(self.forcasted_ebitda[-1]* self.price_to_ebitda_terminal,0)
-        return self._vt
+        if self._multiple_vt is None:
+            self._multiple_vt = max(self.forcasted_ebitda[-1]* self.price_to_ebitda_terminal,0)
+        return self._multiple_vt
 
     def _compute_forcasted_wacc(self):
         if self.ocf < 0 :
@@ -348,32 +350,35 @@ class ShareDCFModule(ShareValues):
         if self.forcasted_ocf_growth is None  :
             return
 
-        self.g_delta_forcasted_assumed = self.forcasted_ocf_growth - self.g
+        self.g_delta_forcasted_assumed = self.forcasted_ocf_growth - self.assumed_g
 
         if self.forcasted_cex_growth is None :
             return
+        
+        self.forcasted_wacc_perpetual = minimize_scalar(_residual_dcf_on_wacc_perpetual, args=(self),
+                            method= 'bounded', bounds = (self.forcasted_ebitda_growth, self.forcasted_ebitda_growth + 2)).x
+        
         if self.enterprise_cap < 0:
-            self.forcasted_wacc = 1
+            self.forcasted_wacc_multiple = 1
             return
 
         arr = np.concatenate([np.array([-self.enterprise_cap]), 
                               self.forcasted_focf[:-1], 
-                              np.array([self.vt])])
-        fw = npf.irr(arr)
+                              np.array([self.multiple_vt])])
 
-        self.forcasted_wacc = fw
+        self.forcasted_wacc_multiple = npf.irr(arr)
 
-    def _compute_g(self, fcf :float, up_bound : float):
+    def _compute_assumed_g(self, fcf :float, up_bound : float):
         """
         compute g from mean fcf
         """
         if fcf < 0 :
             print(f"{self.name} : negative free cash flow mean, can not compute assumed growth")
             return
-        self.g = minimize_scalar(_residual_dcf_on_g, args=(self, fcf,  False),
+        self.assumed_g = minimize_scalar(_residual_dcf_on_g, args=(self, fcf,  False),
                             method= 'bounded', bounds = (-1, up_bound)).x
 
-    def _compute_g_ttm(self, up_bound :float):
+    def _compute_assumed_g_ttm(self, up_bound :float):
         """
         compute g_from_ttm from last fcf
         """
@@ -384,7 +389,7 @@ class ShareDCFModule(ShareValues):
             print(f"{self.name} : negative TTM free cash flow, can not compute TTM assumed growth")
             return
 
-        self.g_ttm = minimize_scalar(_residual_dcf_on_g, args=(self, self.fcf_ttm,  False),
+        self.assumed_g_ttm = minimize_scalar(_residual_dcf_on_g, args=(self, self.fcf_ttm,  False),
                                 method= 'bounded', bounds = (-1, up_bound)).x
 
         # # compute g_from_ttm from last incf
@@ -407,8 +412,8 @@ class ShareDCFModule(ShareValues):
             print(f"{self.name} negative terminal price to fcf multiple, can not compute RDCF")
             return
 
-        self._compute_g(fcf, up_bound= up_bound)
-        self._compute_g_ttm(up_bound= up_bound)
+        self._compute_assumed_g(fcf, up_bound= up_bound)
+        self._compute_assumed_g_ttm(up_bound= up_bound)
         self._compute_forcasted_wacc()
 
 
@@ -451,6 +456,30 @@ class ShareDCFModule(ShareValues):
 
         return (enterprise_value / self.enterprise_cap - 1)**2
     
+    def residual_dcf_perpetual(self, wacc : float ):
+        """
+        compute company value regarding its actuated operating cash flows and capital expenditure
+        compare it to the market value of the company
+
+        Returns:
+            square error between enterprise actuated value corresponds 
+                    to the one assumed by the market price.
+        """
+        # ocf_g = self.forcasted_ocf_growth
+
+        nb_year_dcf = self.session_model.nb_year_dcf
+        vt_perpetual = self.forcasted_focf[-1] / (wacc - self.forcasted_ebitda_growth)
+        
+        vt_act = vt_perpetual / (1+wacc)**(nb_year_dcf)
+
+        # ocf_a = (1+ocf_g)/(1+wacc)
+        #               fcf * sum of a**k for k from 1 to nb_year_dcf
+        # fcf_act_sum = self.ocf * ((ocf_a**nb_year_dcf - 1)/(ocf_a-1) - 1 + ocf_a**(nb_year_dcf))
+        # fcf_act_sum -= self.cex * ((cex_a**nb_year_dcf - 1)/(cex_a-1) - 1 + cex_a**(nb_year_dcf))
+        focf_act = self.forcasted_focf / (1+wacc)**np.arange(nb_year_dcf)
+        fcf_act_sum = (focf_act).sum()
+        enterprise_value = fcf_act_sum + vt_act
+        return (enterprise_value / self.enterprise_cap - 1)**2
 
 
 def _residual_dcf_on_g(g, *data):
@@ -465,6 +494,15 @@ def _residual_dcf_on_g(g, *data):
                         wacc = dcf.market_wacc,
                         )
 
+
+
+def _residual_dcf_on_wacc_perpetual(wacc, *data):
+    """
+    reformated Share.eval_dcf() function for compatibility with minimize_scalar
+    """
+    dcf : ShareDCFModule = data[0]
+    return dcf.residual_dcf_perpetual(
+                        wacc = wacc)
 
 
 class Share(ShareDCFModule):

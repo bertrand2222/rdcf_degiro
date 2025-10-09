@@ -248,7 +248,7 @@ class FinancialForcast(Statements):
                     return g
 
         
-        print(f"{self.symbol} no valid value to compute OCF growth estimate")
+        print(f"{self.symbol} no valid value to compute growth estimate from {", ".join(ls)}")
         return
 
     def _set_forcasted_ocf(self):
