@@ -123,11 +123,8 @@ class RDCFAnal():
             
             try :
                 s.retrieves_all_values()
-            except (PriceRetrieveError) as e:
-                print(f"\033[91m{s.name} : error while retrieving price {type(e).__name__} : {e}   \033[0m")
-                continue
-            except (YahooRetrieveError) as e:
-                print(f"\033[91m{s.name} : error while retrieving values from yahoo {type(e).__name__} : {e}   \033[0m")
+            except (PriceRetrieveError, YahooRetrieveError) as e:
+                print(f"\033[91m{s.name} : {type(e).__name__} : {e}   \033[0m")
                 continue
         
             valid_share_list.append(s)
