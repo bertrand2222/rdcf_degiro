@@ -311,29 +311,45 @@ class ShareDCFModule(ShareValues):
     g_delta_forcasted_assumed : float = np.nan
     forcasted_wacc_multiple : float = np.nan
     forcasted_wacc_perpetual : float = np.nan
+    
+    def _get_cc_from_wacc(self, wacc: float):
+        
+        total_debt =  self.total_debt
+        stock_equity =  self.stock_equity
+        
+        if np.isnan(wacc) :
+            return np.nan
+        if stock_equity >= 0 :
+            return (wacc - \
+                    self.session_model.rate_info.debt_cost * (1-self.session_model.taxe_rate) *\
+                        total_debt/(total_debt + stock_equity)) *\
+                        (total_debt + stock_equity)/stock_equity
+
+        return (wacc - \
+                    self.session_model.rate_info.debt_cost * (1-self.session_model.taxe_rate) *\
+                        (total_debt + stock_equity) /total_debt ) *\
+                        - stock_equity /(total_debt + stock_equity)
 
     @property
-    def forcasted_capital_cost(self):
+    def forcasted_capital_cost_multiple(self):
         """
         compute capital cost from wacc
 
         Returns:
             capital_cost(float)
         """
-        total_debt =  self.total_debt
-        stock_equity =  self.stock_equity
-        if np.isnan(self.forcasted_wacc_multiple) :
-            return np.nan
-        if stock_equity >= 0 :
-            return (self.forcasted_wacc_multiple - \
-                    self.session_model.rate_info.debt_cost * (1-self.session_model.taxe_rate) *\
-                        total_debt/(total_debt + stock_equity)) *\
-                        (total_debt + stock_equity)/stock_equity
+        return self._get_cc_from_wacc(self.forcasted_wacc_multiple)
+    
+    @property
+    def forcasted_capital_cost_perpetual(self):
+        """
+        compute capital cost from wacc
 
-        return (self.forcasted_wacc_multiple - \
-                    self.session_model.rate_info.debt_cost * (1-self.session_model.taxe_rate) *\
-                        (total_debt + stock_equity) /total_debt ) *\
-                        - stock_equity /(total_debt + stock_equity)
+        Returns:
+            capital_cost(float)
+        """
+        return self._get_cc_from_wacc(self.forcasted_wacc_perpetual)
+
 
     @property
     def multiple_vt(self):
@@ -355,7 +371,7 @@ class ShareDCFModule(ShareValues):
         if self.forcasted_cex_growth is None :
             return
         
-        self.forcasted_wacc_perpetual = minimize_scalar(_residual_dcf_on_wacc_perpetual, args=(self),
+        self.forcasted_wacc_perpetual = minimize_scalar(self._residual_dcf_on_wacc_perpetual,
                             method= 'bounded', bounds = (self.forcasted_ebitda_growth, self.forcasted_ebitda_growth + 2)).x
         
         if self.enterprise_cap < 0:
@@ -375,7 +391,7 @@ class ShareDCFModule(ShareValues):
         if fcf < 0 :
             print(f"{self.name} : negative free cash flow mean, can not compute assumed growth")
             return
-        self.assumed_g = minimize_scalar(_residual_dcf_on_g, args=(self, fcf,  False),
+        self.assumed_g = minimize_scalar(self._residual_dcf_on_g, args=(fcf,  False),
                             method= 'bounded', bounds = (-1, up_bound)).x
 
     def _compute_assumed_g_ttm(self, up_bound :float):
@@ -389,7 +405,7 @@ class ShareDCFModule(ShareValues):
             print(f"{self.name} : negative TTM free cash flow, can not compute TTM assumed growth")
             return
 
-        self.assumed_g_ttm = minimize_scalar(_residual_dcf_on_g, args=(self, self.fcf_ttm,  False),
+        self.assumed_g_ttm = minimize_scalar(self._residual_dcf_on_g, args=(self.fcf_ttm,  False),
                                 method= 'bounded', bounds = (-1, up_bound)).x
 
         # # compute g_from_ttm from last incf
@@ -456,7 +472,7 @@ class ShareDCFModule(ShareValues):
 
         return (enterprise_value / self.enterprise_cap - 1)**2
     
-    def residual_dcf_perpetual(self, wacc : float ):
+    def _residual_dcf_on_wacc_perpetual(self, wacc : float ):
         """
         compute company value regarding its actuated operating cash flows and capital expenditure
         compare it to the market value of the company
@@ -481,29 +497,16 @@ class ShareDCFModule(ShareValues):
         enterprise_value = fcf_act_sum + vt_act
         return (enterprise_value / self.enterprise_cap - 1)**2
 
+    def _residual_dcf_on_g(self, g, *data):
+        """
+        reformated Share.eval_dcf() function for compatibility with minimize_scalar
+        """
+        fcf : float = data[0]
 
-def _residual_dcf_on_g(g, *data):
-    """
-    reformated Share.eval_dcf() function for compatibility with minimize_scalar
-    """
-    dcf : ShareDCFModule = data[0]
-    fcf : float = data[1]
-
-    return dcf.residual_dcf(g = g,
-                        fcf = fcf,
-                        wacc = dcf.market_wacc,
-                        )
-
-
-
-def _residual_dcf_on_wacc_perpetual(wacc, *data):
-    """
-    reformated Share.eval_dcf() function for compatibility with minimize_scalar
-    """
-    dcf : ShareDCFModule = data[0]
-    return dcf.residual_dcf_perpetual(
-                        wacc = wacc)
-
+        return self.residual_dcf(g = g,
+                            fcf = fcf,
+                            wacc = self.market_wacc,
+                            )
 
 class Share(ShareDCFModule):
     """

@@ -232,20 +232,22 @@ class FinancialForcast(Statements):
     
     def _get_forcasted_growth(self, ls : list[str]):
         """
-        Get the growth rate of a forcasted variable
+        Get the fitted growth rate of a forcasted variable
         """
         if self.y_forcasts is None:
             return None
         
         for val in ls :
-            if val in self.y_forcasts :
-                ys  = self.y_forcasts[val].dropna()
-                if len(ys) >1 and  ys.min() > 0 :
-                    y = np.log(ys.values / ys.iloc[0])
-                    x = np.arange(len(y))
-                    z = np.polyfit(x,y, deg = 1)
-                    g = np.exp(z[0]) - 1
-                    return g
+            if val not in self.y_forcasts :
+                continue
+            ys  = self.y_forcasts[val].dropna()
+            if len(ys) <= 1 or  ys.min() <= 0 :
+                continue
+            y = np.log(ys.values / ys.iloc[0])
+            x = np.arange(len(y))
+            z = np.polyfit(x,y, deg = 1)
+            g = np.exp(z[0]) - 1
+            return g
 
         
         print(f"{self.symbol} no valid value to compute growth estimate from {", ".join(ls)}")
@@ -260,31 +262,32 @@ class FinancialForcast(Statements):
 
         ys = None
         for val in ['CPS', 'EBT', 'NET', 'PRE', 'SAL' ] :
-            if val in self.y_forcasts:
-                ys = self.y_forcasts[val].dropna()
+            if val not in self.y_forcasts:
+                continue
+            ys = self.y_forcasts[val].dropna()
 
-                # rescale variable array to ratio between last stated ocf 
-                # and first variable value  
-                ratio = self.y_statements['OTLO'].iloc[-1]/ys.iloc[0]
-                if (ys.index[0].year == self.y_statements.index[-1].year) and ratio > 0:
-                    ys *= ratio
-                elif val == 'CPS' :
-                    ys *= self.nb_shares
-                else:
-                    continue
-                
-                if len(ys) >= self.session_model.nb_year_dcf:
-                    self._forcasted_ocf = ys[:self.session_model.nb_year_dcf]
-                    return
-                # complete forcasted ocf array with value extrapolated from forcasted growth rate
-                ys = np.concat([
-                        ys,
-                        ys[-1] * (1+ self.forcasted_ocf_growth)**np.arange(
-                            1,
-                            1 + self.session_model.nb_year_dcf - len(ys))])
-                
-                self._forcasted_ocf = ys
+            # rescale variable array to ratio between last stated ocf 
+            # and first variable value  
+            ratio = self.y_statements['OTLO'].iloc[-1]/ys.iloc[0]
+            if (ys.index[0].year == self.y_statements.index[-1].year) and ratio > 0:
+                ys *= ratio
+            elif val == 'CPS' :
+                ys *= self.nb_shares
+            else:
+                continue
+            
+            if len(ys) >= self.session_model.nb_year_dcf:
+                self._forcasted_ocf = ys[:self.session_model.nb_year_dcf]
                 return
+            # complete forcasted ocf array with value extrapolated from forcasted growth rate
+            ys = np.concat([
+                    ys,
+                    ys[-1] * (1+ self.forcasted_ocf_growth)**np.arange(
+                        1,
+                        1 + self.session_model.nb_year_dcf - len(ys))])
+            
+            self._forcasted_ocf = ys
+            return
 
         # no forcasted cash flow per share provided
         self._forcasted_ocf = self.ocf * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)

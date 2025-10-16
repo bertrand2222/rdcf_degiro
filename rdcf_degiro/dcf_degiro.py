@@ -154,7 +154,8 @@ class RDCFAnal():
                                 'diff_g_forcasted_assumed'         : s.g_delta_forcasted_assumed,
                                 'forcasted_wacc_multiple'         : s.forcasted_wacc_multiple,
                                 'forcasted_wacc_perpetual'         : s.forcasted_wacc_perpetual,
-                                'forcasted_capital_cost'         : s.forcasted_capital_cost,
+                                'forcasted_capital_cost_multiple'         : s.forcasted_capital_cost_multiple,
+                                'forcasted_capital_cost_perpetual'         : s.forcasted_capital_cost_perpetual,
                                 'per' :                 s.per,
                                 'roe' :                s.roe , 
                                 'roic' :                s.roic , 
@@ -167,7 +168,7 @@ class RDCFAnal():
 
         self.session_model.logout()
 
-        df.sort_values(by = ['forcasted_capital_cost',]  , inplace= True, ascending= False)
+        df.sort_values(by = ['forcasted_capital_cost_multiple',]  , inplace= True, ascending= False)
 
         self.df = df
         try:
@@ -237,7 +238,7 @@ class RDCFAnal():
         # worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_ttm']}", 11, percent)
         worksheet.set_column(f"{col_letter['wacc']}:{col_letter['forcasted_wacc_perpetual']}",
                              11, percent)
-        worksheet.set_column(f"{col_letter['forcasted_capital_cost']}:{col_letter['forcasted_capital_cost']}",
+        worksheet.set_column(f"{col_letter['forcasted_capital_cost_multiple']}:{col_letter['forcasted_capital_cost_perpetual']}",
                              11, bold_percent)
         worksheet.set_column(f"{col_letter['per']}:{col_letter['price_to_book']}", 
                              11, number)
@@ -275,7 +276,8 @@ class RDCFAnal():
         format_max_min_green_red(worksheet, 'diff_g_forcasted_assumed')
         format_max_min_green_red(worksheet, 'forcasted_wacc_multiple' , max_type='num', max_value= 1)
         format_max_min_green_red(worksheet, 'forcasted_wacc_perpetual' , max_type='num', max_value= 1)
-        format_max_min_green_red(worksheet, 'forcasted_capital_cost', max_type='num', max_value= 1)
+        format_max_min_green_red(worksheet, 'forcasted_capital_cost_multiple', max_type='num', max_value= 1)
+        format_max_min_green_red(worksheet, 'forcasted_capital_cost_perpetual', max_type='num', max_value= 1)
 
 
         worksheet.conditional_format(
