@@ -110,7 +110,7 @@ class Statements(ShareIdentity):
         """
         if statements_currency == self.share_currency:
             return
-        print(f'{self.name} : convert statement to price currency                               ')
+        self.logger.info(f'{self.name} : convert statement to price currency                               ')
         share_currency_special = self.share_currency
         if self.share_currency in  SPECIAL_CURRENCIES :
             share_currency_special = SPECIAL_CURRENCIES[self.share_currency]['real']
@@ -118,7 +118,7 @@ class Statements(ShareIdentity):
 
         rate_symb = None
         if share_currency_special != statements_currency:
-            print(f'{self.name} : retrieve {statements_currency}/{share_currency_special} history       ')
+            self.logger.info(f'{self.name} : retrieve {statements_currency}/{share_currency_special} history       ')
             self.session_model.update_rate_dic(  statements_currency, share_currency_special
                                                             )
             rate_symb = statements_currency +  share_currency_special   + "=X"
@@ -173,8 +173,7 @@ class FinancialForcast(Statements):
         retrive forcated financial data
         """
 
-        print(f'{self.name} : retrieves forcast                    ',
-                flush= True, end = "\r")
+        self.logger.info(f'{self.name} : retrieves forcast                    ')
         statement_path = os.path.join(self.session_model.output_folder,
                                     f"{self.symbol}_company_forcast.json")
         if self.session_model.update_statements_need(statement_path):
@@ -250,7 +249,7 @@ class FinancialForcast(Statements):
             return g
 
         
-        print(f"{self.symbol} no valid value to compute growth estimate from {", ".join(ls)}")
+        self.logger.warning(f"{self.name} no valid value to compute growth estimate from {", ".join(ls)}")
         return
 
     def _set_forcasted_ocf(self):
@@ -429,7 +428,7 @@ class FinancialStatements(Statements):
         try :
             self.degiro_financial_retrieve()
         except DegiroRetrieveError as e:
-            print(f'{self.name} : can not retrieve financial data from degiro, {e}')
+            self.logger.warning(f'{self.name} : can not retrieve financial data from degiro, {e}')
             self.yahoo_financial_retrieve()
         except Exception as e:
             raise Exception(f'{self.name} {self.symbol} :{e}') from e
@@ -527,7 +526,7 @@ class FinancialStatements(Statements):
         df = df.dropna(subset = self.total_revenue_code)
         y = np.log(df[self.total_revenue_code].astype('float64'))
         if y is None:
-            print(f'{self.name} no valid values to compute history growth')
+            self.logger.warning(f'{self.name} no valid values to compute history growth')
             return np.nan
 
         z = np.polyfit(df['year'],y, deg = 1)
@@ -538,7 +537,7 @@ class FinancialStatements(Statements):
         """
         Get the share associated financial infos from yahoo finance api 
         """
-        print(f'{self.name} : retrieves financial statement from yahoo             ', flush= True, end = "\r")
+        self.logger.info(f'{self.name} : retrieves financial statement from yahoo             ')
 
         symb = self.symbol
         if self.symbol in self.session_model.yahoo_symbol_cor:
@@ -637,8 +636,7 @@ class FinancialStatements(Statements):
         """
         Retrieve financial statements from degiro api
         """
-        print(f'{self.name} : retrieves financial statement from degiro            ',
-              flush= True, end = "\r")
+        self.logger.info(f'{self.name} : retrieves financial statement from degiro            ')
         statement_path = os.path.join(self.session_model.output_folder, 
                                     f"{self.symbol}_company_financial.json")
         # print(os.path.isfile(statement_path))

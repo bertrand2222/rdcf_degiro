@@ -1,4 +1,5 @@
 import json, os
+import logging
 from datetime import  timedelta
 import numpy as np
 import pandas as pd
@@ -15,7 +16,12 @@ ERROR_QUERRY_PRICE = 2
 TOLERANCE_MINIMIZE = 1e-2
 # EURONEXT_ID = '710'
 # NASDAQ_ID = '663'
-
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
 
 RATIO_CODES = [
     'BETA',
@@ -48,7 +54,8 @@ class SharePrice(ShareIdentity):
         """
         retrieve current history from charts
         """
-        print(f'{self.name} : retrieves price history                      ', flush= True, end = "\r")
+        
+        self.logger.info(f'{self.name} : retrieves price history                      ')
 
         chart_request = ChartRequest(
             culture="fr-FR",
@@ -138,7 +145,7 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
         try:
             self.degiro_values_retrieve()
         except DegiroRetrieveError as e:
-            print(f'{self.name} : can not retrieve value ratios from degiro api, {e}     ')
+            self.logger.warning(f'{self.name} : can not retrieve value ratios from degiro api, {e}     ')
         else:
             return
         
@@ -148,7 +155,7 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
         """
         retrieve company ratios fom degiro api
         """
-        print(f'{self.name} : retrieves ratio from degiro              ', flush= True, end = "\r")
+        self.logger.info(f'{self.name} : retrieves ratio from degiro              ')
 
         statement_path = os.path.join(self.session_model.output_folder, 
                                    f"{self.symbol}_company_ratio.json")
@@ -177,7 +184,7 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
                     if 'value' in item:
                         ratio_dic[item['id']] = item['value']
                     else:
-                        print(f"{self.name} : Warning {item['id']} value not found")
+                        self.logger.warning(f"{self.name} : Warning {item['id']} value not found")
 
 
         if 'BETA' in ratio_dic:
@@ -196,7 +203,7 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
             self.convert_to_price_currency(["market_cap_reported"], statement_currency)
             err_market_cap = abs(self.market_cap - self.market_cap_reported)/min(self.market_cap_reported, self.market_cap )
             if err_market_cap > 1 :
-                print(self.name , " err_market_cap:  " , err_market_cap, self.market_cap_reported, self.market_cap)
+                self.logger.error(f"{self.name}  err_market_cap:  {err_market_cap}, {self.market_cap_reported}, {self.market_cap}")
 
 
         # if "FOCF_AYr5CAGR" in ratio_dic : 
@@ -208,7 +215,9 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
         """
         compute ratios from degiro statements
         """
-        print(f'{self.name} : retrieves ratio from yahoo              ', flush= True, end = "\r")
+        self.logger.info(f'{self.name} : retrieves ratio from yahoo              ')
+        self.logger.handlers[0].flush()
+        # self.logger.info(f'{self.name} : retrieves ratio from yahoo              ', flush= True, end = "\r")
         net_income = self.inc_ttm_statements['NINC']
 
         self.market_cap = self.nb_shares * self.current_price
@@ -279,7 +288,8 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
         compute value and ratios from financial statements and market infos 
         before dcf calculation
         """
-        print(f'{self.name} : compute complementary values                     ', flush= True, end='\r')
+        self.logger.info(f'{self.name} : compute complementary values                     ')
+        # self.logger.info(f'{self.name} : compute complementary values                     ', flush= True, end='\r')
         if self.y_statements is None:
             self.retrieve_financials()
 
@@ -306,7 +316,7 @@ class ShareDCFModule(ShareValues):
 
     assumed_g           : float = np.nan
     assumed_g_ttm       : float = np.nan
-    _multiple_vt         : float = None
+    _vt_multiple         : float = None
 
     g_delta_forcasted_assumed : float = np.nan
     forcasted_wacc_multiple : float = np.nan
@@ -356,23 +366,29 @@ class ShareDCFModule(ShareValues):
         """
         return unactuated terminal value
         """
-        if self._multiple_vt is None:
-            self._multiple_vt = max(self.forcasted_ebitda[-1]* self.price_to_ebitda_terminal,0)
-        return self._multiple_vt
+        if self._vt_multiple is None:
+            self._vt_multiple = max(self.forcasted_ebitda[-1]* self.price_to_ebitda_terminal,0)
+        return self._vt_multiple
 
     def _compute_forcasted_wacc(self):
-        if self.ocf < 0 :
-            return
-        if self.forcasted_ocf_growth is None  :
+
+        if self.forcasted_ebitda_growth is None  :
             return
 
-        self.g_delta_forcasted_assumed = self.forcasted_ocf_growth - self.assumed_g
+        self.g_delta_forcasted_assumed = self.forcasted_ebitda_growth - self.assumed_g
 
         if self.forcasted_cex_growth is None :
             return
         
-        self.forcasted_wacc_perpetual = minimize_scalar(self._residual_dcf_on_wacc_perpetual,
-                            method= 'bounded', bounds = (self.forcasted_ebitda_growth, self.forcasted_ebitda_growth + 2)).x
+        # print(self.name, self.forcasted_focf)
+        # print(self.name, self.forcasted_ebitda)
+        optimized_res = minimize_scalar(self._residual_dcf_on_wacc_perpetual,
+                            method= 'bounded', bounds = (self.forcasted_ebitda_growth, self.forcasted_ebitda_growth + 6))
+        err =  optimized_res.fun
+        if err > TOLERANCE_MINIMIZE :
+            self.logger.warning(f"{self.name} : warning, can not compute wacc perpetual, err = {err:.2e}")
+        else :
+            self.forcasted_wacc_perpetual = optimized_res.x
         
         if self.enterprise_cap < 0:
             self.forcasted_wacc_multiple = 1
@@ -389,7 +405,7 @@ class ShareDCFModule(ShareValues):
         compute g from mean fcf
         """
         if fcf < 0 :
-            print(f"{self.name} : negative free cash flow mean, can not compute assumed growth")
+            self.logger.info(f"{self.name} : negative free cash flow mean, can not compute assumed growth")
             return
         self.assumed_g = minimize_scalar(self._residual_dcf_on_g, args=(fcf,  False),
                             method= 'bounded', bounds = (-1, up_bound)).x
@@ -402,7 +418,7 @@ class ShareDCFModule(ShareValues):
         if  not self.q_cashflow_available :
             return
         if self.fcf_ttm < 0:
-            print(f"{self.name} : negative TTM free cash flow, can not compute TTM assumed growth")
+            self.logger.info(f"{self.name} : negative TTM free cash flow, can not compute TTM assumed growth")
             return
 
         self.assumed_g_ttm = minimize_scalar(self._residual_dcf_on_g, args=(self.fcf_ttm,  False),
@@ -419,13 +435,13 @@ class ShareDCFModule(ShareValues):
         """
         Evaluate company assumed growth rate from fundamental financial data
         """
-        print(f'{self.name} : compute dcf values                        ')
+        self.logger.info(f'{self.name} : compute dcf values                        ')
         fcf = start_fcf or self.fcf
 
         up_bound = 2 if self.session_model.use_multiple else self.market_wacc
 
         if self.session_model.use_multiple and (self.price_to_ebitda_terminal < 0) :
-            print(f"{self.name} negative terminal price to fcf multiple, can not compute RDCF")
+            self.logger.info(f"{self.name} negative terminal price to fcf multiple, can not compute RDCF")
             return
 
         self._compute_assumed_g(fcf, up_bound= up_bound)
@@ -492,10 +508,10 @@ class ShareDCFModule(ShareValues):
         #               fcf * sum of a**k for k from 1 to nb_year_dcf
         # fcf_act_sum = self.ocf * ((ocf_a**nb_year_dcf - 1)/(ocf_a-1) - 1 + ocf_a**(nb_year_dcf))
         # fcf_act_sum -= self.cex * ((cex_a**nb_year_dcf - 1)/(cex_a-1) - 1 + cex_a**(nb_year_dcf))
-        focf_act = self.forcasted_focf / (1+wacc)**np.arange(nb_year_dcf)
+        focf_act = self.forcasted_focf[:-1] / (1+wacc)**np.arange(1,nb_year_dcf)
         fcf_act_sum = (focf_act).sum()
         enterprise_value = fcf_act_sum + vt_act
-        return (enterprise_value / self.enterprise_cap - 1)**2
+        return (enterprise_value/self.enterprise_cap -1)**2
 
     def _residual_dcf_on_g(self, g, *data):
         """
@@ -532,12 +548,14 @@ class Share(ShareDCFModule):
 
         series_id_name = self.vwd_identifier_type
         serie_id = self.vwd_id
+        self.logger = self.session_model.logger
         try :
             self.price_series_str = f"price:{series_id_name}:{serie_id}"
         except TypeError as e:
             raise TypeError(
             f"not valid {series_id_name} type : {type(serie_id)}  history\
                              chart not available for the quote") from e
+        
 
     def retrieves_all_values(self,):
         """
@@ -550,7 +568,7 @@ class Share(ShareDCFModule):
         try :
             self.retrieve_forcasts()
         except KeyError as e:
-            print(f'{self.name} : can not retrieve financial forcast from degiro, {e}')
+            self.logger.warning(f'{self.name} : can not retrieve financial forcast from degiro, {e}')
 
         try:
             self.retrieve_history()

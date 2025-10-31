@@ -1,6 +1,7 @@
 # import dataclasses
 
 # @dataclasses.dataclass
+import logging
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 
 
@@ -17,4 +18,5 @@ class ShareIdentity():
     vwd_identifier_type : str = None
     vwd_identifier_type_secondary : str = None
     session_model : SessionModelDCF = None
+    logger : logging.Logger = None
 

@@ -46,6 +46,7 @@ class RDCFAnal():
         self.__dict__.update(config_dict)
 
         self.session_model = SessionModelDCF(config_dict)
+        self.logger = self.session_model.logger
 
         self.get_client_details_table = self.session_model.get_client_details
         if self.session_model.retrieve_shares_from_favorites:
@@ -115,7 +116,7 @@ class RDCFAnal():
         Generate an analysis summary dataframe
         """
         if not self.share_list:
-            print('No product to process, retrieve products before')
+            self.logger.error('No product to process, retrieve products before')
             return
         
         valid_share_list : List[Share] = []
@@ -124,12 +125,12 @@ class RDCFAnal():
             try :
                 s.retrieves_all_values()
             except (PriceRetrieveError, YahooRetrieveError) as e:
-                print(f"\033[91m{s.name} : {type(e).__name__} : {e}   \033[0m")
+                self.logger.error(f"{s.name} : {type(e).__name__} : {e}   ")
                 continue
         
             valid_share_list.append(s)
 
-        print("generate summary table")
+        self.logger.info("generate summary table")
 
         if not valid_share_list :
             print('no valid share')
@@ -150,7 +151,7 @@ class RDCFAnal():
                                 # 'assumed_g_incf' :        s.dcf.g_incf ,
                                 # 'assumed_g_incf_ttm' :    s.dcf.g_incf_ttm,
                                 'history_growth'         : s.history_growth,
-                                "forcast_growth" :       s.forcasted_ocf_growth,
+                                "forcasted_ebitda_growth" :       s.forcasted_ebitda_growth,
                                 'diff_g_forcasted_assumed'         : s.g_delta_forcasted_assumed,
                                 'forcasted_wacc_multiple'         : s.forcasted_wacc_multiple,
                                 'forcasted_wacc_perpetual'         : s.forcasted_wacc_perpetual,
@@ -272,7 +273,7 @@ class RDCFAnal():
             "mid_color" : "#FFFFFF"})
 
    
-        format_max_min_green_red(worksheet, 'history_growth', 'forcast_growth')
+        format_max_min_green_red(worksheet, 'history_growth', 'forcasted_ebitda_growth')
         format_max_min_green_red(worksheet, 'diff_g_forcasted_assumed')
         format_max_min_green_red(worksheet, 'forcasted_wacc_multiple' , max_type='num', max_value= 1)
         format_max_min_green_red(worksheet, 'forcasted_wacc_perpetual' , max_type='num', max_value= 1)
