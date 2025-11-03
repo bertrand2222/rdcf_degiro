@@ -164,7 +164,7 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
                 product_isin=self.isin, 
                 raw = True
             )
-            if 'data' not in _ratios:
+            if (not _ratios) or ('data' not in _ratios):
                 raise DegiroRetrieveError(f'ratio data not available for isin {self.isin}')
             ratios = _ratios['data']
             with open(statement_path, "w", 

@@ -107,7 +107,7 @@ class RateInfos():
         """
         Querry market info from web sources and yahoo finance api
         """
-        self.logger("querry market info from degiro and yahoo finance api")
+        self.logger.info("querry market info from degiro and yahoo finance api")
         r = requests.get(URL_FED_FUND_RATE, verify= False, headers= BROWSER_HEADERS, timeout= 20)
         text_fed_fund_rate = html.fromstring(r.content).xpath(XPATH_FED_FUND_RATE)[0].text
 
@@ -141,7 +141,8 @@ class RateInfos():
         with open(os.path.join(path),
                         "w", 
                         encoding= "utf8") as outfile:
-            json.dump(self.__dict__, outfile, indent = 4)
+            dic = {k : v for k, v in self.__dict__.items() if not k == "logger"}
+            json.dump(dic, outfile, indent = 4)
 
     def read(self,path: str):
         with open(os.path.join(path),
