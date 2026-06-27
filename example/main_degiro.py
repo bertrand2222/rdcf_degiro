@@ -21,6 +21,9 @@ yahoo_symbol_cor = {
     'TKY' : '8035.T',
     '3CP' : 'XIACY',
     'MBI' : '8058.T',
+    'UBSG' : 'UBS',
+    'SMSN' : '005930.KS',
+    'HY9H' : '000660.KS',
 }
 
 config_dict = {
@@ -44,7 +47,7 @@ if __name__ == "__main__":
 
     rdcf_anal = RDCFAnal(config_dict)
 
-    # rdcf_anal.share_list = [ s for s in rdcf_anal.share_list if s.symbol in [ "MBI"] ]
+    # rdcf_anal.share_list = [ s for s in rdcf_anal.share_list if s.symbol in [ "HY9H"] ]
     
     # rdcf_anal.load_df()
     rdcf_anal.process()

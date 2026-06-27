@@ -91,9 +91,7 @@ BROWSER_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)\
                     AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0'}
 
 ### get fed fund rate (debt cost)
-URL_FED_FUND_RATE = "https://ycharts.com/indicators/effective_federal_funds_rate"
-XPATH_FED_FUND_RATE = "/html/body/main/div/div[4]/div/div/div/div/div[2]/div[1]/div[3]/div[2]/div/div[1]/table/tbody/tr[1]/td[2]"
-
+FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
 
 class RateInfos():
     debt_cost : float = None
@@ -102,26 +100,39 @@ class RateInfos():
     
     def __init__(self, logger: logging.Logger = None):
         self.logger = logger
+
+    def fed_request(self,series_id):
+        r = requests.get(FRED_URL, 
+                         params={
+                        "series_id": series_id,
+                        "api_key": "cf05149ab0dfe8e3f459d3ddd8247468",
+                        "file_type": "json",
+                        "sort_order": "desc",
+                        "limit": 1
+                    })
+        data = r.json()
+        latest = data["observations"][0]['value']
+        return latest
     
     def retrieve(self) :
         """
         Querry market info from web sources and yahoo finance api
         """
         self.logger.info("querry market info from degiro and yahoo finance api")
-        r = requests.get(URL_FED_FUND_RATE, verify= False, headers= BROWSER_HEADERS, timeout= 20)
-        text_fed_fund_rate = html.fromstring(r.content).xpath(XPATH_FED_FUND_RATE)[0].text
-
+        
+        debt_cost = self.fed_request("EFFR")
         ### get debt cost
-        self.debt_cost = float(text_fed_fund_rate.strip("%")) / 100
+        self.debt_cost = float(debt_cost)/100
         self.logger.info(f"debt cost = {self.debt_cost*100}%")
 
         ### get free risk rate
         #us treasury ten years yield
-        self.free_risk_rate = yq.Ticker("^TNX", asynchronous=True).history(period = '1y', ).loc["^TNX"]["close"].iloc[-1]/100
+        free_risk_rate = self.fed_request("DGS10")
+        self.free_risk_rate = float(free_risk_rate)/100
         self.logger.info(f"free risk rate = {self.free_risk_rate*100:.2f}%")
 
         ### eval market rate
-        sptr_6y = yq.Ticker("^SP500TR", asynchronous=True).history(period = '6y', interval= "1mo").loc["^SP500TR"]
+        sptr_6y = yq.Ticker("^SP500TR", asynchronous=True, verify = False).history(period = '6y', interval= "1mo").loc["^SP500TR"]
         sptr_6y_rm = sptr_6y.rolling(2).mean()
         # sptr = yq.Ticker("^SP500TR").history(period = '5y', interval= "1mo").loc["^SP500TR"]
 
@@ -235,25 +246,26 @@ class SessionModelDCF(API):
         if currency_1 == currency_2 :
             return
         rate_symb = currency_1 + currency_2 + "=X"
-        if rate_symb not in self.rate_history_dic :
-            rate_path = os.path.join(self.output_folder,f'{rate_symb}_history.pckl')
-            if self.update_statements or( not os.path.isfile(rate_path)):
-                try :
-                    
-                    currency_history = yq.Ticker(rate_symb, asynchronous=True).history(period= '6y',
-                                                                    interval= "1mo", 
-                                                                    ).loc[rate_symb]
-                except KeyError as e:
-                    raise KeyError(f'rate symbol {rate_symb} not found in yahoofinance database') from e
+        if rate_symb in self.rate_history_dic :
+            return
+        rate_path = os.path.join(self.output_folder,f'{rate_symb}_history.pckl')
+        if self.update_statements or( not os.path.isfile(rate_path)):
+            try :
                 
-                currency_history.to_pickle(rate_path)
-            else :
-                currency_history = pd.read_pickle(rate_path)
+                currency_history = yq.Ticker(rate_symb, asynchronous=True).history(period= '6y',
+                                                                interval= "1mo", 
+                                                                ).loc[rate_symb]
+            except KeyError as e:
+                raise KeyError(f'rate symbol {rate_symb} not found in yahoofinance database') from e
+            
+            currency_history.to_pickle(rate_path)
+        else :
+            currency_history = pd.read_pickle(rate_path)
 
-            self.rate_history_dic[rate_symb] = currency_history[["close"]].iloc[:-1].rename(
-                columns = {'close' : 'change_rate'}).reindex(
-                    pd.to_datetime(currency_history.index[:-1]))
-            self.rate_current_dic[rate_symb] = currency_history["close"].iloc[-1]
+        self.rate_history_dic[rate_symb] = currency_history[["close"]].iloc[:-1].rename(
+            columns = {'close' : 'change_rate'}).reindex(
+                pd.to_datetime(currency_history.index[:-1]))
+        self.rate_current_dic[rate_symb] = currency_history["close"].iloc[-1]
 
     def update_statements_need(self, path: str) -> bool :
         """

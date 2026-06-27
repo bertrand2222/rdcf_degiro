@@ -120,7 +120,8 @@ class SharePrice(ShareIdentity):
         except IndexError :
             print(f'{self.name} : warning, not enought data to retrieve intra day price')
 
-
+class DegiroMarketCapError(Exception):
+    pass
 class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
     """
     Data retrieved from degiro api with get_company_ratio
@@ -142,12 +143,13 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
         """
         retrieve ratio values
         """
-        try:
-            self.degiro_values_retrieve()
-        except DegiroRetrieveError as e:
-            self.logger.warning(f'{self.name} : can not retrieve value ratios from degiro api, {e}     ')
-        else:
-            return
+        if self.retrieve_from == "degiro" :
+            try:
+                self.degiro_values_retrieve()
+            except DegiroRetrieveError as e:
+                self.logger.warning(f'{self.name} : can not retrieve value ratios from degiro api, {e}     ')
+            else:
+                return
         
         self.yahoo_values_retrieve()
 
@@ -183,8 +185,8 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
                 if item['id'] in RATIO_CODES:
                     if 'value' in item:
                         ratio_dic[item['id']] = item['value']
-                    else:
-                        self.logger.warning(f"{self.name} : Warning {item['id']} value not found")
+                    # else:
+                    #     self.logger.warning(f"{self.name} : Warning {item['id']} value not found")
 
 
         if 'BETA' in ratio_dic:
@@ -202,14 +204,9 @@ class ShareValues(SharePrice, FinancialStatements, FinancialForcast):
             self.market_cap_reported = float(ratio_dic['MKTCAP']) *1e-6# market cap
             self.convert_to_price_currency(["market_cap_reported"], statement_currency)
             err_market_cap = abs(self.market_cap - self.market_cap_reported)/min(self.market_cap_reported, self.market_cap )
-            if err_market_cap > 1 :
-                self.logger.error(f"{self.name}  err_market_cap:  {err_market_cap}, {self.market_cap_reported}, {self.market_cap}")
-
-
-        # if "FOCF_AYr5CAGR" in ratio_dic : 
-        #     self.history_growth = float(ratio_dic['FOCF_AYr5CAGR']) / 100 # return on investec capital - TTM
-        # if not self.current_price:
-        #     self.retrieve_current_price()
+            if err_market_cap > 0.8 and self.statements_currency != "EUR":
+                msg = f"{self.name}  err_market_cap: {err_market_cap:.2f} reported: {self.market_cap_reported:.2f} calculated: {self.market_cap:.2f} nb shares {self.nb_shares}"
+                raise DegiroMarketCapError(msg)
 
     def yahoo_values_retrieve(self):
         """
@@ -562,6 +559,8 @@ class Share(ShareDCFModule):
         Get all the share associated financial infos from degiro api 
         """
 
+        self.valid_retrieve = False
+        
         self.retrieve_financials()
 
         ## forcast
@@ -583,4 +582,5 @@ class Share(ShareDCFModule):
         
         self.compute_dcf()
 
+        self.valid_retrieve = True
         # self.eval_beta()

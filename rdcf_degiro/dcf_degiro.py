@@ -5,12 +5,13 @@ from string import ascii_uppercase
 import subprocess
 from typing import List
 import warnings
+from curl_cffi import CurlError
 import urllib3
 import pandas as pd
 from importlib import reload
 # from colorama import Fore
 from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
-from rdcf_degiro.share import Share, PriceRetrieveError
+from rdcf_degiro.share import DegiroMarketCapError, Share, PriceRetrieveError
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 from rdcf_degiro.financial_statements import YahooRetrieveError
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -119,18 +120,24 @@ class RDCFAnal():
             self.logger.error('No product to process, retrieve products before')
             return
         
-        valid_share_list : List[Share] = []
         for s in self.share_list :
-            
             try :
+                try :
+                    s.retrieves_all_values()
+                    continue
+                except DegiroMarketCapError as e:
+                    self.logger.warning(f"{e} can not retrieve data from Degiro")
+                    s.retrieve_from = "yahoo"
+
                 s.retrieves_all_values()
-            except (PriceRetrieveError, YahooRetrieveError) as e:
+            except (PriceRetrieveError, YahooRetrieveError, KeyError, CurlError) as e:
                 self.logger.error(f"{s.name} : {type(e).__name__} : {e}   ")
                 continue
         
-            valid_share_list.append(s)
 
         self.logger.info("generate summary table")
+        
+        valid_share_list = [s for s in self.share_list if s.valid_retrieve]
 
         if not valid_share_list :
             print('no valid share')

@@ -95,6 +95,7 @@ class Statements(ShareIdentity):
     class containing statements
     """
     y_statements : pd.DataFrame = None
+    retrieve_from = "degiro"
     ebida : float = None # operating cash flow
     ocf : float = None # operating cash flow
     cex : float = None # capital expenditure
@@ -419,19 +420,26 @@ class FinancialStatements(Statements):
     last_bal_statements : pd.Series = None 
     q_cashflow_available : bool = None
     _y_inc_complete_statements : pd.DataFrame = None
+    
+    def _retrive_financials_src(self):
+        
+        if self.retrieve_from == "degiro":
+            try :
+                self.degiro_financial_retrieve()
+                return
+            except DegiroRetrieveError as e:
+                self.logger.warning(f'{self.name} : can not retrieve financial data from degiro, {e}')
+            # except Exception as e:
+            #     raise Exception(f'{self.name} {self.symbol} :{e}') from e
 
+        self.yahoo_financial_retrieve()
+        
     def retrieve_financials(self):
         """
         Retrieve financial statements
         """
 
-        try :
-            self.degiro_financial_retrieve()
-        except DegiroRetrieveError as e:
-            self.logger.warning(f'{self.name} : can not retrieve financial data from degiro, {e}')
-            self.yahoo_financial_retrieve()
-        except Exception as e:
-            raise Exception(f'{self.name} {self.symbol} :{e}') from e
+        self._retrive_financials_src()
 
         self.y_statements.loc[:,'periodLength'] = 12
         self.y_statements.loc[:,'periodType'] = 'M'
@@ -549,7 +557,7 @@ class FinancialStatements(Statements):
                                          f"{self.symbol}_q_statement.pckl")
 
         if self.session_model.update_statements_need(y_statements_path):
-            tk = yq.Ticker(symb, asynchronous=True)
+            tk = yq.Ticker(symb, asynchronous=False, verify = False)
             y_statements : pd.DataFrame = tk.get_financial_data(TYPES)
             if not isinstance(y_statements, pd.DataFrame):
                 raise YahooRetrieveError(
@@ -581,6 +589,8 @@ class FinancialStatements(Statements):
         y_statements = y_statements.rename(columns= RENAME_DIC)
         q_statements = q_statements.rename(columns= RENAME_DIC)
 
+        # print(y_statements)
+        # print(y_statements['QTCO'])
         y_statements = y_statements.ffill(axis = 0).drop_duplicates(
                                                                 subset = ['asOfDate', ],
                                                                 keep= 'last').set_index('asOfDate')
@@ -619,15 +629,14 @@ class FinancialStatements(Statements):
             ['periodLength' , 'periodType'] + list(set(CASH_CODES) & set(q_statements.columns))]
 
         self.nb_shares = self.y_statements["QTCO"].iloc[-1]
-
-        statements_currency = y_statements['currencyCode'].iloc[-1]
+        self.statements_currency = y_statements['currencyCode'].iloc[-1]
         self.convert_to_price_currency(['y_statements',
                                         'q_inc_statements',
                                         'q_bal_statements', 
                                         'q_cas_statements',
                                         '_inc_ttm_statements_df',
                                         '_cas_ttm_statements_df'
-                                        ], statements_currency )
+                                        ], self.statements_currency )
 
         self.last_bal_statements = self.y_statements.iloc[-1]
 
@@ -661,12 +670,12 @@ class FinancialStatements(Statements):
             with open(statement_path, "r", encoding= "utf8") as json_file:
                 financial_st = json.load(json_file)
 
-        statements_currency = financial_st['currency']
+        self.statements_currency = financial_st['currency']
 
         # avoid retrieving bad total shares number from degiro for statemenet 
         # recorded in specific curency
-        if statements_currency in ['BRL', 'TWD', 'CNY', 'JPY']:
-            raise DegiroRetrieveError(f'currency {statements_currency}')
+        # if statements_currency in ['BRL', 'TWD', 'CNY', 'JPY']:
+        #     raise DegiroRetrieveError(f'currency {statements_currency}')
         
         self.degiro_retrieve_annual(financial_st= financial_st)
         self.degiro_retrieve_quarterly(financial_st= financial_st)
@@ -677,7 +686,7 @@ class FinancialStatements(Statements):
                                         'q_cas_statements',
                                         '_inc_ttm_statements_df',
                                         '_cas_ttm_statements_df'
-                                        ], statements_currency)
+                                        ], self.statements_currency)
 
         self.last_bal_statements = self.q_bal_statements.iloc[-1]
 
