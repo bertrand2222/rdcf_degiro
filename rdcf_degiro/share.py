@@ -72,7 +72,7 @@ class Share(FinancialStatements, FinancialForcast):
         self.nb_shares : float = None
 
         self.y_forcasts : pd.DataFrame = None
-        self.forcasted_ebitda_growth : float = None
+        self._forcasted_ebitda_growth : float = None
         self._forcasted_ocf_growth : float = None
         self._forcasted_capex_growth : float = None
         self._forcasted_ebitda : np.ndarray = None
@@ -86,7 +86,6 @@ class Share(FinancialStatements, FinancialForcast):
 
         self.assumed_g           : float = np.nan
         self.assumed_g_ttm       : float = np.nan
-        self._vt_multiple         : float = None
     
         self.g_delta_forcasted_assumed : float = np.nan
         self.forcasted_wacc_multiple : float = np.nan
@@ -443,14 +442,6 @@ class Share(FinancialStatements, FinancialForcast):
 
         return dc * (1 - tr) * (td + se) / td -  cc * ( td + se) / se  
 
-    @property
-    def multiple_vt(self):
-        """
-        return unactuated terminal value
-        """
-        if self._vt_multiple is None:
-            self._vt_multiple = max(self.forcasted_ebitda[-1]* self.price_to_ebitda_terminal,0)
-        return self._vt_multiple
 
     def _compute_forcasted_wacc_perpetual(self):
 
@@ -480,10 +471,12 @@ class Share(FinancialStatements, FinancialForcast):
             self.forcasted_wacc_multiple = 1
             return
 
+        vt_multiple = max(self.forcasted_ebitda[-1]* self.price_to_ebitda_terminal,0)
+
         # Multiple method
         arr = np.concatenate([np.array([-self.enterprise_cap]), 
                                 self.forcasted_focf[:-1], 
-                                np.array([self.multiple_vt])])
+                                np.array([vt_multiple])])
 
         self.forcasted_wacc_multiple = npf.irr(arr)
 
