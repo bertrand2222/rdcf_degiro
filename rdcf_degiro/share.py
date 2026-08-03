@@ -72,7 +72,7 @@ class Share(FinancialStatements, FinancialForcast):
         self.nb_shares : float = None
 
         self.y_forcasts : pd.DataFrame = None
-        self._forcasted_ebitda_growth : float = None
+        self.forcasted_ebitda_growth : float = None
         self._forcasted_ocf_growth : float = None
         self._forcasted_capex_growth : float = None
         self._forcasted_ebitda : np.ndarray = None
