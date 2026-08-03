@@ -470,8 +470,10 @@ class Share(FinancialStatements, FinancialForcast):
         if self.enterprise_cap < 0:
             self.forcasted_wacc_multiple = 1
             return
+        
+        self._forcasted_ebitda = self._get_forcasted_ebidta()
 
-        vt_multiple = max(self.forcasted_ebitda[-1]* self.price_to_ebitda_terminal,0)
+        vt_multiple = max(self._forcasted_ebitda[-1]* self.price_to_ebitda_terminal,0)
 
         # Multiple method
         arr = np.concatenate([np.array([-self.enterprise_cap]), 

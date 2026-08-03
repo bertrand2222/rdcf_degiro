@@ -272,7 +272,7 @@ class FinancialForcast(Statements):
         # no forcasted cash flow per share provided
         self._forcasted_ocf = self.ocf * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
 
-    def _set_forcasted_ebidta(self):
+    def _get_forcasted_ebidta(self):
         """
         retruned forcasted ocf array
         """
@@ -294,8 +294,8 @@ class FinancialForcast(Statements):
                         continue
                 
                 if len(ys) >= self.session_model.nb_year_dcf:
-                    self._forcasted_ebitda = ys[:self.session_model.nb_year_dcf]
-                    return
+                    return ys[:self.session_model.nb_year_dcf]
+                
                 # complete forcasted array with value extrapolated from forcasted growth rate
                 ys = np.concat([
                         ys,
@@ -303,11 +303,10 @@ class FinancialForcast(Statements):
                             1,
                             1 + self.session_model.nb_year_dcf - len(ys))])
                 
-                self._forcasted_ebitda = ys
-                return
+                return ys
 
         # no forcasted cash flow per share provided
-        self._forcasted_ebitda = self.ebitda * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
+        return self.ebitda * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
 
     def _set_forcasted_capex(self):
         """
@@ -356,15 +355,7 @@ class FinancialForcast(Statements):
         if self._forcasted_ocf is None:
             self._set_forcasted_ocf()
         return self._forcasted_ocf
-    
-    @property
-    def forcasted_ebitda(self) -> np.ndarray:
-        """
-        array of forcasted cpx
-        """
-        if self._forcasted_ebitda is None:
-            self._set_forcasted_ebidta()
-        return self._forcasted_ebitda
+
     
     @property
     def forcasted_focf(self):
