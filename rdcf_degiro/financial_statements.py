@@ -206,7 +206,7 @@ class FinancialForcast(Statements):
         Get the fitted growth rate of a forcasted variable
         """
         if self.y_forcasts is None:
-            return None
+            return np.nan
         
         for val in ls :
             if val not in self.y_forcasts :
@@ -222,14 +222,14 @@ class FinancialForcast(Statements):
 
         
         self.logger.warning(f"{self.name} no valid value to compute growth estimate from {", ".join(ls)}")
-        return None
+        return np.nan
 
-    def _set_forcasted_ocf(self):
+    def _get_forcasted_ocf(self):
         """
         retruned forcasted ocf array
         """
         if self.y_forcasts is None:
-            return
+            return None
 
         ys = None
         for val in ['CPS', 'EBT', 'NET', 'PRE', 'SAL' ] :
@@ -248,8 +248,8 @@ class FinancialForcast(Statements):
                 continue
             
             if len(ys) >= self.session_model.nb_year_dcf:
-                self._forcasted_ocf = ys[:self.session_model.nb_year_dcf]
-                return
+                return ys[:self.session_model.nb_year_dcf]
+
             # complete forcasted ocf array with value extrapolated from forcasted growth rate
             ys = np.concat([
                     ys,
@@ -257,18 +257,17 @@ class FinancialForcast(Statements):
                         1,
                         1 + self.session_model.nb_year_dcf - len(ys))])
             
-            self._forcasted_ocf = ys
-            return
+            return ys
 
         # no forcasted cash flow per share provided
-        self._forcasted_ocf = self.ocf * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
+        return self.ocf * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
 
     def _get_forcasted_ebidta(self):
         """
         retruned forcasted ocf array
         """
         if self.y_forcasts is None:
-            return
+            return None
 
         ys = None
         for val in ['EBT', 'PRE',] :
@@ -286,6 +285,9 @@ class FinancialForcast(Statements):
                 
                 if len(ys) >= self.session_model.nb_year_dcf:
                     return ys[:self.session_model.nb_year_dcf]
+
+                if np.isnan(self.forcasted_ebitda_growth) :
+                    continue
                 
                 # complete forcasted array with value extrapolated from forcasted growth rate
                 ys = np.concat([
@@ -293,7 +295,7 @@ class FinancialForcast(Statements):
                         ys[-1] * (1+ self.forcasted_ebitda_growth)**np.arange(
                             1,
                             1 + self.session_model.nb_year_dcf - len(ys))])
-                
+            
                 return ys
 
         # no forcasted cash flow per share provided
@@ -313,7 +315,7 @@ class FinancialForcast(Statements):
                 return
            
             g = self._get_forcasted_growth(['CPX'])
-            if g is not None :
+            if not np.isnan(g) :
                 g = min(g,2) # bound growth rate to 2
                 self._forcasted_capex_growth = g 
                 ys = np.concat([
@@ -337,20 +339,6 @@ class FinancialForcast(Statements):
         if self._forcasted_capex_growth is None :
             self._set_forcasted_capex()
         return self._forcasted_capex_growth
-
-    @property
-    def forcasted_ocf(self) -> np.ndarray:
-        """
-        array of forcasted cpx
-        """
-        if self._forcasted_ocf is None:
-            self._set_forcasted_ocf()
-        return self._forcasted_ocf
-
-    
-    @property
-    def forcasted_focf(self):
-        return self.forcasted_ocf - self.forcasted_capex
     
     @property
     def forcasted_capex(self) -> np.ndarray:

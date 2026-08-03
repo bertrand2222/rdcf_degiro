@@ -121,6 +121,9 @@ class Share(FinancialStatements, FinancialForcast):
         self.last_bal_statements : pd.Series = None 
         self.q_cashflow_available : bool = None
         self._y_inc_complete_statements : pd.DataFrame = None
+
+        self.forcasted_capital_cost_multiple :float = None
+        self.forcasted_capital_cost_perpetual :float = None
         
         # self.history_growth : float = None # free oerating cash flow compound annual  growth
 
@@ -445,7 +448,7 @@ class Share(FinancialStatements, FinancialForcast):
 
     def _compute_forcasted_wacc_perpetual(self):
 
-        if self.forcasted_ebitda_growth is None  :
+        if np.isnan(self.forcasted_ebitda_growth)  :
             return
 
         self.g_delta_forcasted_assumed = self.forcasted_ebitda_growth - self.assumed_g
@@ -477,7 +480,7 @@ class Share(FinancialStatements, FinancialForcast):
 
         # Multiple method
         arr = np.concatenate([np.array([-self.enterprise_cap]), 
-                                self.forcasted_focf[:-1], 
+                                self._forcasted_focf[:-1], 
                                 np.array([vt_multiple])])
 
         self.forcasted_wacc_multiple = npf.irr(arr)
@@ -530,6 +533,10 @@ class Share(FinancialStatements, FinancialForcast):
         self._compute_assumed_g(fcf, up_bound= up_bound)
         self._compute_assumed_g_ttm(up_bound= up_bound)
 
+        self._forcasted_ocf = self._get_forcasted_ocf()
+        if self._forcasted_ocf is None:
+            return
+        self._forcasted_focf = self._forcasted_ocf - self.forcasted_capex
         self.forcasted_ebitda_growth = self._get_forcasted_growth(['EBT', 'PRE'])
 
         self._compute_forcasted_wacc_perpetual()
@@ -591,7 +598,7 @@ class Share(FinancialStatements, FinancialForcast):
         # ocf_g = self.forcasted_ocf_growth
 
         nb_year_dcf = self.session_model.nb_year_dcf
-        vt_perpetual = self.forcasted_focf[-1] / (wacc - self.forcasted_ebitda_growth)
+        vt_perpetual = self._forcasted_focf[-1] / (wacc - self.forcasted_ebitda_growth)
         
         vt_act = vt_perpetual / (1+wacc)**(nb_year_dcf)
 
@@ -599,7 +606,7 @@ class Share(FinancialStatements, FinancialForcast):
         #               fcf * sum of a**k for k from 1 to nb_year_dcf
         # fcf_act_sum = self.ocf * ((ocf_a**nb_year_dcf - 1)/(ocf_a-1) - 1 + ocf_a**(nb_year_dcf))
         # fcf_act_sum -= self.capex * ((capex_a**nb_year_dcf - 1)/(capex_a-1) - 1 + capex_a**(nb_year_dcf))
-        focf_act = self.forcasted_focf[:-1] / (1+wacc)**np.arange(1,nb_year_dcf)
+        focf_act = self._forcasted_focf[:-1] / (1+wacc)**np.arange(1,nb_year_dcf)
         fcf_act_sum = (focf_act).sum()
         enterprise_value = fcf_act_sum + vt_act
         return (enterprise_value/self.enterprise_cap -1)**2
