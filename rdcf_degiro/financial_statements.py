@@ -201,15 +201,6 @@ class FinancialForcast(Statements):
             self._forcasted_ocf_growth = self._get_forcasted_growth(['CPS', 'EBT', 'NET', 'PRE', 'SAL', ])
         return self._forcasted_ocf_growth
     
-    @property
-    def forcasted_ebitda_growth(self):
-        """
-        forcasted annual growth rate
-        """
-        if self._forcasted_ebitda_growth is None :
-            self._forcasted_ebitda_growth = self._get_forcasted_growth(['EBT', 'PRE'])
-        return self._forcasted_ebitda_growth
-    
     def _get_forcasted_growth(self, ls : list[str]):
         """
         Get the fitted growth rate of a forcasted variable
@@ -231,7 +222,7 @@ class FinancialForcast(Statements):
 
         
         self.logger.warning(f"{self.name} no valid value to compute growth estimate from {", ".join(ls)}")
-        return
+        return None
 
     def _set_forcasted_ocf(self):
         """

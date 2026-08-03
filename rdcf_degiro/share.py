@@ -72,7 +72,7 @@ class Share(FinancialStatements, FinancialForcast):
         self.nb_shares : float = None
 
         self.y_forcasts : pd.DataFrame = None
-        self._forcasted_ebitda_growth : float = None
+        self.forcasted_ebitda_growth : float = None
         self._forcasted_ocf_growth : float = None
         self._forcasted_capex_growth : float = None
         self._forcasted_ebitda : np.ndarray = None
@@ -529,6 +529,9 @@ class Share(FinancialStatements, FinancialForcast):
 
         self._compute_assumed_g(fcf, up_bound= up_bound)
         self._compute_assumed_g_ttm(up_bound= up_bound)
+
+        self.forcasted_ebitda_growth = self._get_forcasted_growth(['EBT', 'PRE'])
+
         self._compute_forcasted_wacc_perpetual()
         self._compute_forcasted_wacc_multiple()
 
