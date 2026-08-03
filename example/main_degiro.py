@@ -3,7 +3,7 @@ import os
 
 sys.path.append(r"C:\Users\SAFCOB009150\rdcf\rdcf_degiro")
 
-from rdcf_degiro.dcf_degiro import RDCFAnal
+from rdcf_degiro.analysis import RDCFAnal
 
 # credentials_path = os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json")
 # credentials = build_credentials(location=credentials_path )
@@ -30,7 +30,7 @@ config_dict = {
     'credential_file_path'          : os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json"),
     'use_beta'     : False,
     'use_multiple'                  : True,
-    'terminal_price_to_ebitda_bounds'  : [1, 50],
+    'terminal_price_to_ebitda_bounds'  : [1, 35],
     'history_avg_nb_year'           : 3,
     'use_last_intraday_price'       : True,
     'output_folder'                 : r'C:\Users\SAFCOB009150\OneDrive - Saipem\Documents\rdcf_degiro_out',

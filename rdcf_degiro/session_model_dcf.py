@@ -167,28 +167,29 @@ class SessionModelDCF(API):
     """
     Object containing all global data
     """
-    credential_file_path : str = None
-    use_beta = False
-    use_multiple = True
-    history_avg_nb_year : int = 3
-    nb_year_dcf : int = 10
-    use_last_intraday_price : bool = False
-    terminal_price_to_ebitda_bounds = [1, 100]
-    output_folder = os.getenv("TEMP")
-    taxe_rate = 0.25
-    output_name = "rdcf"
-    yahoo_symbol_cor = None
-    retrieve_shares_from_favorites = True
-    retrieve_shares_from_portfolio = True
-    update_market_rate = False
-    update_statements = False
-    rate_history_dic = {}
-    rate_current_dic = {}
-    chart_fetcher : ChartFetcher = None
-    nb_days_update : int = 30
-    current_timestamp = time.time()
     
     def __init__(self, config_dict : dict):
+
+        self.credential_file_path : str = None
+        self.use_beta = False
+        self.use_multiple = True
+        self.history_avg_nb_year : int = 3
+        self.nb_year_dcf : int = 10
+        self.use_last_intraday_price : bool = False
+        self.terminal_price_to_ebitda_bounds = [1, 40]
+        self.output_folder = os.getenv("TEMP")
+        self.taxe_rate = 0.25
+        self.output_name = "rdcf"
+        self.yahoo_symbol_cor = None
+        self.retrieve_shares_from_favorites = True
+        self.retrieve_shares_from_portfolio = True
+        self.update_market_rate = False
+        self.update_statements = False
+        self.rate_history_dic = {}
+        self.rate_current_dic = {}
+        self.chart_fetcher : ChartFetcher = None
+        self.nb_days_update : int = 30
+        self.current_timestamp = time.time()
 
         self.__dict__.update(config_dict)
         self.config_dict = self.__dict__.copy()

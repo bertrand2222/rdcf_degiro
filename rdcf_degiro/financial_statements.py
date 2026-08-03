@@ -7,7 +7,6 @@ import pandas as pd
 import numpy as np
 import yahooquery as yq
 from dateutil.relativedelta import relativedelta
-from rdcf_degiro.share_identity import ShareIdentity
 # from sklearn.linear_model import LinearRegression
 # import matplotlib.pylab as plt
 OVERLAPING_DAYS_TOL = 7
@@ -90,18 +89,7 @@ class DegiroRetrieveError(Exception):
     """
     pass
 
-class Statements(ShareIdentity):
-    """
-    class containing statements
-    """
-    y_statements : pd.DataFrame = None
-    retrieve_from = "degiro"
-    ebida : float = None # operating cash flow
-    ocf : float = None # operating cash flow
-    cex : float = None # capital expenditure
-    ebitda : float = None # ebitda
-    rate_factor = 1
-    nb_shares : float = None
+class Statements():
 
     def convert_to_price_currency(self, attr_list : List[str], statements_currency: str = None):
 
@@ -160,14 +148,6 @@ class FinancialForcast(Statements):
     """
     Class computing and containing fincancial forcast
     """
-
-    y_forcasts : pd.DataFrame = None
-    _forcasted_ebitda_growth : float = None
-    _forcasted_ocf_growth : float = None
-    _forcasted_cex_growth : float = None
-    _forcasted_ebitda : np.ndarray = None
-    _forcasted_ocf : np.ndarray = None
-    _forcasted_cex : np.ndarray = None
 
     def retrieve_forcasts(self):
         """
@@ -329,9 +309,9 @@ class FinancialForcast(Statements):
         # no forcasted cash flow per share provided
         self._forcasted_ebitda = self.ebitda * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
 
-    def _set_forcasted_cex(self):
+    def _set_forcasted_capex(self):
         """
-        retruned growth rate fited from estimate 
+        retruned capital expenditure growth rate fited from estimate 
         """
         if self.y_forcasts is None:
             return
@@ -339,35 +319,34 @@ class FinancialForcast(Statements):
         if 'CPX' in self.y_forcasts:
             ys = self.y_forcasts['CPX'].dropna()
             if len(ys) >= self.session_model.nb_year_dcf:
-                self._forcasted_cex = ys[:self.session_model.nb_year_dcf]
+                self._forcasted_capex = ys[:self.session_model.nb_year_dcf]
                 return
            
             g = self._get_forcasted_growth(['CPX'])
             if g is not None :
                 g = min(g,2) # bound growth rate to 2
-                self._forcasted_cex_growth = g 
+                self._forcasted_capex_growth = g 
                 ys = np.concat([
                         ys,
                         ys[-1] * (1+ g)**np.arange(
                             1,
                             1 + self.session_model.nb_year_dcf - len(ys))])
-                self._forcasted_cex = ys
+                self._forcasted_capex = ys
                 return
 
         # can not compute forcasted capital expenditure growth from itself
-        self._forcasted_cex_growth = self.forcasted_ocf_growth
-        self._forcasted_cex = self.cex * (1 + self._forcasted_cex_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
+        self._forcasted_capex_growth = self.forcasted_ocf_growth
+        self._forcasted_capex = self.capex * (1 + self._forcasted_capex_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
 
         
-
     @property
-    def forcasted_cex_growth(self):
+    def forcasted_capex_growth(self):
         """
         forcasted annual growth rate
         """
-        if self._forcasted_cex_growth is None :
-            self._set_forcasted_cex()
-        return self._forcasted_cex_growth
+        if self._forcasted_capex_growth is None :
+            self._set_forcasted_capex()
+        return self._forcasted_capex_growth
 
     @property
     def forcasted_ocf(self) -> np.ndarray:
@@ -389,37 +368,22 @@ class FinancialForcast(Statements):
     
     @property
     def forcasted_focf(self):
-        return self.forcasted_ocf - self.forcasted_cex
+        return self.forcasted_ocf - self.forcasted_capex
     
     @property
-    def forcasted_cex(self) -> np.ndarray:
+    def forcasted_capex(self) -> np.ndarray:
         """
         array of forcasted cpx
         """
-        if self._forcasted_cex is None:
-            self._set_forcasted_cex()
-        return self._forcasted_cex
+        if self._forcasted_capex is None:
+            self._set_forcasted_capex()
+        return self._forcasted_capex
 
 class FinancialStatements(Statements):
     """
     Share financial statement from degiro
     
     """
-
-    q_inc_statements : pd.DataFrame = None
-    q_bal_statements : pd.DataFrame = None     
-    q_cas_statements : pd.DataFrame = None
-    _inc_ttm_statements_df : pd.DataFrame = None
-    _cas_ttm_statements_df : pd.DataFrame = None
-    cash_code : str = 'ACAE'
-    total_revenue_code : str = 'RTLR'
-    # gross_profit_code : str = 'SGRP'
-    fcf : float = None # free cash flow
-    nincf : float = None
-    _history_growth : float = None
-    last_bal_statements : pd.Series = None 
-    q_cashflow_available : bool = None
-    _y_inc_complete_statements : pd.DataFrame = None
     
     def _retrive_financials_src(self):
         
@@ -472,7 +436,7 @@ class FinancialStatements(Statements):
 
         self.fcf = all_cas.loc[:,'FCFL'].sum() / all_cas_time
         self.ocf = all_cas.loc[:,'OTLO'].sum() / all_cas_time
-        self.cex = self.ocf - self.fcf
+        self.capex = self.ocf - self.fcf
         self.ebitda = y_statements['EBITDA'].iloc[-1]
 
 
