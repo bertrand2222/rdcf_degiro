@@ -534,9 +534,10 @@ class Share(FinancialStatements, FinancialForcast):
         self._compute_assumed_g_ttm(up_bound= up_bound)
 
         self._forcasted_ocf = self._get_forcasted_ocf()
+        self._set_forcasted_capex()
         if self._forcasted_ocf is None:
             return
-        self._forcasted_focf = self._forcasted_ocf - self.forcasted_capex
+        self._forcasted_focf = self._forcasted_ocf - self._forcasted_capex
         self.forcasted_ebitda_growth = self._get_forcasted_growth(['EBT', 'PRE'])
 
         self._compute_forcasted_wacc_perpetual()

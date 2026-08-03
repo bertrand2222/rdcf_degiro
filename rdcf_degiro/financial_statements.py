@@ -330,25 +330,6 @@ class FinancialForcast(Statements):
         self._forcasted_capex_growth = self.forcasted_ocf_growth
         self._forcasted_capex = self.capex * (1 + self._forcasted_capex_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
 
-        
-    @property
-    def forcasted_capex_growth(self):
-        """
-        forcasted annual growth rate
-        """
-        if self._forcasted_capex_growth is None :
-            self._set_forcasted_capex()
-        return self._forcasted_capex_growth
-    
-    @property
-    def forcasted_capex(self) -> np.ndarray:
-        """
-        array of forcasted cpx
-        """
-        if self._forcasted_capex is None:
-            self._set_forcasted_capex()
-        return self._forcasted_capex
-
 class FinancialStatements(Statements):
     """
     Share financial statement from degiro
