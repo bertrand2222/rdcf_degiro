@@ -124,6 +124,8 @@ class Share(FinancialStatements, FinancialForcast):
 
         self.forcasted_capital_cost_multiple :float = None
         self.forcasted_capital_cost_perpetual :float = None
+        self.target_market_value_perpetual : float = None
+        self.target_market_price_multiple : float = None
         
         # self.history_growth : float = None # free oerating cash flow compound annual  growth
 
@@ -350,14 +352,17 @@ class Share(FinancialStatements, FinancialForcast):
         return  self.market_cap / self.stock_equity
     
     def _get_market_wacc(self) :
-        stock_equity = self.stock_equity
-        total_debt = self.total_debt
-        if stock_equity >= 0 :
-            return self.market_capital_cost * stock_equity/(total_debt + stock_equity) + \
-                    self.session_model.rate_info.debt_cost * (1-self.session_model.taxe_rate) * total_debt/(total_debt + stock_equity)
+        se = self.stock_equity
+        td = self.total_debt
+        cc = self.market_capital_cost
+        tr = self.session_model.taxe_rate
+        dc = self.session_model.rate_info.debt_cost
+        if se <= 0 :
+            se = self.market_cap
+
+        return cc * se/(td + se) +  dc * (1-tr) * td/(td + se)
         
-        return  self.market_capital_cost * -stock_equity/total_debt + \
-                self.session_model.rate_info.debt_cost * (1-self.session_model.taxe_rate) * (total_debt + stock_equity)/ total_debt
+        # return  cc * -se/td + dc * (1-tr) * (td + se)/ td
 
     def compute_complementary_values(self,):
         """
@@ -427,24 +432,11 @@ class Share(FinancialStatements, FinancialForcast):
         dc = self.session_model.rate_info.debt_cost
         if np.isnan(wacc) :
             return np.nan
-        if se >= 0 :
-            return (wacc - dc * (1-tr) * td/(td + se)) * (td + se)/se
+        if se <= 0 :
+            se = self.market_cap
+        return (wacc - dc * (1-tr) * td/(td + se)) * (td + se)/se
 
-        return (wacc - dc * (1-tr) * (td + se) /td ) * - se /(td + se)
-    
-    def _get_wacc_from_cc(self, cc: float):
-        td =  self.total_debt
-        se =  self.stock_equity
-        tr = self.session_model.taxe_rate
-        dc = self.session_model.rate_info.debt_cost
-        
-        if np.isnan(cc) :
-            return np.nan
-        if se >= 0 :
-            return dc * (1 - tr) * td /(td + se) + cc * se / (td + se)
-
-        return dc * (1 - tr) * (td + se) / td -  cc * ( td + se) / se  
-
+        # return - wacc * td / se + dc * ( 1- tr) * (td + se) /se
 
     def _compute_forcasted_wacc_perpetual(self):
 
@@ -478,13 +470,18 @@ class Share(FinancialStatements, FinancialForcast):
 
         vt_multiple = max(self._forcasted_ebitda[-1]* self.price_to_ebitda_terminal,0)
 
-        # Multiple method
         arr = np.concatenate([np.array([-self.enterprise_cap]), 
-                                self._forcasted_focf[:-1], 
+                                self._forcasted_fcf[:-1], 
                                 np.array([vt_multiple])])
 
         self.forcasted_wacc_multiple = npf.irr(arr)
 
+        # Compute target price from market wacc and forcasted fcf
+        vt_act = vt_multiple / (1+self.market_wacc)**(self.session_model.nb_year_dcf)
+        fcf_act = self._forcasted_fcf[:-1] / (1+self.market_wacc)**np.arange(1,self.session_model.nb_year_dcf)
+        fcf_act_sum = fcf_act.sum()
+        enterprise_value = fcf_act_sum + vt_act
+        self.target_market_price_multiple = (enterprise_value - self.net_debt) / self.nb_shares
 
     def _compute_assumed_g(self, fcf :float, up_bound : float):
         """
@@ -519,7 +516,14 @@ class Share(FinancialStatements, FinancialForcast):
 
     def compute_dcf(self, start_fcf : float = None):
         """
-        Evaluate company assumed growth rate from fundamental financial data
+        Evaluate from fundamental financial data and stock value:
+        - market assumed growth rate 
+
+        Evaluate from fundamental forcast:
+        - target return on capital
+        - target price
+
+        
         """
         self.logger.info(f'{self.name} : compute dcf values                        ')
         fcf = start_fcf or self.fcf
@@ -537,15 +541,20 @@ class Share(FinancialStatements, FinancialForcast):
         self._set_forcasted_capex()
         if self._forcasted_ocf is None:
             return
-        self._forcasted_focf = self._forcasted_ocf - self._forcasted_capex
+        self._forcasted_fcf = self._forcasted_ocf - self._forcasted_capex
         self.forcasted_ebitda_growth = self._get_forcasted_growth(['EBT', 'PRE'])
 
         self._compute_forcasted_wacc_perpetual()
         self._compute_forcasted_wacc_multiple()
 
-        # compute capital cost from wacc
+        # compute return on capital from wacc
         self.forcasted_capital_cost_multiple = self._get_cc_from_wacc(self.forcasted_wacc_multiple)
         self.forcasted_capital_cost_perpetual = self._get_cc_from_wacc(self.forcasted_wacc_perpetual)
+
+        # compute taget price from market capital cost
+        # self.target_market_value_perpetual = (self._compute_value_perpetual(self.market_wacc)    -  self.net_debt
+        #                                       ) / self.nb_shares
+
 
 
     def residual_dcf(self, g :  float, fcf : float, wacc : float, vt : float = None):
@@ -586,6 +595,30 @@ class Share(FinancialStatements, FinancialForcast):
             # print(f"Valeur DCF de l'action: {val_share:.2f} {self.currency:s}")
 
         return (enterprise_value / self.enterprise_cap - 1)**2
+
+
+    def _compute_value_perpetual(self, wacc : float):
+        """
+        compute company value regarding its actuated operating cash flows and capital expenditure
+
+        Returns:
+            float : company value
+        """
+        # ocf_g = self.forcasted_ocf_growth
+
+        vt_perpetual = self._forcasted_fcf[-1] / (wacc - self.forcasted_ebitda_growth)
+        
+        nb_year_dcf = self.session_model.nb_year_dcf
+        vt_act = vt_perpetual / (1+wacc)**(nb_year_dcf)
+
+        # ocf_a = (1+ocf_g)/(1+wacc)
+        #               fcf * sum of a**k for k from 1 to nb_year_dcf
+        # fcf_act_sum = self.ocf * ((ocf_a**nb_year_dcf - 1)/(ocf_a-1) - 1 + ocf_a**(nb_year_dcf))
+        # fcf_act_sum -= self.capex * ((capex_a**nb_year_dcf - 1)/(capex_a-1) - 1 + capex_a**(nb_year_dcf))
+        focf_act = self._forcasted_fcf[:-1] / (1+wacc)**np.arange(1,nb_year_dcf)
+        fcf_act_sum = (focf_act).sum()
+        enterprise_value = fcf_act_sum + vt_act
+        return enterprise_value
     
     def _residual_dcf_on_wacc_perpetual(self, wacc : float ):
         """
@@ -596,20 +629,8 @@ class Share(FinancialStatements, FinancialForcast):
             square error between enterprise actuated value corresponds 
                     to the one assumed by the market price.
         """
-        # ocf_g = self.forcasted_ocf_growth
 
-        nb_year_dcf = self.session_model.nb_year_dcf
-        vt_perpetual = self._forcasted_focf[-1] / (wacc - self.forcasted_ebitda_growth)
-        
-        vt_act = vt_perpetual / (1+wacc)**(nb_year_dcf)
-
-        # ocf_a = (1+ocf_g)/(1+wacc)
-        #               fcf * sum of a**k for k from 1 to nb_year_dcf
-        # fcf_act_sum = self.ocf * ((ocf_a**nb_year_dcf - 1)/(ocf_a-1) - 1 + ocf_a**(nb_year_dcf))
-        # fcf_act_sum -= self.capex * ((capex_a**nb_year_dcf - 1)/(capex_a-1) - 1 + capex_a**(nb_year_dcf))
-        focf_act = self._forcasted_focf[:-1] / (1+wacc)**np.arange(1,nb_year_dcf)
-        fcf_act_sum = (focf_act).sum()
-        enterprise_value = fcf_act_sum + vt_act
+        enterprise_value = self._compute_value_perpetual(wacc)
         return (enterprise_value/self.enterprise_cap -1)**2
 
     def _residual_dcf_on_g(self, g, *data):

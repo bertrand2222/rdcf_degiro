@@ -188,7 +188,7 @@ class SessionModelDCF(API):
         self.rate_history_dic = {}
         self.rate_current_dic = {}
         self.chart_fetcher : ChartFetcher = None
-        self.nb_days_update : int = 30
+        self.nb_days_update : int = 20
         self.current_timestamp = time.time()
 
         self.__dict__.update(config_dict)

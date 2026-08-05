@@ -159,11 +159,13 @@ class RDCFAnal():
                                 # 'assumed_g_incf_ttm' :    s.dcf.g_incf_ttm,
                                 'history_growth'         : s.history_growth,
                                 "forcasted_ebitda_growth" :       s.forcasted_ebitda_growth,
-                                'diff_g_forcasted_assumed'         : s.g_delta_forcasted_assumed,
+                                # 'diff_g_forcasted_assumed'         : s.g_delta_forcasted_assumed,
                                 'forcasted_wacc_multiple'         : s.forcasted_wacc_multiple,
                                 'forcasted_wacc_perpetual'         : s.forcasted_wacc_perpetual,
                                 'forcasted_capital_cost_multiple'         : s.forcasted_capital_cost_multiple,
                                 'forcasted_capital_cost_perpetual'         : s.forcasted_capital_cost_perpetual,
+                                # 'target_market_value_perpetual' : s.target_market_value_perpetual,
+                                "target_market_price_multiple" : s.target_market_price_multiple,
                                 'per' :                 s.per,
                                 'price_to_sales' :                 s.price_to_sales,
                                 'roe' :                s.roe , 
@@ -243,15 +245,19 @@ class RDCFAnal():
         worksheet.set_column(
             f"{col_letter['current_price']}:{col_letter['current_price']}", 13, number)
         worksheet.set_column(
-            f"{col_letter['beta']}:{col_letter['price_to_ebitda']}", 8, number)
+            f"{col_letter['beta']}:{col_letter['price_to_ebitda']}", 0, number)
         # worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_ttm']}", 11, percent)
-        worksheet.set_column(f"{col_letter['wacc']}:{col_letter['forcasted_wacc_perpetual']}",
+        worksheet.set_column(f"{col_letter['assumed_g']}:{col_letter['history_growth']}",
                              0, #11, 
                              percent)
         worksheet.set_column(f"{col_letter['forcasted_capital_cost_multiple']}:{col_letter['forcasted_capital_cost_perpetual']}",
                              11, bold_percent)
-        worksheet.set_column(f"{col_letter['price_to_sales']}:{col_letter['price_to_sales']}", 
+        # worksheet.set_column(
+        #             f"{col_letter['target_market_value_perpetual']}:{col_letter['target_market_value_perpetual']}", 13, number)
+        worksheet.set_column(f"{col_letter['target_market_price_multiple']}:{col_letter['target_market_price_multiple']}", 
                                      11, number)
+        worksheet.set_column(f"{col_letter['price_to_sales']}:{col_letter['price_to_sales']}", 
+                                             11, number)
         worksheet.set_column(f"{col_letter['debt_to_equity']}:{col_letter['debt_to_equity']}", 
                              0, number)
         worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}",
@@ -261,13 +267,15 @@ class RDCFAnal():
 
         def format_max_min_green_red(ws, col_s : str, col_e : str = None, 
                                      max_type : str = 'max', 
-                                     max_value : float = None):
+                                     max_value : float = None,
+                                     mid_type = 'percentile',
+                                     mid_value = 0):
             if col_e is None:
                 col_e = col_s
             format_dic = {"type": "3_color_scale", 'min_type': 'min',
-                'max_type': max_type, 'mid_type' : 'percentile',
+                'max_type': max_type, 'mid_type' : mid_type,
                 'min_color' : '#F8696B', "max_color" : '#63BE7B', 
-                "mid_color" : "#FFFFFF"}
+                "mid_color" : "#FFFFFF", "mid_value" : mid_value}
             if max_type == 'num':
                 format_dic['max_value'] = max_value
             ws.conditional_format(
@@ -285,11 +293,11 @@ class RDCFAnal():
 
    
         format_max_min_green_red(worksheet, 'history_growth', 'forcasted_ebitda_growth')
-        format_max_min_green_red(worksheet, 'diff_g_forcasted_assumed')
-        format_max_min_green_red(worksheet, 'forcasted_wacc_multiple' , max_type='num', max_value= 1)
-        format_max_min_green_red(worksheet, 'forcasted_wacc_perpetual' , max_type='num', max_value= 1)
-        format_max_min_green_red(worksheet, 'forcasted_capital_cost_multiple', max_type='num', max_value= 1)
-        format_max_min_green_red(worksheet, 'forcasted_capital_cost_perpetual', max_type='num', max_value= 1)
+        # format_max_min_green_red(worksheet, 'diff_g_forcasted_assumed')
+        # format_max_min_green_red(worksheet, 'forcasted_wacc_multiple' , max_type='num', max_value= 1)
+        # format_max_min_green_red(worksheet, 'forcasted_wacc_perpetual' , max_type='num', max_value= 1)
+        format_max_min_green_red(worksheet, 'forcasted_capital_cost_multiple', max_type='num', max_value= 1, mid_type= "num", mid_value= self.session_model.rate_info.market_rate)
+        format_max_min_green_red(worksheet, 'forcasted_capital_cost_perpetual', max_type='num', max_value= 1, mid_type= "num", mid_value= self.session_model.rate_info.market_rate)
 
 
         worksheet.conditional_format(

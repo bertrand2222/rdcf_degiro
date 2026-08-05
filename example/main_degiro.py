@@ -28,7 +28,7 @@ yahoo_symbol_cor = {
 
 config_dict = {
     'credential_file_path'          : os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json"),
-    'use_beta'     : False,
+    'use_beta'                      : False,
     'use_multiple'                  : True,
     'terminal_price_to_ebitda_bounds'  : [1, 35],
     'history_avg_nb_year'           : 3,
@@ -47,7 +47,7 @@ if __name__ == "__main__":
 
     rdcf_anal = RDCFAnal(config_dict)
 
-    # rdcf_anal.share_list = [ s for s in rdcf_anal.share_list if s.symbol in [ "HY9H"] ]
+    # rdcf_anal.share_list = [ s for s in rdcf_anal.share_list if s.symbol in [ "DELL"] ]
     
     # rdcf_anal.load_df()
     rdcf_anal.process()
