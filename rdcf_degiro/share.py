@@ -352,15 +352,16 @@ class Share(FinancialStatements, FinancialForcast):
         return  self.market_cap / self.stock_equity
     
     def _get_market_wacc(self) :
-        se = self.stock_equity
+        # se = self.stock_equity
+        mc = self.market_cap
         td = self.total_debt
         cc = self.market_capital_cost
         tr = self.session_model.taxe_rate
         dc = self.session_model.rate_info.debt_cost
-        if se <= 0 :
-            se = self.market_cap
+        # if se <= 0 :
+        #     se = self.market_cap
 
-        return cc * se/(td + se) +  dc * (1-tr) * td/(td + se)
+        return cc * mc/(td + mc) +  dc * (1-tr) * td/(td + mc)
         
         # return  cc * -se/td + dc * (1-tr) * (td + se)/ td
 
@@ -427,16 +428,15 @@ class Share(FinancialStatements, FinancialForcast):
     def _get_cc_from_wacc(self, wacc: float):
             
         td =  self.total_debt
-        se =  self.stock_equity
+        # se =  self.stock_equity
+        mc = self.market_cap
         tr = self.session_model.taxe_rate
         dc = self.session_model.rate_info.debt_cost
         if np.isnan(wacc) :
             return np.nan
-        if se <= 0 :
-            se = self.market_cap
-        return (wacc - dc * (1-tr) * td/(td + se)) * (td + se)/se
-
-        # return - wacc * td / se + dc * ( 1- tr) * (td + se) /se
+        # if se <= 0 :
+        #     se = self.market_cap
+        return (wacc - dc * (1-tr) * td/(td + mc)) * (td + mc)/mc
 
     def _compute_forcasted_wacc_perpetual(self):
 

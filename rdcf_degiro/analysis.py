@@ -250,6 +250,15 @@ class RDCFAnal():
         worksheet.set_column(f"{col_letter['assumed_g']}:{col_letter['history_growth']}",
                              0, #11, 
                              percent)
+        worksheet.set_column(f"{col_letter['wacc']}:{col_letter['wacc']}",
+                                     11, #11, 
+                                     percent)
+        worksheet.set_column(f"{col_letter['forcasted_ebitda_growth']}:{col_letter['forcasted_ebitda_growth']}",
+                                             11, #11, 
+                                             percent)
+        worksheet.set_column(f"{col_letter['forcasted_wacc_multiple']}:{col_letter['forcasted_wacc_perpetual']}",
+                                                     0, #11, 
+                                                     percent)
         worksheet.set_column(f"{col_letter['forcasted_capital_cost_multiple']}:{col_letter['forcasted_capital_cost_perpetual']}",
                              11, bold_percent)
         # worksheet.set_column(
