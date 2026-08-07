@@ -11,7 +11,7 @@ import pandas as pd
 from importlib import reload
 # from colorama import Fore
 from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
-from rdcf_degiro.share import DegiroMarketCapError, Share, PriceRetrieveError
+from rdcf_degiro.share import MarketCapError, Share, PriceRetrieveError
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 from rdcf_degiro.financial_statements import YahooRetrieveError
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -122,14 +122,14 @@ class RDCFAnal():
         
         for s in self.share_list :
             try :
-                try :
-                    s.retrieves_all_values()
-                    continue
-                except DegiroMarketCapError as e:
-                    self.logger.warning(f"{e} can not retrieve data from Degiro")
-                    s.retrieve_from = "yahoo"
+                for retrieve_from in ['degiro', 'yahoo']:
+                    s.retrieve_from = retrieve_from
+                    try :
+                        s.retrieves_all_values()
+                        break
+                    except MarketCapError as e:
+                        self.logger.warning(f"{e} can not retrieve data from {retrieve_from}")
 
-                s.retrieves_all_values()
             except (PriceRetrieveError, YahooRetrieveError, KeyError, CurlError) as e:
                 self.logger.error(f"{s.name} : {type(e).__name__} : {e}   ")
                 continue
@@ -173,6 +173,7 @@ class RDCFAnal():
                                 'debt_to_equity' :      s.debt_to_equity,
                                 # 'price_to_book' :       s.price_to_book ,
                                 'total_payout_ratio' :  s.total_payout_ratio,
+                                'market_cap_reliable' : s.market_cap_reliable
               
                                     } for s in valid_share_list])
 

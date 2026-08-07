@@ -42,7 +42,7 @@ def last_day_of_month(any_day):
 class PriceRetrieveError(Exception):
     pass
 
-class DegiroMarketCapError(Exception):
+class MarketCapError(Exception):
     pass
 
 class Share(FinancialStatements, FinancialForcast):
@@ -232,6 +232,22 @@ class Share(FinancialStatements, FinancialForcast):
                     return
             
             self.yahoo_values_retrieve()
+
+    def check_market_cap(self):
+        """ Check consistency between reported market cap and price calculated maket cap """
+
+        if self.statements_currency == "EUR":
+            self.market_cap_reliable = True
+            return
+
+        err_market_cap = abs(self.market_cap - self.market_cap_reported)/min(self.market_cap_reported, self.market_cap )
+        if err_market_cap > 0.8 :
+            msg = f"{self.name}  err_market_cap: {err_market_cap:.2f} reported: {self.market_cap_reported:.2f} calculated: {self.market_cap:.2f} nb shares {self.nb_shares}"
+            self.market_cap_reliable = False
+            raise MarketCapError(msg)
+
+        self.market_cap_reliable = True
+
     
     def degiro_values_retrieve(self):
         """
@@ -283,10 +299,8 @@ class Share(FinancialStatements, FinancialForcast):
         if "MKTCAP" in ratio_dic : 
             self.market_cap_reported = float(ratio_dic['MKTCAP']) *1e-6# market cap
             self.convert_to_price_currency(["market_cap_reported"], statement_currency)
-            err_market_cap = abs(self.market_cap - self.market_cap_reported)/min(self.market_cap_reported, self.market_cap )
-            if err_market_cap > 0.8 and self.statements_currency != "EUR":
-                msg = f"{self.name}  err_market_cap: {err_market_cap:.2f} reported: {self.market_cap_reported:.2f} calculated: {self.market_cap:.2f} nb shares {self.nb_shares}"
-                raise DegiroMarketCapError(msg)
+            self.check_market_cap()
+                
 
     def yahoo_values_retrieve(self):
         """
@@ -298,6 +312,7 @@ class Share(FinancialStatements, FinancialForcast):
         net_income = self.inc_ttm_statements['NINC']
 
         self.market_cap = self.nb_shares * self.current_price
+        self.check_market_cap()
         self.per = self.market_cap / net_income
         self.price_to_sales = self.market_cap / self.inc_ttm_statements['RTLR']
         
