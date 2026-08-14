@@ -464,9 +464,7 @@ class Share(FinancialStatements, FinancialForcast):
         optimized_res = minimize_scalar(self._residual_dcf_on_wacc_perpetual,
                             method= 'bounded', bounds = (self.forcasted_ebitda_growth, self.forcasted_ebitda_growth + 6))
         err =  optimized_res.fun
-        if err > TOLERANCE_MINIMIZE :
-            self.logger.warning(f"{self.name} : warning, can not compute wacc perpetual, err = {err:.2e}")
-        else :
+        if err <= TOLERANCE_MINIMIZE :
             self.forcasted_wacc_perpetual = optimized_res.x
         
 
@@ -593,21 +591,6 @@ class Share(FinancialStatements, FinancialForcast):
         fcf_ar = fcf * (1+g) ** np.arange(1,1 + nb_year_dcf)
         fcf_act_sum = fcf_ar.sum()
         enterprise_value = fcf_act_sum + vt_act
-
-        # if pr :
-        #     act_vec = np.array([1/((1+cmpc)**k) for k in range(1,1 + nb_year_dcf)])
-        #     fcf_act = fcf_ar * act_vec
-        #     print("\r")
-        #     val_share = (enterprise_value - self.net_debt)/ self.financial_statements.nb_shares
-        #     annees = list(2023 + np.arange(0, nb_year_dcf)) +  ["Terminal"]
-        #     table = np.array([ np.concatenate((fcf_ar[:nb_year_dcf] ,[vt])),
-        #                       np.concatenate((fcf_act[:nb_year_dcf], [vt_act]))])
-        #     print(f"Prévision pour une croissance de {g*100:.2f}% :")
-        #     print(tabulate(table, floatfmt= ".4e",
-        #                    showindex= [ "Free Cash Flow", "Free Cash Flow actualisé"],
-        #                    headers= annees))
-
-            # print(f"Valeur DCF de l'action: {val_share:.2f} {self.currency:s}")
 
         return (enterprise_value / self.enterprise_cap - 1)**2
 

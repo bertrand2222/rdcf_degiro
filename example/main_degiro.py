@@ -30,7 +30,7 @@ config_dict = {
     'credential_file_path'          : os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json"),
     'use_beta'                      : False,
     'use_multiple'                  : True,
-    'terminal_price_to_ebitda_bounds'  : [1, 35],
+    'terminal_price_to_ebitda_bounds'  : [1, 30],
     'history_avg_nb_year'           : 3,
     'use_last_intraday_price'       : True,
     'output_folder'                 : r'C:\Users\SAFCOB009150\OneDrive - Saipem\Documents\rdcf_degiro_out',
