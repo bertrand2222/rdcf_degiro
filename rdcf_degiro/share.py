@@ -354,11 +354,6 @@ class Share(FinancialStatements, FinancialForcast):
         return self._market_wacc
     
     @property
-    def enterprise_cap(self):
-        return self.market_cap + self.net_debt
-        # return self.market_cap 
-    
-    @property
     def debt_to_equity(self) :
         return self.total_debt / self.stock_equity
 
@@ -547,6 +542,7 @@ class Share(FinancialStatements, FinancialForcast):
             self.logger.info(f"{self.name} negative terminal price to fcf multiple, can not compute RDCF")
             return
 
+        self.enterprise_cap = self.market_cap + self.net_debt
         self._compute_assumed_g(fcf, up_bound= up_bound)
         self._compute_assumed_g_ttm(up_bound= up_bound)
 
