@@ -637,8 +637,8 @@ class FinancialStatements(Statements):
         da_keys = [k for k in ['SDPR', 'SDED'] if k in y_statements]
         da = y_statements[da_keys[0]] if da_keys else 0
 
-        y_statements['EBIT'] = y_statements[op_keys[0]]
-        y_statements['EBITDA'] = y_statements['EBIT'] + da
+        # y_statements['EBIT'] = y_statements[op_keys[0]]
+        y_statements['EBITDA'] = y_statements[op_keys[0]] + da
 
         # compute free cash flow
         y_statements['FCFF'] = y_statements[op_keys[0]] * (1-self.session_model.taxe_rate) + da  # Free cash flow to firm
@@ -685,15 +685,15 @@ class FinancialStatements(Statements):
         q_inc_statements = remove_overlapping_data(q_inc_statements)
         q_cas_statements = remove_overlapping_data(q_cas_statements)
 
-        op_keys = [k for k in ['SOPI', 'EIBT'] if k in q_inc_statements]
-        da_keys = [k for k in ['SDPR'] if k in q_inc_statements]
-        da = q_inc_statements[da_keys[0]] if da_keys else 0
+        # op_keys = [k for k in ['SOPI', 'EIBT'] if k in q_inc_statements]
+        # da_keys = [k for k in ['SDPR'] if k in q_inc_statements]
+        # da = q_inc_statements[da_keys[0]] if da_keys else 0
 
         # free cash flow            = Cash from Operating Activities - Capital Expenditures,
-        q_cas_statements['FCFF'] = q_cas_statements[op_keys[0]] * (1-self.session_model.taxe_rate) + da  # Free cash flow to firm
+        # q_cas_statements['FCFF'] = q_cas_statements[op_keys[0]] * (1-self.session_model.taxe_rate) + da  # Free cash flow to firm
         q_cas_statements['FCFL'] = q_cas_statements["OTLO"] 
         if "SCEX" in q_cas_statements:
-            q_cas_statements['FCFF'] += q_cas_statements["SCEX"]
+            # q_cas_statements['FCFF'] += q_cas_statements["SCEX"]
             q_cas_statements['FCFL'] += q_cas_statements["SCEX"]
 
 

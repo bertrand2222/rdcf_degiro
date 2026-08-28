@@ -104,7 +104,6 @@ class Share(FinancialStatements, FinancialForcast):
         self.price_to_sales : float = np.nan
         self.price_to_ebitda : float = None
         self.price_to_ebitda_terminal : float = None
-        self._market_wacc : float = None
 
         self.q_inc_statements : pd.DataFrame = None
         self.q_bal_statements : pd.DataFrame = None     
@@ -348,12 +347,6 @@ class Share(FinancialStatements, FinancialForcast):
         return free_risk_rate + self.beta * (market_infos.market_rate - free_risk_rate)
     
     @property
-    def market_wacc(self):
-        if self._market_wacc is None:
-            self._market_wacc = self._get_market_wacc()
-        return self._market_wacc
-    
-    @property
     def debt_to_equity(self) :
         return self.total_debt / self.stock_equity
 
@@ -362,18 +355,17 @@ class Share(FinancialStatements, FinancialForcast):
         return  self.market_cap / self.stock_equity
     
     def _get_market_wacc(self) :
-        # se = self.stock_equity
+
         mc = self.market_cap
-        td = self.total_debt
+        nd = self.net_debt
+        if nd < 0:
+            nd = self.total_debt
         cc = self.market_capital_cost
         tr = self.session_model.taxe_rate
         dc = self.session_model.rate_info.debt_cost
-        # if se <= 0 :
-        #     se = self.market_cap
 
-        return cc * mc/(td + mc) +  dc * (1-tr) * td/(td + mc)
+        return cc * mc/(nd + mc) +  dc * (1-tr) * nd/(nd + mc)
         
-        # return  cc * -se/td + dc * (1-tr) * (td + se)/ td
 
     def compute_complementary_values(self,):
         """
@@ -437,16 +429,17 @@ class Share(FinancialStatements, FinancialForcast):
 
     def _get_cc_from_wacc(self, wacc: float):
             
-        td =  self.total_debt
-        # se =  self.stock_equity
+        if np.isnan(wacc) :
+            return np.nan
+        
+        nd =  self.net_debt
+        if nd < 0:
+            nd = self.total_debt
         mc = self.market_cap
         tr = self.session_model.taxe_rate
         dc = self.session_model.rate_info.debt_cost
-        if np.isnan(wacc) :
-            return np.nan
-        # if se <= 0 :
-        #     se = self.market_cap
-        return (wacc - dc * (1-tr) * td/(td + mc)) * (td + mc)/mc
+
+        return (wacc - dc * (1-tr) * nd/(nd + mc)) * (nd + mc)/mc
 
     def _compute_forcasted_wacc_perpetual(self):
 
@@ -543,6 +536,8 @@ class Share(FinancialStatements, FinancialForcast):
             return
 
         self.enterprise_cap = self.market_cap + self.net_debt
+        self.market_wacc = self._get_market_wacc()
+
         self._compute_assumed_g(fcf, up_bound= up_bound)
         self._compute_assumed_g_ttm(up_bound= up_bound)
 
