@@ -150,7 +150,7 @@ class RDCFAnal():
                                 'current_price' :       s.current_price ,
                                 'currency' :            s.share_currency ,
                                 'beta' :                s.beta ,
-                                'price_to_ebitda' :        s.price_to_ebitda,
+                                'value_to_ebitda' :        s.value_to_ebitda,
                                 # 'market_capital_cost' :   s.market_capital_cost,
                                 'wacc' :                s.market_wacc ,
                                 'assumed_g' :           s.assumed_g ,  
@@ -173,8 +173,8 @@ class RDCFAnal():
                                 'debt_to_equity' :      s.debt_to_equity,
                                 # 'price_to_book' :       s.price_to_book ,
                                 'total_payout_ratio' :  s.total_payout_ratio,
-                                'market_cap_reliable' : s.market_cap_reliable
-              
+                                # 'market_cap_reliable' : s.market_cap_reliable,
+                                'enterprise_value' : s.enterprise_value
                                     } for s in valid_share_list])
 
 
@@ -246,7 +246,7 @@ class RDCFAnal():
         worksheet.set_column(
             f"{col_letter['current_price']}:{col_letter['current_price']}", 13, number)
         worksheet.set_column(
-            f"{col_letter['beta']}:{col_letter['price_to_ebitda']}", 0, number)
+            f"{col_letter['beta']}:{col_letter['value_to_ebitda']}", 0, number)
         # worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_ttm']}", 11, percent)
         worksheet.set_column(f"{col_letter['assumed_g']}:{col_letter['history_growth']}",
                              0, #11, 

@@ -102,8 +102,8 @@ class Share(FinancialStatements, FinancialForcast):
         self.beta : float = None
         self.per : float = np.nan
         self.price_to_sales : float = np.nan
-        self.price_to_ebitda : float = None
-        self.price_to_ebitda_terminal : float = None
+        self.value_to_ebitda : float = None
+        self.value_to_ebitda_terminal : float = None
 
         self.q_inc_statements : pd.DataFrame = None
         self.q_bal_statements : pd.DataFrame = None     
@@ -125,6 +125,8 @@ class Share(FinancialStatements, FinancialForcast):
         self.forcasted_capital_cost_perpetual :float = None
         self.target_market_value_perpetual : float = None
         self.target_market_price_multiple : float = None
+
+        self.negative_ent_value = False
         
         # self.history_growth : float = None # free oerating cash flow compound annual  growth
 
@@ -327,12 +329,17 @@ class Share(FinancialStatements, FinancialForcast):
     @property
     def total_debt(self):
         return self.last_bal_statements['STLD']
+
+    # @property
+    # def cash(self):
+    #     return self.last_bal_statements[
+    #             self.cash_code]
     
     @property
     def net_debt(self):
                 #net debt     =  total_debt - cash and cash equivalent
-        return  self.total_debt - self.last_bal_statements[
-                self.cash_code]
+        return  self.total_debt - self.last_bal_statements[self.cash_code]
+    
     @property
     def stock_equity(self):
         return self.last_bal_statements['QTLE']
@@ -355,16 +362,21 @@ class Share(FinancialStatements, FinancialForcast):
         return  self.market_cap / self.stock_equity
     
     def _get_market_wacc(self) :
+        """ Get weight averaged capital cost """
 
-        mc = self.market_cap
-        nd = self.net_debt
-        if nd < 0:
-            nd = self.total_debt
+        eq = self.market_cap
+        debt = self.net_debt
         cc = self.market_capital_cost
+        if debt < 0:
+            eq = self.enterprise_value
+            debt = self.total_debt
+        if eq + debt <= 0:
+            # debt = 0
+            return cc
         tr = self.session_model.taxe_rate
         dc = self.session_model.rate_info.debt_cost
 
-        return cc * mc/(nd + mc) +  dc * (1-tr) * nd/(nd + mc)
+        return cc * eq/(debt + eq) +  dc * (1-tr) * debt/(debt + eq)
         
 
     def compute_complementary_values(self,):
@@ -380,17 +392,22 @@ class Share(FinancialStatements, FinancialForcast):
         y_statements = self.y_statements
 
         df_multiple = pd.concat([self.price_history_in_financial_currency, 
-                                y_statements[["QTCO" , 'EBITDA']]
+                                y_statements[["QTCO" , 'EBITDA', 'STLD', self.cash_code]]
                                 ], axis = 0).sort_index().ffill().dropna()
+        df_multiple['ENT_VALUE'] = df_multiple['QTCO'] * df_multiple['close'] + df_multiple['STLD'] - df_multiple[self.cash_code]
+        
+        if df_multiple['ENT_VALUE'].iloc[-1] <= 0 :
+            self.negative_ent_value = True
+            df_multiple['ENT_VALUE'] = df_multiple['QTCO'] * df_multiple['close']
 
-        df_multiple['price_to_ebitda'] = df_multiple['QTCO'] * df_multiple['close'] / df_multiple['EBITDA']
+        df_multiple['value_to_ebitda'] = df_multiple['ENT_VALUE'] / df_multiple['EBITDA']
 
         # price to fcf multilple calculated as harmonic mean of history:
-        self.price_to_ebitda = len(df_multiple) / (1 / df_multiple['price_to_ebitda']).sum()
+        self.value_to_ebitda = len(df_multiple) / (1 / df_multiple['value_to_ebitda']).sum()
             
-        self.price_to_ebitda_terminal = max(
-            self.session_model.terminal_price_to_ebitda_bounds[0],
-            1 / max(1/self.price_to_ebitda, 1/self.session_model.terminal_price_to_ebitda_bounds[1])
+        self.value_to_ebitda_terminal = max(
+            self.session_model.terminal_value_to_ebitda_bounds[0],
+            1 / max(1/self.value_to_ebitda, 1/self.session_model.terminal_value_to_ebitda_bounds[1])
             )
 
         return(0)
@@ -432,14 +449,18 @@ class Share(FinancialStatements, FinancialForcast):
         if np.isnan(wacc) :
             return np.nan
         
-        nd =  self.net_debt
-        if nd < 0:
-            nd = self.total_debt
-        mc = self.market_cap
+        eq = self.market_cap
+        debt = self.net_debt
+        if debt < 0:
+            eq = self.enterprise_value
+            debt = self.total_debt
+        if eq + debt <= 0:
+            # debt = 0
+            return wacc
         tr = self.session_model.taxe_rate
         dc = self.session_model.rate_info.debt_cost
 
-        return (wacc - dc * (1-tr) * nd/(nd + mc)) * (nd + mc)/mc
+        return (wacc - dc * (1-tr) * debt/(debt + eq)) * (debt + eq)/eq
 
     def _compute_forcasted_wacc_perpetual(self):
 
@@ -463,15 +484,15 @@ class Share(FinancialStatements, FinancialForcast):
         if self._forcasted_capex_growth is None :
             return
         
-        if self.enterprise_cap < 0:
+        if self.enterprise_value < 0:
             self.forcasted_wacc_multiple = 1
             return
         
         self._forcasted_ebitda = self._get_forcasted_ebidta()
 
-        vt_multiple = max(self._forcasted_ebitda[-1]* self.price_to_ebitda_terminal,0)
+        vt_multiple = max(self._forcasted_ebitda[-1]* self.value_to_ebitda_terminal,0)
 
-        arr = np.concatenate([np.array([-self.enterprise_cap]), 
+        arr = np.concatenate([np.array([-self.enterprise_value]), 
                                 self._forcasted_fcf[:-1], 
                                 np.array([vt_multiple])])
 
@@ -529,14 +550,14 @@ class Share(FinancialStatements, FinancialForcast):
         self.logger.info(f'{self.name} : compute dcf values                        ')
         fcf = start_fcf or self.fcf
 
+        self.enterprise_value = self.market_cap + self.net_debt
+        self.market_wacc = self._get_market_wacc()
         up_bound = 2 if self.session_model.use_multiple else self.market_wacc
 
-        if self.session_model.use_multiple and (self.price_to_ebitda_terminal < 0) :
+        if self.session_model.use_multiple and (self.value_to_ebitda_terminal < 0) :
             self.logger.info(f"{self.name} negative terminal price to fcf multiple, can not compute RDCF")
             return
 
-        self.enterprise_cap = self.market_cap + self.net_debt
-        self.market_wacc = self._get_market_wacc()
 
         self._compute_assumed_g(fcf, up_bound= up_bound)
         self._compute_assumed_g_ttm(up_bound= up_bound)
@@ -573,7 +594,7 @@ class Share(FinancialStatements, FinancialForcast):
         nb_year_dcf = self.session_model.nb_year_dcf
         if vt is None:
             if self.session_model.use_multiple :
-                vt = fcf * (1+g)**(nb_year_dcf ) * self.price_to_ebitda_terminal
+                vt = fcf * (1+g)**(nb_year_dcf ) * self.value_to_ebitda_terminal
             else :
                 vt = fcf * (1+g)**(nb_year_dcf ) / (wacc - g)
         vt_act = vt / (1+wacc)**(nb_year_dcf)
@@ -583,7 +604,7 @@ class Share(FinancialStatements, FinancialForcast):
         fcf_act_sum = fcf_ar.sum()
         enterprise_value = fcf_act_sum + vt_act
 
-        return (enterprise_value / self.enterprise_cap - 1)**2
+        return (enterprise_value / self.enterprise_value - 1)**2
 
 
     def _compute_value_perpetual(self, wacc : float):
@@ -620,7 +641,7 @@ class Share(FinancialStatements, FinancialForcast):
         """
 
         enterprise_value = self._compute_value_perpetual(wacc)
-        return (enterprise_value/self.enterprise_cap -1)**2
+        return (enterprise_value/self.enterprise_value -1)**2
 
     def _residual_dcf_on_g(self, g, *data):
         """

@@ -176,7 +176,7 @@ class SessionModelDCF(API):
         self.history_avg_nb_year : int = 3
         self.nb_year_dcf : int = 10
         self.use_last_intraday_price : bool = False
-        self.terminal_price_to_ebitda_bounds = [1, 40]
+        self.terminal_value_to_ebitda_bounds = [1, 40]
         self.output_folder = os.getenv("TEMP")
         self.taxe_rate = 0.25
         self.output_name = "rdcf"
