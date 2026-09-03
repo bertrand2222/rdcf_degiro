@@ -253,7 +253,7 @@ class FinancialForcast(Statements):
             # complete forcasted ocf array with value extrapolated from forcasted growth rate
             ys = np.concat([
                     ys,
-                    ys[-1] * (1+ self.forcasted_ocf_growth)**np.arange(
+                    ys.iloc[-1] * (1+ self.forcasted_ocf_growth)**np.arange(
                         1,
                         1 + self.session_model.nb_year_dcf - len(ys))])
             
@@ -292,7 +292,7 @@ class FinancialForcast(Statements):
                 # complete forcasted array with value extrapolated from forcasted growth rate
                 ys = np.concat([
                         ys,
-                        ys[-1] * (1+ self.forcasted_ebitda_growth)**np.arange(
+                        ys.iloc[-1] * (1+ self.forcasted_ebitda_growth)**np.arange(
                             1,
                             1 + self.session_model.nb_year_dcf - len(ys))])
             
@@ -320,7 +320,7 @@ class FinancialForcast(Statements):
                 self._forcasted_capex_growth = g 
                 ys = np.concat([
                         ys,
-                        ys[-1] * (1+ g)**np.arange(
+                        ys.iloc[-1] * (1+ g)**np.arange(
                             1,
                             1 + self.session_model.nb_year_dcf - len(ys))])
                 self._forcasted_capex = ys

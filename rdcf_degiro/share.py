@@ -187,12 +187,11 @@ class Share(FinancialStatements, FinancialForcast):
             self.retrieve_intra_day_price()
 
         last_day_current_month = last_day_of_month(chart.series[0].expires)
-        for i in range(len(history)) :
-            history.iloc[-1-i,0] = last_day_current_month - relativedelta(months= i)
+        history['date'] = [last_day_current_month - relativedelta(months= i) for i in history['time'][::-1]]
+
+        self.price_history = history.set_index('date').tz_localize(None)
     
-        self.price_history = history.set_index('time').tz_localize(None)
-    
-        self.price_history_in_financial_currency = self.price_history.iloc[:-1].copy()
+        self.price_history_in_financial_currency = self.price_history[['close']].copy()
     
     def retrieve_intra_day_price(self):
         """

@@ -130,7 +130,9 @@ class RDCFAnal():
                     except MarketCapError as e:
                         self.logger.warning(f"{e} can not retrieve data from {retrieve_from}")
 
-            except (PriceRetrieveError, YahooRetrieveError, KeyError, CurlError) as e:
+            except (PriceRetrieveError, YahooRetrieveError, 
+                    KeyError, 
+                    CurlError) as e:
                 self.logger.error(f"{s.name} : {type(e).__name__} : {e}   ")
                 continue
         

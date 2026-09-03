@@ -1,0 +1,18 @@
+[project]
+name = "rdcf_python"
+readme = "README.md"
+version = "0.1.0"
+requires-python = ">=3.12"
+# ...
+dependencies = [
+    "degiro_connector",
+    "numpy_financial",
+    "scipy",
+    "lxml",
+    "yahooquery",
+    "polars",
+    "pytz",
+    "xlsxwriter"
+]
+[tool.poetry]
+package-mode = false

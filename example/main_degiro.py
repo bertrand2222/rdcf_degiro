@@ -1,7 +1,7 @@
 import sys
 import os 
 
-sys.path.append(r"C:\Users\SAFCOB009150\rdcf\rdcf_degiro")
+sys.path.append(r"C:\Users\SAFCOB009150\OneDrive - Saipem\rdcf\rdcf_degiro")
 
 from rdcf_degiro.analysis import RDCFAnal
 
@@ -27,7 +27,7 @@ yahoo_symbol_cor = {
 }
 
 config_dict = {
-    'credential_file_path'          : os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json"),
+    'credential_file_path'          : os.path.join(os.getenv('USERPROFILE'), "OneDrive - Saipem", ".degiro", "credentials.json"),
     'use_beta'                      : False,
     'use_multiple'                  : True,
     'terminal_value_to_ebitda_bounds'  : [1, 30],
