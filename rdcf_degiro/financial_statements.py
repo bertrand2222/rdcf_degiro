@@ -121,7 +121,7 @@ class Statements():
 
         if isinstance(val, float):
             if  rate_symb:
-                return val * self.session_model.rate_history_dic[rate_symb]['change_rate'][-1] / self.rate_factor
+                return val * self.session_model.rate_history_dic[rate_symb]['change_rate'].iloc[-1] / self.rate_factor
             return val / self.rate_factor
         
         convert_value_cols = [c for c in val.columns if (
@@ -677,10 +677,7 @@ class FinancialStatements(Statements):
         q_bal_statements = gb.get_group('BAL').dropna(axis=1, how= 'all').ffill()
         q_cas_statements = gb.get_group('CAS').dropna(axis=1, how= 'all').fillna(0)
 
-        for key in BAL_CASH_CODES:
-            if key  in q_bal_statements.columns:
-                self.cash_code = key
-                break
+        self.cash_code = [key for key in BAL_CASH_CODES if key  in q_bal_statements.columns]
 
         q_inc_statements = remove_overlapping_data(q_inc_statements)
         q_cas_statements = remove_overlapping_data(q_cas_statements)

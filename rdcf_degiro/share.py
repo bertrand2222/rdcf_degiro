@@ -110,7 +110,7 @@ class Share(FinancialStatements, FinancialForcast):
         self.q_cas_statements : pd.DataFrame = None
         self._inc_ttm_statements_df : pd.DataFrame = None
         self._cas_ttm_statements_df : pd.DataFrame = None
-        self.cash_code : str = 'ACAE'
+        self.cash_code : str = ['ACAE']
         self.total_revenue_code : str = 'RTLR'
 
         # gross_profit_code : str = 'SGRP'
@@ -228,10 +228,15 @@ class Share(FinancialStatements, FinancialForcast):
                     self.degiro_values_retrieve()
                 except DegiroRetrieveError as e:
                     self.logger.warning(f'{self.name} : can not retrieve value ratios from degiro api, {e}     ')
-                else:
-                    return
+                    self.yahoo_values_retrieve()
             
-            self.yahoo_values_retrieve()
+
+            self.total_debt =  self.last_bal_statements['STLD']
+            self.net_debt = self.total_debt - self.last_bal_statements[self.cash_code].sum()
+            self.enterprise_value = self.market_cap + self.net_debt
+            self.negative_ent_value = self.enterprise_value <= 0
+
+
 
     def check_market_cap(self):
         """ Check consistency between reported market cap and price calculated maket cap """
@@ -326,20 +331,6 @@ class Share(FinancialStatements, FinancialForcast):
             self.roe = net_income / self.stock_equity
 
     @property
-    def total_debt(self):
-        return self.last_bal_statements['STLD']
-
-    # @property
-    # def cash(self):
-    #     return self.last_bal_statements[
-    #             self.cash_code]
-    
-    @property
-    def net_debt(self):
-                #net debt     =  total_debt - cash and cash equivalent
-        return  self.total_debt - self.last_bal_statements[self.cash_code]
-    
-    @property
     def stock_equity(self):
         return self.last_bal_statements['QTLE']
     
@@ -354,7 +345,7 @@ class Share(FinancialStatements, FinancialForcast):
     
     @property
     def debt_to_equity(self) :
-        return self.total_debt / self.stock_equity
+        return self.total_debt / self.market_cap
 
     @property
     def price_to_book(self):
@@ -363,15 +354,15 @@ class Share(FinancialStatements, FinancialForcast):
     def _get_market_wacc(self) :
         """ Get weight averaged capital cost """
 
+        cc = self.market_capital_cost
+        if self.negative_ent_value :
+            return cc
         eq = self.market_cap
         debt = self.net_debt
-        cc = self.market_capital_cost
         if debt < 0:
             eq = self.enterprise_value
             debt = self.total_debt
-        if eq + debt <= 0:
-            # debt = 0
-            return cc
+        
         tr = self.session_model.taxe_rate
         dc = self.session_model.rate_info.debt_cost
 
@@ -391,19 +382,21 @@ class Share(FinancialStatements, FinancialForcast):
         y_statements = self.y_statements
 
         df_multiple = pd.concat([self.price_history_in_financial_currency, 
-                                y_statements[["QTCO" , 'EBITDA', 'STLD', self.cash_code]]
+                                y_statements[["QTCO" , 'EBITDA', 'STLD',] + self.cash_code]
                                 ], axis = 0).sort_index().ffill().dropna()
-        df_multiple['ENT_VALUE'] = df_multiple['QTCO'] * df_multiple['close'] + df_multiple['STLD'] - df_multiple[self.cash_code]
-        
-        if df_multiple['ENT_VALUE'].iloc[-1] <= 0 :
-            self.negative_ent_value = True
+
+        if self.negative_ent_value:
+            # Set entreprise value as equity value and use FCFE method
             df_multiple['ENT_VALUE'] = df_multiple['QTCO'] * df_multiple['close']
-
+        else :
+            # Get real entreprise value and use FCFF method
+            df_multiple['ENT_VALUE'] = df_multiple['QTCO'] * df_multiple['close'] + df_multiple['STLD'] - df_multiple[self.cash_code].sum(axis = 1)
+        
         df_multiple['value_to_ebitda'] = df_multiple['ENT_VALUE'] / df_multiple['EBITDA']
-
         # price to fcf multilple calculated as harmonic mean of history:
         self.value_to_ebitda = len(df_multiple) / (1 / df_multiple['value_to_ebitda']).sum()
-            
+        # self.value_to_ebitda = np.median(df_multiple['value_to_ebitda'])
+
         self.value_to_ebitda_terminal = max(
             self.session_model.terminal_value_to_ebitda_bounds[0],
             1 / max(1/self.value_to_ebitda, 1/self.session_model.terminal_value_to_ebitda_bounds[1])
@@ -447,15 +440,13 @@ class Share(FinancialStatements, FinancialForcast):
             
         if np.isnan(wacc) :
             return np.nan
-        
+        if self.negative_ent_value :
+            return wacc        
         eq = self.market_cap
         debt = self.net_debt
         if debt < 0:
             eq = self.enterprise_value
             debt = self.total_debt
-        if eq + debt <= 0:
-            # debt = 0
-            return wacc
         tr = self.session_model.taxe_rate
         dc = self.session_model.rate_info.debt_cost
 
@@ -482,16 +473,14 @@ class Share(FinancialStatements, FinancialForcast):
         
         if self._forcasted_capex_growth is None :
             return
-        
-        if self.enterprise_value < 0:
-            self.forcasted_wacc_multiple = 1
-            return
-        
+
+        current_value = self.market_cap if self.negative_ent_value else self.enterprise_value
+
         self._forcasted_ebitda = self._get_forcasted_ebidta()
 
         vt_multiple = max(self._forcasted_ebitda[-1]* self.value_to_ebitda_terminal,0)
 
-        arr = np.concatenate([np.array([-self.enterprise_value]), 
+        arr = np.concatenate([np.array([-current_value]), 
                                 self._forcasted_fcf[:-1], 
                                 np.array([vt_multiple])])
 
@@ -501,8 +490,11 @@ class Share(FinancialStatements, FinancialForcast):
         vt_act = vt_multiple / (1+self.market_wacc)**(self.session_model.nb_year_dcf)
         fcf_act = self._forcasted_fcf[:-1] / (1+self.market_wacc)**np.arange(1,self.session_model.nb_year_dcf)
         fcf_act_sum = fcf_act.sum()
-        enterprise_value = fcf_act_sum + vt_act
-        self.target_market_price_multiple = (enterprise_value - self.net_debt) / self.nb_shares
+        target_current_value = fcf_act_sum + vt_act
+        target_market_value = target_current_value
+        if not self.negative_ent_value :
+            target_market_value -= self.net_debt
+        self.target_market_price_multiple = target_market_value / self.nb_shares
 
     def _compute_assumed_g(self, fcf :float, up_bound : float):
         """
@@ -549,7 +541,6 @@ class Share(FinancialStatements, FinancialForcast):
         self.logger.info(f'{self.name} : compute dcf values                        ')
         fcf = start_fcf or self.fcf
 
-        self.enterprise_value = self.market_cap + self.net_debt
         self.market_wacc = self._get_market_wacc()
         up_bound = 2 if self.session_model.use_multiple else self.market_wacc
 
@@ -639,8 +630,11 @@ class Share(FinancialStatements, FinancialForcast):
                     to the one assumed by the market price.
         """
 
-        enterprise_value = self._compute_value_perpetual(wacc)
-        return (enterprise_value/self.enterprise_value -1)**2
+        value = self._compute_value_perpetual(wacc)
+        if not self.negative_ent_value:
+            return (value/self.enterprise_value -1)**2
+        return (value/self.market_cap -1)**2
+            
 
     def _residual_dcf_on_g(self, g, *data):
         """
