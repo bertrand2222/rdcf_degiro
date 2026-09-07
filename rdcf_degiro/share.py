@@ -114,7 +114,7 @@ class Share(FinancialStatements, FinancialForcast):
         self.total_revenue_code : str = 'RTLR'
 
         # gross_profit_code : str = 'SGRP'
-        self.fcf : float = None # free cash flow
+        self.fcff : float = None # free cash flow
         self.nincf : float = None
         self._history_growth : float = None
         self.last_bal_statements : pd.Series = None 
@@ -220,21 +220,21 @@ class Share(FinancialStatements, FinancialForcast):
             print(f'{self.name} : warning, not enought data to retrieve intra day price')
 
     def retrieve_values(self):
-            """
-            retrieve ratio values
-            """
-            if self.retrieve_from == "degiro" :
-                try:
-                    self.degiro_values_retrieve()
-                except DegiroRetrieveError as e:
-                    self.logger.warning(f'{self.name} : can not retrieve value ratios from degiro api, {e}     ')
-                    self.yahoo_values_retrieve()
-            
+        """
+        retrieve ratio values
+        """
+        if self.retrieve_from == "degiro" :
+            try:
+                self.degiro_values_retrieve()
+            except DegiroRetrieveError as e:
+                self.logger.warning(f'{self.name} : can not retrieve value ratios from degiro api, {e}     ')
+                self.yahoo_values_retrieve()
+        
 
-            self.total_debt =  self.last_bal_statements['STLD']
-            self.net_debt = self.total_debt - self.last_bal_statements[self.cash_code].sum()
-            self.enterprise_value = self.market_cap + self.net_debt
-            self.negative_ent_value = self.enterprise_value <= 0
+        self.total_debt =  self.last_bal_statements['STLD']
+        self.net_debt = self.total_debt - self.last_bal_statements[self.cash_code].sum()
+        self.enterprise_value = self.market_cap + self.net_debt
+        self.negative_ent_value = (self.enterprise_value / self.market_cap) < 0.05
 
 
 
@@ -376,8 +376,6 @@ class Share(FinancialStatements, FinancialForcast):
         """
         self.logger.info(f'{self.name} : compute complementary values                     ')
         # self.logger.info(f'{self.name} : compute complementary values                     ', flush= True, end='\r')
-        if self.y_statements is None:
-            self.retrieve_financials()
 
         y_statements = self.y_statements
 
@@ -513,11 +511,11 @@ class Share(FinancialStatements, FinancialForcast):
 
         if  not self.q_cashflow_available :
             return
-        if self.fcf_ttm < 0:
+        if self.fcff_ttm < 0:
             self.logger.info(f"{self.name} : negative TTM free cash flow, can not compute TTM assumed growth")
             return
 
-        self.assumed_g_ttm = minimize_scalar(self._residual_dcf_on_g, args=(self.fcf_ttm,  False),
+        self.assumed_g_ttm = minimize_scalar(self._residual_dcf_on_g, args=(self.fcff_ttm,  False),
                                 method= 'bounded', bounds = (-1, up_bound)).x
 
         # # compute g_from_ttm from last incf
@@ -539,7 +537,12 @@ class Share(FinancialStatements, FinancialForcast):
         
         """
         self.logger.info(f'{self.name} : compute dcf values                        ')
-        fcf = start_fcf or self.fcf
+        if start_fcf is not None:
+            fcf = start_fcf 
+        elif self.negative_ent_value:
+            fcf = self.fcfe
+        else :
+            fcf = self.fcff
 
         self.market_wacc = self._get_market_wacc()
         up_bound = 2 if self.session_model.use_multiple else self.market_wacc

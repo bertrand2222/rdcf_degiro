@@ -8,7 +8,7 @@ import warnings
 from curl_cffi import CurlError
 import urllib3
 import pandas as pd
-from importlib import reload
+# from importlib import reload
 # from colorama import Fore
 from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
 from rdcf_degiro.share import MarketCapError, Share, PriceRetrieveError
@@ -132,7 +132,8 @@ class RDCFAnal():
 
             except (PriceRetrieveError, YahooRetrieveError, 
                     KeyError, 
-                    CurlError) as e:
+                    CurlError
+                    ) as e:
                 self.logger.error(f"{s.name} : {type(e).__name__} : {e}   ")
                 continue
         
@@ -247,8 +248,8 @@ class RDCFAnal():
         worksheet.set_column('B:B', 30, )
         worksheet.set_column(
             f"{col_letter['current_price']}:{col_letter['current_price']}", 13, number)
-        worksheet.set_column(
-            f"{col_letter['beta']}:{col_letter['value_to_ebitda']}", 0, number)
+        worksheet.set_column(  f"{col_letter['beta']}:{col_letter['beta']}", 0, number)
+        worksheet.set_column(  f"{col_letter['value_to_ebitda']}:{col_letter['value_to_ebitda']}", 0, number)
         # worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_ttm']}", 11, percent)
         worksheet.set_column(f"{col_letter['assumed_g']}:{col_letter['history_growth']}",
                              0, #11, 
@@ -304,7 +305,8 @@ class RDCFAnal():
             "mid_color" : "#FFFFFF"})
 
    
-        format_max_min_green_red(worksheet, 'history_growth', 'forcasted_ebitda_growth')
+        format_max_min_green_red(worksheet, 'history_growth',) 
+        format_max_min_green_red(worksheet, 'forcasted_ebitda_growth')
         # format_max_min_green_red(worksheet, 'diff_g_forcasted_assumed')
         # format_max_min_green_red(worksheet, 'forcasted_wacc_multiple' , max_type='num', max_value= 1)
         # format_max_min_green_red(worksheet, 'forcasted_wacc_perpetual' , max_type='num', max_value= 1)

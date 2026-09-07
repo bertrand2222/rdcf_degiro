@@ -1,7 +1,7 @@
 import sys
 import os 
 
-sys.path.append(r"C:\Users\SAFCOB009150\OneDrive - Saipem\rdcf\rdcf_degiro")
+sys.path.append(os.path.join(os.getenv('USERPROFILE'),"rdcf", "rdcf_degiro"))
 
 from rdcf_degiro.analysis import RDCFAnal
 
@@ -16,7 +16,7 @@ from rdcf_degiro.analysis import RDCFAnal
 yahoo_symbol_cor = {
 
     'RIGD' : 'RIGD.IL',
-    'MAU' : 'MAU.PA',
+    'MAU' : 'ETX.F',
     'BY6' : 'BYDDY',
     'TKY' : '8035.T',
     '3CP' : 'XIACY',
@@ -24,13 +24,14 @@ yahoo_symbol_cor = {
     'UBSG' : 'UBS',
     'SMSN' : '005930.KS',
     'HY9H' : '000660.KS',
+    'HHPD' : '2317.TW'
 }
 
 config_dict = {
     'credential_file_path'          : os.path.join(os.getenv('USERPROFILE'), "OneDrive - Saipem", ".degiro", "credentials.json"),
     'use_beta'                      : False,
     'use_multiple'                  : True,
-    'terminal_value_to_ebitda_bounds'  : [1, 30],
+    'terminal_value_to_ebitda_bounds'  : [1, 20],
     'history_avg_nb_year'           : 3,
     'use_last_intraday_price'       : True,
     'output_folder'                 : r'C:\Users\SAFCOB009150\OneDrive - Saipem\Documents\rdcf_degiro_out',

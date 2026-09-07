@@ -253,8 +253,8 @@ class SessionModelDCF(API):
         if self.update_statements or( not os.path.isfile(rate_path)):
             try :
                 
-                currency_history = yq.Ticker(rate_symb, asynchronous=True).history(period= '6y',
-                                                                interval= "1mo", 
+                currency_history = yq.Ticker(rate_symb, asynchronous=True, verify = False).history(period= '6y',
+                                                                interval= "1mo"
                                                                 ).loc[rate_symb]
             except KeyError as e:
                 raise KeyError(f'rate symbol {rate_symb} not found in yahoofinance database') from e

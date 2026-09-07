@@ -14,6 +14,8 @@ OVERLAPING_DAYS_TOL = 7
 YA_INCOME_INFOS = [ 'FreeCashFlow','TotalRevenue', "NetIncome",
                     "OperatingCashFlow", 'CapitalExpenditure', 'ChangeInWorkingCapital', 
                     # 'NormalizedEBITDA', 
+                    "InterestExpense",
+                    "NetInterestIncome",
                     "EBITDA", 
                     "PretaxIncome",
                     "DepreciationAndAmortization"]
@@ -21,7 +23,7 @@ YA_PAYOUT_INFOS = [ 'RepurchaseOfCapitalStock', 'CashDividendsPaid', 'CommonStoc
 YA_BALANCE_INFOS = ['currencyCode', 'TotalDebt', 'CurrentLiabilities', 'CashAndCashEquivalents',
                  'CommonStockEquity', "InvestedCapital",  "BasicAverageShares"]
 
-TYPES = YA_INCOME_INFOS + YA_BALANCE_INFOS + YA_PAYOUT_INFOS
+YA_DATA = YA_INCOME_INFOS + YA_BALANCE_INFOS + YA_PAYOUT_INFOS
 
 INC_CODES = [
     'RTLR', # 'TotalRevenue'
@@ -31,6 +33,7 @@ INC_CODES = [
     "SDPR", # depreciation and amortizing
     "EIBT", # "Net Income Before Taxes",
     "NINC", # "NetIncome", 
+    "SNIN", # "Non operating net interest income"
 ]
 
 BAL_CASH_CODES = [
@@ -51,7 +54,7 @@ CASH_CODES = [
     "SCEX", # Capital Expenditures,
     "FCDP", # Total Cash Dividends Paid
     "FPSS", # Issuance (Retirement) of Stock, Net,
-    "FCFL"
+    "FCFF"
             ]
 PAYOUT_INFOS = ["FCDP", "FPSS" ]
 
@@ -71,8 +74,9 @@ RENAME_DIC = {
     "TotalDebt" :               "STLD", # 'TotalDebt',
     "CommonStockEquity" :       "QTLE", # "Total Equity"
     "BasicAverageShares" :      "QTCO", # "Total Common Shares Outstanding"
-    'FreeCashFlow':             "FCFL",
-    "NormalizedEBITDA"  : 'EBITDA'
+    'FreeCashFlow':             "FCFF",
+    "NormalizedEBITDA"  : 'EBITDA',
+    "NetInterestIncome" : "SNIN"
 }
 SPECIAL_CURRENCIES = {
     'GBX' : {'real' : 'GBP', 'rate_factor' : 0.01}
@@ -385,9 +389,10 @@ class FinancialStatements(Statements):
         all_cas_time = all_cas.loc[all_cas['periodType'] == 'M','periodLength'].sum() /12 + \
                                 all_cas.loc[all_cas['periodType'] == 'W','periodLength'].sum() /52
 
-        self.fcf = all_cas.loc[:,'FCFL'].sum() / all_cas_time
+        self.fcff = all_cas.loc[:,'FCFF'].sum() / all_cas_time # free cash flow to firm
+        self.fcfe = all_cas.loc[:,'FCFE'].sum() / all_cas_time # free cash flow to equity
         self.ocf = all_cas.loc[:,'OTLO'].sum() / all_cas_time
-        self.capex = self.ocf - self.fcf
+        self.capex = self.ocf - self.fcfe
         self.ebitda = y_statements['EBITDA'].iloc[-1]
 
 
@@ -404,11 +409,11 @@ class FinancialStatements(Statements):
         """
         return self._cas_ttm_statements_df.iloc[-1]
     @property
-    def fcf_ttm(self):
+    def fcff_ttm(self):
         """
         ttm free cash flow
         """
-        return self.cas_ttm_statements['FCFL']
+        return self.cas_ttm_statements['FCFF']
 
     @property
     def total_payout_ratio(self) -> float:
@@ -470,12 +475,12 @@ class FinancialStatements(Statements):
 
         if self.session_model.update_statements_need(y_statements_path):
             tk = yq.Ticker(symb, asynchronous=False, verify = False)
-            y_statements : pd.DataFrame = tk.get_financial_data(TYPES)
+            y_statements : pd.DataFrame = tk.get_financial_data(YA_DATA)
             if not isinstance(y_statements, pd.DataFrame):
                 raise YahooRetrieveError(
                     f"{symb} symbol not available in yahoo database")
             y_statements.to_pickle(y_statements_path)
-            q_statements : pd.DataFrame = tk.get_financial_data(TYPES , frequency= "q",
+            q_statements : pd.DataFrame = tk.get_financial_data(YA_DATA , frequency= "q",
                                                         trailing= False).set_index('asOfDate')
 
             q_statements.to_pickle(q_statements_path)
@@ -494,15 +499,19 @@ class FinancialStatements(Statements):
         y_statements['BasicAverageShares'] = y_statements['BasicAverageShares'].ffill(axis = 0, )
         y_statements = y_statements.loc[y_statements['currencyCode'] == currency ]
 
-        if 'TotalDebt' not in y_statements:
-            y_statements['TotalDebt'] = y_statements['CurrentLiabilities']
-        if 'TotalDebt' not in q_statements:
-            q_statements['TotalDebt'] = q_statements['CurrentLiabilities']
-        y_statements = y_statements.rename(columns= RENAME_DIC)
-        q_statements = q_statements.rename(columns= RENAME_DIC)
+        for st in [y_statements, q_statements]:
+            if 'TotalDebt' not in st:
+                st['TotalDebt'] = st['CurrentLiabilities']
+            if 'PretaxIncome' not in st:
+                st['PretaxIncome'] = st['OperatingIncome']
+            if 'EBITDA' not in st:
+                st['EBITDA'] = st['PretaxIncome'] + st['DepreciationAndAmortization']
 
-        # print(y_statements)
-        # print(y_statements['QTCO'])
+            st.rename(columns= RENAME_DIC, inplace = True)
+            st['FCFE'] = st['FCFF']
+            if 'SNIN' in st:
+                st['FCFF'] -= st['SNIN'] * (1-self.session_model.taxe_rate)
+
         y_statements = y_statements.ffill(axis = 0).drop_duplicates(
                                                                 subset = ['asOfDate', ],
                                                                 keep= 'last').set_index('asOfDate')
@@ -602,6 +611,16 @@ class FinancialStatements(Statements):
 
         self.last_bal_statements = self.q_bal_statements.iloc[-1]
 
+    def _compute_free_cash_flow(self, st : pd.DataFrame):
+        # st['FCFF'] = st[op_keys[0]] * (1-self.session_model.taxe_rate) + da  # Free cash flow to firm
+        st['FCFF'] = st["OTLO"]
+        st['FCFE'] = st["OTLO"]
+        if 'SNIN' in st :
+            # Add net non operating interest
+            st['FCFF'] -= st['SNIN'] * (1-self.session_model.taxe_rate)
+        if "SCEX" in st:
+            st['FCFF'] += st["SCEX"]
+            st['FCFE'] += st["SCEX"]
 
     def degiro_retrieve_annual(self, financial_st : dict):
         """
@@ -641,11 +660,7 @@ class FinancialStatements(Statements):
         y_statements['EBITDA'] = y_statements[op_keys[0]] + da
 
         # compute free cash flow
-        y_statements['FCFF'] = y_statements[op_keys[0]] * (1-self.session_model.taxe_rate) + da  # Free cash flow to firm
-        y_statements['FCFL'] = y_statements["OTLO"]
-        if "SCEX" in y_statements:
-            y_statements['FCFF'] += y_statements["SCEX"]
-            y_statements['FCFL'] += y_statements["SCEX"]
+        self._compute_free_cash_flow(y_statements)
 
         self.y_statements = y_statements
 
@@ -688,10 +703,10 @@ class FinancialStatements(Statements):
 
         # free cash flow            = Cash from Operating Activities - Capital Expenditures,
         # q_cas_statements['FCFF'] = q_cas_statements[op_keys[0]] * (1-self.session_model.taxe_rate) + da  # Free cash flow to firm
-        q_cas_statements['FCFL'] = q_cas_statements["OTLO"] 
+        q_cas_statements['FCFF'] = q_cas_statements["OTLO"] 
         if "SCEX" in q_cas_statements:
             # q_cas_statements['FCFF'] += q_cas_statements["SCEX"]
-            q_cas_statements['FCFL'] += q_cas_statements["SCEX"]
+            q_cas_statements['FCFF'] += q_cas_statements["SCEX"]
 
 
         q_inc_statements.set_index('endDate', inplace= True)
