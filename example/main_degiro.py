@@ -16,7 +16,7 @@ from rdcf_degiro.analysis import RDCFAnal
 yahoo_symbol_cor = {
 
     'RIGD' : 'RIGD.IL',
-    'MAU' : 'ETX.F',
+    'MAU' : 'MAU.PA',
     'BY6' : 'BYDDY',
     'TKY' : '8035.T',
     '3CP' : 'XIACY',
@@ -31,7 +31,7 @@ config_dict = {
     'credential_file_path'          : os.path.join(os.getenv('USERPROFILE'), "OneDrive - Saipem", ".degiro", "credentials.json"),
     'use_beta'                      : False,
     'use_multiple'                  : True,
-    'terminal_value_to_ebitda_bounds'  : [1, 20],
+    'terminal_value_to_ebitda_bounds'  : [0.1, 20],
     'history_avg_nb_year'           : 3,
     'use_last_intraday_price'       : True,
     'output_folder'                 : r'C:\Users\SAFCOB009150\OneDrive - Saipem\Documents\rdcf_degiro_out',
@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
     rdcf_anal = RDCFAnal(config_dict)
 
-    # rdcf_anal.share_list = [ s for s in rdcf_anal.share_list if s.symbol in [ "GLE"] ]
+    # rdcf_anal.share_list = [ s for s in rdcf_anal.share_list if s.symbol in [ "ORCL"] ]
     
     # rdcf_anal.load_df()
     rdcf_anal.process()

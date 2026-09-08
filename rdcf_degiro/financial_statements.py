@@ -205,134 +205,6 @@ class FinancialForcast(Statements):
             self._forcasted_ocf_growth = self._get_forcasted_growth(['CPS', 'EBT', 'NET', 'PRE', 'SAL', ])
         return self._forcasted_ocf_growth
     
-    def _get_forcasted_growth(self, ls : list[str]):
-        """
-        Get the fitted growth rate of a forcasted variable
-        """
-        if self.y_forcasts is None:
-            return np.nan
-        
-        for val in ls :
-            if val not in self.y_forcasts :
-                continue
-            ys  = self.y_forcasts[val].dropna()
-            if len(ys) <= 1 or  ys.min() <= 0 :
-                continue
-            y = np.log(ys.values / ys.iloc[0])
-            x = np.arange(len(y))
-            z = np.polyfit(x,y, deg = 1)
-            g = np.exp(z[0]) - 1
-            return g
-
-        
-        self.logger.warning(f"{self.name} no valid value to compute growth estimate from {", ".join(ls)}")
-        return np.nan
-
-    def _get_forcasted_ocf(self):
-        """
-        retruned forcasted ocf array
-        """
-        if self.y_forcasts is None:
-            return None
-
-        ys = None
-        for val in ['CPS', 'EBT', 'NET', 'PRE', 'SAL' ] :
-            if val not in self.y_forcasts:
-                continue
-            ys = self.y_forcasts[val].dropna()
-
-            # rescale variable array to ratio between last stated ocf 
-            # and first variable value  
-            ratio = self.y_statements['OTLO'].iloc[-1]/ys.iloc[0]
-            if (ys.index[0].year == self.y_statements.index[-1].year) and ratio > 0:
-                ys *= ratio
-            elif val == 'CPS' :
-                ys *= self.nb_shares
-            else:
-                continue
-            
-            if len(ys) >= self.session_model.nb_year_dcf:
-                return ys[:self.session_model.nb_year_dcf]
-
-            # complete forcasted ocf array with value extrapolated from forcasted growth rate
-            ys = np.concat([
-                    ys,
-                    ys.iloc[-1] * (1+ self.forcasted_ocf_growth)**np.arange(
-                        1,
-                        1 + self.session_model.nb_year_dcf - len(ys))])
-            
-            return ys
-
-        # no forcasted cash flow per share provided
-        return self.ocf * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
-
-    def _get_forcasted_ebidta(self):
-        """
-        retruned forcasted ocf array
-        """
-        if self.y_forcasts is None:
-            return None
-
-        ys = None
-        for val in ['EBT', 'PRE',] :
-            if val in self.y_forcasts:
-                ys = self.y_forcasts[val].dropna()
-
-                if val != 'EBT' :
-                    # if forcasted metric array is not EBITDA rescale it to
-                    # ratio between last stated ebitda and first array value
-                    ratio = self.y_statements['EBITDA'].iloc[-1]/ys.iloc[0]
-                    if (ys.index[0].year == self.y_statements.index[-1].year) and ratio > 0:
-                        ys *= ratio
-                    else:
-                        continue
-                
-                if len(ys) >= self.session_model.nb_year_dcf:
-                    return ys[:self.session_model.nb_year_dcf]
-
-                if np.isnan(self.forcasted_ebitda_growth) :
-                    continue
-                
-                # complete forcasted array with value extrapolated from forcasted growth rate
-                ys = np.concat([
-                        ys,
-                        ys.iloc[-1] * (1+ self.forcasted_ebitda_growth)**np.arange(
-                            1,
-                            1 + self.session_model.nb_year_dcf - len(ys))])
-            
-                return ys
-
-        # no forcasted cash flow per share provided
-        return self.ebitda * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
-
-    def _set_forcasted_capex(self):
-        """
-        retruned capital expenditure growth rate fited from estimate 
-        """
-        if self.y_forcasts is None:
-            return
-
-        if 'CPX' in self.y_forcasts:
-            ys = self.y_forcasts['CPX'].dropna()
-            if len(ys) >= self.session_model.nb_year_dcf:
-                self._forcasted_capex = ys[:self.session_model.nb_year_dcf]
-                return
-           
-            g = self._get_forcasted_growth(['CPX'])
-            if not np.isnan(g) :
-                g = min(g,2) # bound growth rate to 2
-                self._forcasted_capex_growth = g 
-                ys = np.concat([
-                        ys,
-                        ys.iloc[-1] * (1+ g)**np.arange(
-                            1,
-                            1 + self.session_model.nb_year_dcf - len(ys))])
-                self._forcasted_capex = ys
-                return
-
-        # can not compute forcasted capital expenditure growth from itself
-        self._forcasted_capex_growth = self.forcasted_ocf_growth
-        self._forcasted_capex = self.capex * (1 + self._forcasted_capex_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
 
 class FinancialStatements(Statements):
     """
@@ -391,8 +263,9 @@ class FinancialStatements(Statements):
 
         self.fcff = all_cas.loc[:,'FCFF'].sum() / all_cas_time # free cash flow to firm
         self.fcfe = all_cas.loc[:,'FCFE'].sum() / all_cas_time # free cash flow to equity
-        self.ocf = all_cas.loc[:,'OTLO'].sum() / all_cas_time
-        self.capex = self.ocf - self.fcfe
+        self.ocfe = all_cas.loc[:,'OCFE'].sum() / all_cas_time
+        self.ocff = all_cas.loc[:,'OCFF'].sum() / all_cas_time
+        self.capex = self.ocfe - self.fcfe
         self.ebitda = y_statements['EBITDA'].iloc[-1]
 
 
@@ -502,15 +375,18 @@ class FinancialStatements(Statements):
         for st in [y_statements, q_statements]:
             if 'TotalDebt' not in st:
                 st['TotalDebt'] = st['CurrentLiabilities']
-            if 'PretaxIncome' not in st:
-                st['PretaxIncome'] = st['OperatingIncome']
+            # if 'PretaxIncome' not in st:
+            #     st['PretaxIncome'] = st['OperatingIncome']
             if 'EBITDA' not in st:
                 st['EBITDA'] = st['PretaxIncome'] + st['DepreciationAndAmortization']
 
             st.rename(columns= RENAME_DIC, inplace = True)
-            st['FCFE'] = st['FCFF']
+            st['OCFF'] = st['OTLO']
+            st['OCFE'] = st['OTLO']
             if 'SNIN' in st:
-                st['FCFF'] -= st['SNIN'] * (1-self.session_model.taxe_rate)
+                st['OCFF'] -= st['SNIN'] * (1-self.session_model.taxe_rate)
+            st['FCFE'] = st['OCFE'] + st['SCEX']
+            st['FCFF'] = st['OCFF'] + st['SCEX']
 
         y_statements = y_statements.ffill(axis = 0).drop_duplicates(
                                                                 subset = ['asOfDate', ],
@@ -613,11 +489,15 @@ class FinancialStatements(Statements):
 
     def _compute_free_cash_flow(self, st : pd.DataFrame):
         # st['FCFF'] = st[op_keys[0]] * (1-self.session_model.taxe_rate) + da  # Free cash flow to firm
-        st['FCFF'] = st["OTLO"]
-        st['FCFE'] = st["OTLO"]
+        st['OCFF'] = st["OTLO"]
+        st['OCFE'] = st["OTLO"]
         if 'SNIN' in st :
             # Add net non operating interest
-            st['FCFF'] -= st['SNIN'] * (1-self.session_model.taxe_rate)
+            st['OCFF'] -= st['SNIN'] * (1-self.session_model.taxe_rate)
+
+        st['FCFF'] = st['OCFF']
+        st['FCFE'] = st["OCFE"]
+
         if "SCEX" in st:
             st['FCFF'] += st["SCEX"]
             st['FCFE'] += st["SCEX"]

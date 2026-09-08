@@ -32,6 +32,11 @@ urllib3.disable_warnings()
 PKL_NAME = "df_save.pkl"
 IS = 0.25
 
+class RDCFSummary():
+
+    def __init__(self, df : pd.DataFrame):
+        self.df = df
+        pass
 class RDCFAnal():
     """
     object containing a reverse dcf analysis and all its context
@@ -157,7 +162,7 @@ class RDCFAnal():
                                 # 'market_capital_cost' :   s.market_capital_cost,
                                 'wacc' :                s.market_wacc ,
                                 'assumed_g' :           s.assumed_g ,  
-                                'assumed_g_ttm' :       s.assumed_g_ttm,  
+                                # 'assumed_g_ttm' :       s.assumed_g_ttm,  
                                 # 'assumed_g_incf' :        s.dcf.g_incf ,
                                 # 'assumed_g_incf_ttm' :    s.dcf.g_incf_ttm,
                                 'history_growth'         : s.history_growth,
@@ -235,6 +240,24 @@ class RDCFAnal():
 
         worksheet = writer.sheets['rdcf']
 
+        format_dict = {
+            "current_price" : {"size" : 13, "format" : number},
+            "beta" : {"size" : 0, "format" : number},
+            "value_to_ebitda" : {"size" : 0, "format" : number},
+            "wacc" : {"size" : 11, "format" : percent},
+            "assumed_g" : {"size" : 11, "format" : bold_percent},
+            "history_growth" : {"size" : 0, "format" : percent},
+            "forcasted_ebitda_growth" : {"size" : 11, "format" : percent},
+            "target_market_price_multiple" : {"size" : 11, "format" : number},
+            # "target_market_price_perpetual" : {"size" : 11, "format" : number},
+            "price_to_sales" : {"size" : 11, "format" : number},
+            "debt_to_equity" : {"size" : 0, "format" : number},
+
+                }
+        for k, f in format_dict.items():
+            worksheet.set_column(f"{col_letter[k]}:{col_letter[k]}",
+                                         f['size'], 
+                                         f['format'])
         # add hyperlink
         for i, s in enumerate(df.index):
             worksheet.write_url(f'B{i+2}', 
@@ -246,33 +269,11 @@ class RDCFAnal():
                                 + [{'header' : col} for col in df.columns],
                             'style' : 'Table Style Light 8'})
         worksheet.set_column('B:B', 30, )
-        worksheet.set_column(
-            f"{col_letter['current_price']}:{col_letter['current_price']}", 13, number)
-        worksheet.set_column(  f"{col_letter['beta']}:{col_letter['beta']}", 0, number)
-        worksheet.set_column(  f"{col_letter['value_to_ebitda']}:{col_letter['value_to_ebitda']}", 0, number)
-        # worksheet.set_column(f"{col_letter['capital_cost']}:{col_letter['assumed_g_ttm']}", 11, percent)
-        worksheet.set_column(f"{col_letter['assumed_g']}:{col_letter['history_growth']}",
-                             0, #11, 
-                             percent)
-        worksheet.set_column(f"{col_letter['wacc']}:{col_letter['wacc']}",
-                                     11, #11, 
-                                     percent)
-        worksheet.set_column(f"{col_letter['forcasted_ebitda_growth']}:{col_letter['forcasted_ebitda_growth']}",
-                                             11, #11, 
-                                             percent)
         worksheet.set_column(f"{col_letter['forcasted_wacc_multiple']}:{col_letter['forcasted_wacc_perpetual']}",
                                                      0, #11, 
                                                      percent)
         worksheet.set_column(f"{col_letter['forcasted_capital_cost_multiple']}:{col_letter['forcasted_capital_cost_perpetual']}",
                              11, bold_percent)
-        # worksheet.set_column(
-        #             f"{col_letter['target_market_value_perpetual']}:{col_letter['target_market_value_perpetual']}", 13, number)
-        worksheet.set_column(f"{col_letter['target_market_price_multiple']}:{col_letter['target_market_price_multiple']}", 
-                                     11, number)
-        worksheet.set_column(f"{col_letter['price_to_sales']}:{col_letter['price_to_sales']}", 
-                                             11, number)
-        worksheet.set_column(f"{col_letter['debt_to_equity']}:{col_letter['debt_to_equity']}", 
-                             0, number)
         worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}",
                              11, percent )
         worksheet.set_column(f"{col_letter['roe']}:{col_letter['roic']}", 0, percent )
@@ -294,15 +295,6 @@ class RDCFAnal():
             ws.conditional_format(
                 f"{col_letter[col_s]}2:{col_letter[col_e]}{len(df.index)+1}", format_dic
                 )
-
-        # format assumed g
-        worksheet.conditional_format(
-            f"{col_letter['assumed_g']}2:{col_letter['assumed_g_ttm']}{len(df.index)+1}",
-            {"type": "3_color_scale", 'min_type': 'num',
-            'max_type': 'max', 'mid_type' : 'percentile',
-            'min_value' : -0.2, 'mid_value' : 50,  
-            'min_color' : '#63BE7B', "max_color" : '#F8696B', 
-            "mid_color" : "#FFFFFF"})
 
    
         format_max_min_green_red(worksheet, 'history_growth',) 

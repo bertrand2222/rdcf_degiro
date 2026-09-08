@@ -65,7 +65,7 @@ class Share(FinancialStatements, FinancialForcast):
 
         self.y_statements : pd.DataFrame = None
         self.retrieve_from = "degiro"
-        self.ocf : float = None # operating cash flow
+        self.ocfe : float = None # operating cash flow
         self.capex : float = None # capital expenditure
         self.ebitda : float = None # ebitda
         self.rate_factor = 1
@@ -126,7 +126,7 @@ class Share(FinancialStatements, FinancialForcast):
         self.target_market_value_perpetual : float = None
         self.target_market_price_multiple : float = None
 
-        self.negative_ent_value = False
+        self.use_fcfe = False
         
         # self.history_growth : float = None # free oerating cash flow compound annual  growth
 
@@ -234,7 +234,9 @@ class Share(FinancialStatements, FinancialForcast):
         self.total_debt =  self.last_bal_statements['STLD']
         self.net_debt = self.total_debt - self.last_bal_statements[self.cash_code].sum()
         self.enterprise_value = self.market_cap + self.net_debt
-        self.negative_ent_value = (self.enterprise_value / self.market_cap) < 0.05
+
+        # if enterprise value is negative or very low use cash flow to equity
+        self.use_fcfe = (self.enterprise_value / self.market_cap) < 0.05 
 
 
 
@@ -355,7 +357,7 @@ class Share(FinancialStatements, FinancialForcast):
         """ Get weight averaged capital cost """
 
         cc = self.market_capital_cost
-        if self.negative_ent_value :
+        if self.use_fcfe :
             return cc
         eq = self.market_cap
         debt = self.net_debt
@@ -380,10 +382,10 @@ class Share(FinancialStatements, FinancialForcast):
         y_statements = self.y_statements
 
         df_multiple = pd.concat([self.price_history_in_financial_currency, 
-                                y_statements[["QTCO" , 'EBITDA', 'STLD',] + self.cash_code]
+                                y_statements[["QTCO" , 'EBITDA', 'STLD', 'OCFE', 'OCFF'] + self.cash_code]
                                 ], axis = 0).sort_index().ffill().dropna()
 
-        if self.negative_ent_value:
+        if self.use_fcfe:
             # Set entreprise value as equity value and use FCFE method
             df_multiple['ENT_VALUE'] = df_multiple['QTCO'] * df_multiple['close']
         else :
@@ -391,14 +393,20 @@ class Share(FinancialStatements, FinancialForcast):
             df_multiple['ENT_VALUE'] = df_multiple['QTCO'] * df_multiple['close'] + df_multiple['STLD'] - df_multiple[self.cash_code].sum(axis = 1)
         
         df_multiple['value_to_ebitda'] = df_multiple['ENT_VALUE'] / df_multiple['EBITDA']
+        df_multiple['value_to_ocfe'] = df_multiple['ENT_VALUE'] / df_multiple['OCFE']
+        df_multiple['value_to_ocff'] = df_multiple['ENT_VALUE'] / df_multiple['OCFF']
+
         # price to fcf multilple calculated as harmonic mean of history:
         self.value_to_ebitda = len(df_multiple) / (1 / df_multiple['value_to_ebitda']).sum()
+        self.value_to_ocfe = len(df_multiple) / (1 / df_multiple['value_to_ocfe']).sum()
+        self.value_to_ocff = len(df_multiple) / (1 / df_multiple['value_to_ocff']).sum()
+
         # self.value_to_ebitda = np.median(df_multiple['value_to_ebitda'])
 
-        self.value_to_ebitda_terminal = max(
-            self.session_model.terminal_value_to_ebitda_bounds[0],
-            1 / max(1/self.value_to_ebitda, 1/self.session_model.terminal_value_to_ebitda_bounds[1])
-            )
+        boud_i, bound_s = self.session_model.terminal_value_to_ebitda_bounds
+        self.value_to_ebitda_terminal = max( boud_i, 1 / max(1/self.value_to_ebitda, 1/bound_s))
+        self.value_to_ocfe_terminal = max( boud_i, 1 / max(1/self.value_to_ocfe, 1/bound_s))
+        self.value_to_ocff_terminal = max( boud_i, 1 / max(1/self.value_to_ocff, 1/bound_s))
 
         return(0)
         
@@ -438,7 +446,7 @@ class Share(FinancialStatements, FinancialForcast):
             
         if np.isnan(wacc) :
             return np.nan
-        if self.negative_ent_value :
+        if self.use_fcfe :
             return wacc        
         eq = self.market_cap
         debt = self.net_debt
@@ -472,7 +480,7 @@ class Share(FinancialStatements, FinancialForcast):
         if self._forcasted_capex_growth is None :
             return
 
-        current_value = self.market_cap if self.negative_ent_value else self.enterprise_value
+        current_value = self.market_cap if self.use_fcfe else self.enterprise_value
 
         self._forcasted_ebitda = self._get_forcasted_ebidta()
 
@@ -490,18 +498,18 @@ class Share(FinancialStatements, FinancialForcast):
         fcf_act_sum = fcf_act.sum()
         target_current_value = fcf_act_sum + vt_act
         target_market_value = target_current_value
-        if not self.negative_ent_value :
+        if not self.use_fcfe :
             target_market_value -= self.net_debt
         self.target_market_price_multiple = target_market_value / self.nb_shares
 
-    def _compute_assumed_g(self, fcf :float, up_bound : float):
+    def _compute_assumed_g(self, ocf :float, up_bound : float):
         """
         compute g from mean fcf
         """
-        if fcf < 0 :
-            self.logger.info(f"{self.name} : negative free cash flow mean, can not compute assumed growth")
+        if ocf < 0 :
+            self.logger.info(f"{self.name} : negative operating cash flow mean, can not compute assumed growth")
             return
-        self.assumed_g = minimize_scalar(self._residual_dcf_on_g, args=(fcf,  False),
+        self.assumed_g = minimize_scalar(self._residual_dcf_on_g, args=(ocf,  False),
                             method= 'bounded', bounds = (-1, up_bound)).x
 
     def _compute_assumed_g_ttm(self, up_bound :float):
@@ -538,11 +546,11 @@ class Share(FinancialStatements, FinancialForcast):
         """
         self.logger.info(f'{self.name} : compute dcf values                        ')
         if start_fcf is not None:
-            fcf = start_fcf 
-        elif self.negative_ent_value:
-            fcf = self.fcfe
+            ocf = start_fcf + self.capex
+        elif self.use_fcfe:
+            ocf = self.ocfe
         else :
-            fcf = self.fcff
+            ocf = self.ocff
 
         self.market_wacc = self._get_market_wacc()
         up_bound = 2 if self.session_model.use_multiple else self.market_wacc
@@ -552,8 +560,8 @@ class Share(FinancialStatements, FinancialForcast):
             return
 
 
-        self._compute_assumed_g(fcf, up_bound= up_bound)
-        self._compute_assumed_g_ttm(up_bound= up_bound)
+        self._compute_assumed_g(ocf, up_bound= up_bound)
+        # self._compute_assumed_g_ttm(up_bound= up_bound)
 
         self._forcasted_ocf = self._get_forcasted_ocf()
         self._set_forcasted_capex()
@@ -575,7 +583,7 @@ class Share(FinancialStatements, FinancialForcast):
 
 
 
-    def residual_dcf(self, g :  float, fcf : float, wacc : float, vt : float = None):
+    def residual_dcf(self, g :  float, ocf : float, wacc : float, vt : float = None):
         """
         compute company value regarding its actuated free cash flows and compare it 
         to the market value of the company
@@ -584,20 +592,23 @@ class Share(FinancialStatements, FinancialForcast):
         if isinstance(g, (list, np.ndarray)):
             g = g[0]
 
+        fcf = ocf - self.capex
         nb_year_dcf = self.session_model.nb_year_dcf
         if vt is None:
             if self.session_model.use_multiple :
-                vt = fcf * (1+g)**(nb_year_dcf ) * self.value_to_ebitda_terminal
+                terminal_value = self.value_to_ocfe_terminal if self.use_fcfe else self.value_to_ocff_terminal
+                vt = ocf * (1+g)**(nb_year_dcf ) * terminal_value
             else :
-                vt = fcf * (1+g)**(nb_year_dcf ) / (wacc - g)
+                vt = ocf * (1+g)**(nb_year_dcf ) / (wacc - g)
         vt_act = vt / (1+wacc)**(nb_year_dcf)
 
         # fcf * sum of a**k for k from 1 to nb_year_dcf 
         fcf_ar = fcf * (1+g) ** np.arange(1,1 + nb_year_dcf)
         fcf_act_sum = fcf_ar.sum()
-        enterprise_value = fcf_act_sum + vt_act
-
-        return (enterprise_value / self.enterprise_value - 1)**2
+        value = fcf_act_sum + vt_act
+        if not self.use_fcfe:
+            return (value/self.enterprise_value -1)**2
+        return (value/self.market_cap -1)**2
 
 
     def _compute_value_perpetual(self, wacc : float):
@@ -634,7 +645,7 @@ class Share(FinancialStatements, FinancialForcast):
         """
 
         value = self._compute_value_perpetual(wacc)
-        if not self.negative_ent_value:
+        if not self.use_fcfe:
             return (value/self.enterprise_value -1)**2
         return (value/self.market_cap -1)**2
             
@@ -643,9 +654,143 @@ class Share(FinancialStatements, FinancialForcast):
         """
         reformated Share.eval_dcf() function for compatibility with minimize_scalar
         """
-        fcf : float = data[0]
+        ocf : float = data[0]
 
         return self.residual_dcf(g = g,
-                            fcf = fcf,
+                            ocf = ocf,
                             wacc = self.market_wacc,
                             )
+
+
+    def _get_forcasted_growth(self, ls : list[str]):
+            """
+            Get the fitted growth rate of a forcasted variable
+            """
+            if self.y_forcasts is None:
+                return np.nan
+            
+            for val in ls :
+                if val not in self.y_forcasts :
+                    continue
+                ys  = self.y_forcasts[val].dropna()
+                if len(ys) <= 1 or  ys.min() <= 0 :
+                    continue
+                y = np.log(ys.values / ys.iloc[0])
+                x = np.arange(len(y))
+                z = np.polyfit(x,y, deg = 1)
+                g = np.exp(z[0]) - 1
+                return g
+    
+            
+            self.logger.warning(f"{self.name} no valid value to compute growth estimate from {", ".join(ls)}")
+            return np.nan
+    
+    def _get_forcasted_ocf(self):
+        """
+        retruned forcasted ocf array
+        """
+        if self.y_forcasts is None:
+            return None
+
+        ys = None
+        if self.use_fcfe:
+            last_ocf = self.y_statements['OCFE'].iloc[-1]
+        else :
+            last_ocf = self.y_statements['OCFF'].iloc[-1]
+        for val in ['CPS', 'EBT', 'NET', 'PRE', 'SAL' ] :
+            if val not in self.y_forcasts:
+                continue
+            ys = self.y_forcasts[val].dropna()
+
+            # rescale variable array to ratio between last stated ocf 
+            # and first variable value  
+            ratio = last_ocf/ys.iloc[0]
+            if (ys.index[0].year == self.y_statements.index[-1].year) and ratio > 0:
+                ys *= ratio
+            elif val == 'CPS' :
+                ys *= self.nb_shares
+            else:
+                continue
+            
+            if len(ys) >= self.session_model.nb_year_dcf:
+                return ys[:self.session_model.nb_year_dcf]
+
+            # complete forcasted ocf array with value extrapolated from forcasted growth rate
+            ys = np.concat([
+                    ys,
+                    ys.iloc[-1] * (1+ self.forcasted_ocf_growth)**np.arange(
+                        1,
+                        1 + self.session_model.nb_year_dcf - len(ys))])
+            
+            return ys
+
+        # no forcasted cash flow per share provided
+        return self.ocfe * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
+
+    def _get_forcasted_ebidta(self):
+        """
+        retruned forcasted ocf array
+        """
+        if self.y_forcasts is None:
+            return None
+
+        ys = None
+        for val in ['EBT', 'PRE',] :
+            if val in self.y_forcasts:
+                ys = self.y_forcasts[val].dropna()
+
+                if val != 'EBT' :
+                    # if forcasted metric array is not EBITDA rescale it to
+                    # ratio between last stated ebitda and first array value
+                    ratio = self.y_statements['EBITDA'].iloc[-1]/ys.iloc[0]
+                    if (ys.index[0].year == self.y_statements.index[-1].year) and ratio > 0:
+                        ys *= ratio
+                    else:
+                        continue
+                
+                if len(ys) >= self.session_model.nb_year_dcf:
+                    return ys[:self.session_model.nb_year_dcf]
+
+                if np.isnan(self.forcasted_ebitda_growth) :
+                    continue
+                
+                # complete forcasted array with value extrapolated from forcasted growth rate
+                ys = np.concat([
+                        ys,
+                        ys.iloc[-1] * (1+ self.forcasted_ebitda_growth)**np.arange(
+                            1,
+                            1 + self.session_model.nb_year_dcf - len(ys))])
+            
+                return ys
+
+        # no forcasted cash flow per share provided
+        return self.ebitda * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
+
+    def _set_forcasted_capex(self):
+        """
+        retruned capital expenditure growth rate fited from estimate 
+        """
+        if self.y_forcasts is None:
+            return
+
+        if 'CPX' in self.y_forcasts:
+            ys = self.y_forcasts['CPX'].dropna()
+            if len(ys) >= self.session_model.nb_year_dcf:
+                self._forcasted_capex = ys[:self.session_model.nb_year_dcf]
+                return
+            
+            g = self._get_forcasted_growth(['CPX'])
+            if not np.isnan(g) :
+                g = min(g,2) # bound growth rate to 2
+                self._forcasted_capex_growth = g 
+                ys = np.concat([
+                        ys,
+                        ys.iloc[-1] * (1+ g)**np.arange(
+                            1,
+                            1 + self.session_model.nb_year_dcf - len(ys))])
+                self._forcasted_capex = ys
+                return
+
+        # can not compute forcasted capital expenditure growth from itself
+        self._forcasted_capex_growth = self.forcasted_ocf_growth
+        self._forcasted_capex = self.capex * (1 + self._forcasted_capex_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
