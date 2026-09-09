@@ -693,10 +693,8 @@ class Share(FinancialStatements, FinancialForcast):
             return None
 
         ys = None
-        if self.use_fcfe:
-            last_ocf = self.y_statements['OCFE'].iloc[-1]
-        else :
-            last_ocf = self.y_statements['OCFF'].iloc[-1]
+        last_ocfe = self.y_statements['OCFE'].iloc[-1]
+            
         for val in ['CPS', 'EBT', 'NET', 'PRE', 'SAL' ] :
             if val not in self.y_forcasts:
                 continue
@@ -704,7 +702,7 @@ class Share(FinancialStatements, FinancialForcast):
 
             # rescale variable array to ratio between last stated ocf 
             # and first variable value  
-            ratio = last_ocf/ys.iloc[0]
+            ratio = last_ocfe/ys.iloc[0]
             if (ys.index[0].year == self.y_statements.index[-1].year) and ratio > 0:
                 ys *= ratio
             elif val == 'CPS' :
@@ -722,8 +720,13 @@ class Share(FinancialStatements, FinancialForcast):
                         1,
                         1 + self.session_model.nb_year_dcf - len(ys))])
             
+            if (not self.use_fcfe) and 'SNIN' in self.y_statements:
+                interest = self.y_statements['SNIN'].iloc[-1] * (1-self.session_model.taxe_rate)
+                # interest expense assumed constant
+                ys -= interest
             return ys
 
+        print(f"{self.symbol} no cps")
         # no forcasted cash flow per share provided
         return self.ocfe * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
 

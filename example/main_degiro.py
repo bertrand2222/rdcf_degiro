@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
     rdcf_anal = RDCFAnal(config_dict)
 
-    # rdcf_anal.share_list = [ s for s in rdcf_anal.share_list if s.symbol in [ "ORCL"] ]
+    # rdcf_anal.share_list = [ s for s in rdcf_anal.share_list if s.symbol in [ "MBI"] ]
     
     # rdcf_anal.load_df()
     rdcf_anal.process()
