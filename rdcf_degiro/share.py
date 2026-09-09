@@ -172,7 +172,7 @@ class Share(FinancialStatements, FinancialForcast):
             tz="Europe/Paris",
             )
 
-        chart = self.session_model.chart_fetcher.get_chart(
+        chart = self.session_model.degiro_chart_fetcher.get_chart(
             chart_request=chart_request,
             raw=False,
         )
@@ -210,7 +210,7 @@ class Share(FinancialStatements, FinancialForcast):
             ],
             tz="Europe/Paris",
             )
-        chart = self.session_model.chart_fetcher.get_chart(
+        chart = self.session_model.degiro_chart_fetcher.get_chart(
             chart_request=chart_request,
             raw=False,
         )
@@ -265,7 +265,7 @@ class Share(FinancialStatements, FinancialForcast):
         statement_path = os.path.join(self.session_model.output_folder, 
                                     f"{self.symbol}_company_ratio.json")
         if self.session_model.update_statements_need(statement_path):
-            _ratios = self.session_model.get_company_ratios(
+            _ratios = self.session_model.degiro_api.get_company_ratios(
                 product_isin=self.isin, 
                 raw = True
             )

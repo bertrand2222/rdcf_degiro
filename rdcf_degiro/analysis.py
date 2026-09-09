@@ -52,9 +52,12 @@ class RDCFAnal():
         self.__dict__.update(config_dict)
 
         self.session_model = SessionModelDCF(config_dict)
+        self.session_model.connect_degiro_api()
+        self.degiro_api = self.session_model.degiro_api
+
         self.logger = self.session_model.logger
 
-        self.get_client_details_table = self.session_model.get_client_details
+        self.get_client_details_table = self.session_model.degiro_api.get_client_details
         if self.session_model.retrieve_shares_from_favorites:
             self.retrieve_shares_from_favorites()
         if self.session_model.retrieve_shares_from_portfolio:
@@ -64,11 +67,11 @@ class RDCFAnal():
         """
         Retrieve stock and fund ids recorded in Degiro account favorite list
         """
-        favorite_batch = self.session_model.get_favorite(raw=False)
+        favorite_batch = self.degiro_api.get_favorite(raw=False)
         ids = favorite_batch.data[0].product_ids
 
         # FETCH PRODUCT INFO
-        product_info = self.session_model.get_products_info(
+        product_info = self.degiro_api.get_products_info(
             product_list= ids,
             raw=False,
         )
@@ -84,7 +87,7 @@ class RDCFAnal():
         Retrieve stock and fund ids recorded in Degiro account portfolio
         """
         
-        account_update = self.session_model.get_update(
+        account_update = self.degiro_api.get_update(
         request_list=[
             UpdateRequest(
                 option=UpdateOption.PORTFOLIO,
@@ -105,7 +108,7 @@ class RDCFAnal():
                         break
         
         # FETCH PRODUCT INFO
-        product_info = self.session_model.get_products_info(
+        product_info = self.degiro_api.get_products_info(
             product_list= ids,
             raw=False,
         )
@@ -186,7 +189,7 @@ class RDCFAnal():
                                     } for s in valid_share_list])
 
 
-        self.session_model.logout()
+        self.degiro_api.logout()
 
         df.sort_values(by = ['forcasted_capital_cost_multiple',]  , inplace= True, ascending= False)
 

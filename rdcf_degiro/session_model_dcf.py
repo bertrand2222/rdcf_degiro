@@ -162,7 +162,7 @@ class RateInfos():
             self.__dict__.update(json.load( readfile))
 
 
-class SessionModelDCF(API):
+class SessionModelDCF():
 
     """
     Object containing all global data
@@ -187,9 +187,10 @@ class SessionModelDCF(API):
         self.update_statements = False
         self.rate_history_dic = {}
         self.rate_current_dic = {}
-        self.chart_fetcher : ChartFetcher = None
+        self.degiro_chart_fetcher : ChartFetcher = None
         self.nb_days_update : int = 20
         self.current_timestamp = time.time()
+        self.degiro_api = None
 
         self.__dict__.update(config_dict)
         self.config_dict = self.__dict__.copy()
@@ -213,19 +214,6 @@ class SessionModelDCF(API):
         # Avoid propagation to root (prevents duplicate logs)
         self.logger.propagate = False
         
-        # Connexion
-        print("connect to degiro trading API")
-
-        if "credential_file_path" not in config_dict :
-            raise KeyError("Missing credential_file_path definition in input")
-        with open(self.credential_file_path, encoding= "utf8") as config_file:
-            config_dict = json.load(config_file)
-
-        user_token = config_dict.get("user_token")
-        self.chart_fetcher = ChartFetcher(user_token=user_token)
-
-        credentials = build_credentials(location=self.credential_file_path )
-        super().__init__(credentials = credentials )
         
         self.rate_info = RateInfos(self.logger)
         market_info_path = os.path.join(self.output_folder,"market_info.json")
@@ -237,8 +225,24 @@ class SessionModelDCF(API):
 
         if not os.path.isdir(self.output_folder):
             raise FileNotFoundError(f"The specified output folder does not exist {self.output_folder}")
+
+    def connect_degiro_api(self):
+        # Connexion
+        print("connect to degiro trading API")
         
-        self.connect()
+        if "credential_file_path" not in self.config_dict :
+            raise KeyError("Missing credential_file_path definition in input")
+        with open(self.credential_file_path, encoding= "utf8") as config_file:
+            config_dict = json.load(config_file)
+
+        user_token = config_dict.get("user_token")
+        self.degiro_chart_fetcher = ChartFetcher(user_token=user_token)
+
+        credentials = build_credentials(location=self.credential_file_path )
+
+        self.degiro_api = API(credentials = credentials)
+        
+        self.degiro_api.connect()
     
     def update_rate_dic(self, currency_1, currency_2, ):
         """
