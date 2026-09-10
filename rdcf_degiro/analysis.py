@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import os
 import sys
 import re
@@ -8,6 +9,7 @@ import warnings
 from curl_cffi import CurlError
 import urllib3
 import pandas as pd
+import pickle
 # from importlib import reload
 # from colorama import Fore
 from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
@@ -32,11 +34,196 @@ urllib3.disable_warnings()
 PKL_NAME = "df_save.pkl"
 IS = 0.25
 
-class RDCFSummary():
+class RDCFSummary():    
 
-    def __init__(self, df : pd.DataFrame):
+    def __init__(self, df: pd.DataFrame, session_model: SessionModelDCF, name : str = None):
+        
         self.df = df
-        pass
+        self.config = pd.DataFrame.from_dict({**session_model.config_dict, **session_model.rate_info.__dict__}, 
+                                                    orient= 'index').iloc[:,0]
+        self.name = name
+
+    def save(self, path):
+        with open(path, "wb") as f:
+            try:
+                pickle.dump(self, f)
+            except OSError as e:
+                raise OSError(f"Error while recording summary {e}  ") from e
+
+    @staticmethod
+    def load(path : str):
+        """
+        Loads previously saved analysis dataframe
+        """
+        with open(path, "rb") as fichier:
+            obj : RDCFSummary = pickle.load(fichier)
+        return obj
+    
+    def to_excel(self, writer:  pd.ExcelWriter, sheet_name :str ):
+
+        """
+        Export in Excel format the analysis dataframe 
+        """
+
+
+        letters = list(ascii_uppercase)
+        if self.df is None:
+            return
+        df = self.df
+        col_letter = {c : letters[i+1] for i, c in enumerate(df.columns)}
+        df.to_excel(writer, sheet_name= sheet_name)
+        wb = writer.book
+        number = wb.add_format({'num_format': '0.00'})
+        percent = wb.add_format({'num_format': '0.00%'})
+        bold_percent = wb.add_format({'bold': True, 'num_format': '0.00%'})
+        l_align =  wb.add_format()
+        l_align.set_align('left')
+        # Add a format. Light red fill with dark red text.
+        # format1 = wb.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
+        # Add a format. Green fill with dark green text.
+        # format2 = wb.add_format({"bg_color": "#C6EFCE", "font_color": "#006100"})
+        # Add a format. Light red fill .
+        format3 = wb.add_format({"bg_color": "#F8696B",})
+
+        worksheet = writer.sheets[sheet_name]
+
+        format_dict = {
+            "current_price" : {"size" : 13, "format" : number},
+            "beta" : {"size" : 0, "format" : number},
+            "value_to_ebitda" : {"size" : 0, "format" : number},
+            "wacc" : {"size" : 11, "format" : percent},
+            "assumed_g" : {"size" : 11, "format" : bold_percent},
+            "history_growth" : {"size" : 0, "format" : percent},
+            "forcasted_ebitda_growth" : {"size" : 11, "format" : percent},
+            "target_market_price_multiple" : {"size" : 11, "format" : number},
+            # "target_market_price_perpetual" : {"size" : 11, "format" : number},
+            "price_to_sales" : {"size" : 11, "format" : number},
+            "debt_to_equity" : {"size" : 0, "format" : number},
+
+                }
+        for k, f in format_dict.items():
+            worksheet.set_column(f"{col_letter[k]}:{col_letter[k]}",
+                                            f['size'], 
+                                            f['format'])
+        # add hyperlink
+        for i, s in enumerate(df.index):
+            worksheet.write_url(f'B{i+2}', 
+                                fr'https://www.tradingview.com/symbols/{s}/', 
+                                string= df.loc[s, 'short_name'] )
+
+        worksheet.add_table(0,0,len(df.index),len(df.columns) ,
+                            {"columns" : [{'header' : 'symbol'}]
+                                + [{'header' : col} for col in df.columns],
+                            'style' : 'Table Style Light 8'})
+        worksheet.set_column('B:B', 30, )
+        worksheet.set_column(f"{col_letter['forcasted_wacc_multiple']}:{col_letter['forcasted_wacc_perpetual']}",
+                                                        0, #11, 
+                                                        percent)
+        worksheet.set_column(f"{col_letter['forcasted_capital_cost_multiple']}:{col_letter['forcasted_capital_cost_perpetual']}",
+                                11, bold_percent)
+        worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}",
+                                11, percent )
+        worksheet.set_column(f"{col_letter['roe']}:{col_letter['roic']}", 0, percent )
+        # worksheet.set_column(f"{col_letter['mean_g_fcf']}:{col_letter['diff_g']}", 13, percent )
+
+        def format_max_min_green_red(ws, col_s : str, col_e : str = None, 
+                                        max_type : str = 'max', 
+                                        max_value : float = None,
+                                        mid_type = 'percentile',
+                                        mid_value = 0):
+            if col_e is None:
+                col_e = col_s
+            format_dic = {"type": "3_color_scale", 'min_type': 'min',
+                'max_type': max_type, 'mid_type' : mid_type,
+                'min_color' : '#F8696B', "max_color" : '#63BE7B', 
+                "mid_color" : "#FFFFFF", "mid_value" : mid_value}
+            if max_type == 'num':
+                format_dic['max_value'] = max_value
+            ws.conditional_format(
+                f"{col_letter[col_s]}2:{col_letter[col_e]}{len(df.index)+1}", format_dic
+                )
+
+    
+        format_max_min_green_red(worksheet, 'history_growth',) 
+        format_max_min_green_red(worksheet, 'forcasted_ebitda_growth')
+        # format_max_min_green_red(worksheet, 'diff_g_forcasted_assumed')
+        # format_max_min_green_red(worksheet, 'forcasted_wacc_multiple' , max_type='num', max_value= 1)
+        # format_max_min_green_red(worksheet, 'forcasted_wacc_perpetual' , max_type='num', max_value= 1)
+        format_max_min_green_red(worksheet, 'forcasted_capital_cost_multiple', max_type='num', max_value= 1, mid_type= "num", mid_value= self.config.loc['market_rate'])
+        format_max_min_green_red(worksheet, 'forcasted_capital_cost_perpetual', max_type='num', max_value= 1, mid_type= "num", mid_value= self.config.loc['market_rate'])
+
+
+        worksheet.conditional_format(
+            f"{col_letter['debt_to_equity']}2:{col_letter['debt_to_equity']}{len(df.index)+1}",
+                                        {"type": "cell", "criteria": "<", 
+                                        "value": 0, "format": format3})
+        worksheet.conditional_format(
+            f"{col_letter['debt_to_equity']}2:{col_letter['debt_to_equity']}{len(df.index)+1}",
+            {"type": "3_color_scale", 'min_type': 'num',
+                'max_type': 'num', 'mid_type' : 'num',
+                'min_value' : 0, 'mid_value' : 1, "max_value" : 2, 
+                'min_color' : '#63BE7B', "max_color" : '#F8696B', 
+                "mid_color" : "#FFFFFF"})
+        # format PER
+        worksheet.conditional_format(
+            f"{col_letter['per']}2:{col_letter['per']}{len(df.index)+1}",
+            {"type": "cell", "criteria": "<", "value": 0, "format": format3})
+        worksheet.conditional_format(
+            f"{col_letter['per']}2:{col_letter['per']}{len(df.index)+1}",
+            {"type": "3_color_scale", 'min_type': 'num','max_type': 'num',
+                'mid_type' : 'percentile',
+                'min_value' : 3, 'mid_value' : 50, "max_value" : 50,
+                'min_color' : '#63BE7B', "max_color" : '#F8696B', 
+                "mid_color" : "#FFFFFF"})
+        worksheet.conditional_format(
+                    f"{col_letter['price_to_sales']}2:{col_letter['price_to_sales']}{len(df.index)+1}",
+                    {"type": "3_color_scale", 'min_type': 'num','max_type': 'num',
+                        'mid_type' : 'percentile',
+                        'min_value' : 3, 'mid_value' : 50, "max_value" : 50,
+                        'min_color' : '#63BE7B', "max_color" : '#F8696B', 
+                        "mid_color" : "#FFFFFF"})
+        # format ROE
+        worksheet.conditional_format(f"{col_letter['roe']}2:{col_letter['roe']}{len(df.index)+1}",
+                                        {"type": "cell", "criteria": "<",
+                                        "value": 0, "format": format3})
+        worksheet.conditional_format(f"{col_letter['roe']}2:{col_letter['roe']}{len(df.index)+1}",
+                                    {"type": "3_color_scale", 'min_type': 'num','max_type': 'max',
+                                        'mid_type' : 'percentile',
+                                    'min_value' : 0, 'mid_value' : 50, "max_value" : 0.15,
+                                    "min_color" : '#F8696B', 'max_color' : '#63BE7B' ,
+                                    "mid_color" : "#FFFFFF"})
+        # format ROIC
+        worksheet.conditional_format(f"{col_letter['roic']}2:{col_letter['roic']}{len(df.index)+1}",
+                                        {"type": "cell", "criteria": "<",
+                                        "value": 0, "format": format3})
+        worksheet.conditional_format(f"{col_letter['roic']}2:{col_letter['roic']}{len(df.index)+1}",
+                                    {"type": "3_color_scale", 'min_type': 'num','max_type': 'max',
+                                        'mid_type' : 'percentile',
+                                    'min_value' : 0, 'mid_value' : 50,
+                                    "min_color" : '#F8696B', 'max_color' : '#63BE7B' ,
+                                    "mid_color" : "#FFFFFF"})
+
+        # # format Price to Book
+        # worksheet.conditional_format(
+        #     f"{col_letter['price_to_book']}2:{col_letter['price_to_book']}{len(df.index)+1}",
+        #                              {"type": "cell", "criteria": "<", 
+        #                               "value": 0, "format": format3})
+        # worksheet.conditional_format(
+        #     f"{col_letter['price_to_book']}2:{col_letter['price_to_book']}{len(df.index)+1}",
+        #                             {"type": "3_color_scale", 'min_type': 'num',
+        #                              'max_type': 'num', 'mid_type' : 'percentile',
+        #                             'min_value' : 1, 'mid_value' : 50, "max_value" : 10, 
+        #                             'min_color' : '#63BE7B', "max_color" : '#F8696B',
+        #                             "mid_color" : "#FFFFFF"})
+                
+        ##### save config
+        
+        
+        self.config.to_excel(writer, sheet_name= sheet_name+"_config")
+        worksheet = writer.sheets[sheet_name+"_config"]
+        worksheet.set_column('A:A', 30, l_align)
+        
+        
 class RDCFAnal():
     """
     object containing a reverse dcf analysis and all its context
@@ -193,199 +380,13 @@ class RDCFAnal():
 
         df.sort_values(by = ['forcasted_capital_cost_multiple',]  , inplace= True, ascending= False)
 
-        self.df = df
-        try:
-            df.to_pickle(os.path.join(self.session_model.output_folder,PKL_NAME))
-        except OSError as e:
-            raise OSError(f"Error while recording dataframe {e}  ") from e
-
-    def load_df(self):
-        """
-        Loads previously saved analysis dataframe
-        """
-        self.df = pd.read_pickle(os.path.join(self.session_model.output_folder,PKL_NAME))
-        self.share_list = self.df.index
-
-    def to_excel(self, xl_outfile : str = None):
-
-        """
-        Export in Excel format the analysis dataframe 
-        """
-
-        letters = list(ascii_uppercase)
-        if not xl_outfile:
-            xl_outfile = os.path.join(self.session_model.output_folder,
-                                      self.session_model.output_name + ".xlsx")
-        while True:
-            try :
-                writer = pd.ExcelWriter(xl_outfile,  engine="xlsxwriter")
-                break
-            except PermissionError:
-                xl_outfile = re.sub(".xlsx$","_1.xlsx", xl_outfile)
-
-        if self.df is None:
-            return
-        df = self.df
-        col_letter = {c : letters[i+1] for i, c in enumerate(df.columns)}
-        df.to_excel(writer, sheet_name= "rdcf")
-        wb = writer.book
-        number = wb.add_format({'num_format': '0.00'})
-        percent = wb.add_format({'num_format': '0.00%'})
-        bold_percent = wb.add_format({'bold': True, 'num_format': '0.00%'})
-        l_align =  wb.add_format()
-        l_align.set_align('left')
-        # Add a format. Light red fill with dark red text.
-        # format1 = wb.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
-        # Add a format. Green fill with dark green text.
-        # format2 = wb.add_format({"bg_color": "#C6EFCE", "font_color": "#006100"})
-        # Add a format. Light red fill .
-        format3 = wb.add_format({"bg_color": "#F8696B",})
-
-        worksheet = writer.sheets['rdcf']
-
-        format_dict = {
-            "current_price" : {"size" : 13, "format" : number},
-            "beta" : {"size" : 0, "format" : number},
-            "value_to_ebitda" : {"size" : 0, "format" : number},
-            "wacc" : {"size" : 11, "format" : percent},
-            "assumed_g" : {"size" : 11, "format" : bold_percent},
-            "history_growth" : {"size" : 0, "format" : percent},
-            "forcasted_ebitda_growth" : {"size" : 11, "format" : percent},
-            "target_market_price_multiple" : {"size" : 11, "format" : number},
-            # "target_market_price_perpetual" : {"size" : 11, "format" : number},
-            "price_to_sales" : {"size" : 11, "format" : number},
-            "debt_to_equity" : {"size" : 0, "format" : number},
-
-                }
-        for k, f in format_dict.items():
-            worksheet.set_column(f"{col_letter[k]}:{col_letter[k]}",
-                                         f['size'], 
-                                         f['format'])
-        # add hyperlink
-        for i, s in enumerate(df.index):
-            worksheet.write_url(f'B{i+2}', 
-                                fr'https://www.tradingview.com/symbols/{s}/', 
-                                string= df.loc[s, 'short_name'] )
-
-        worksheet.add_table(0,0,len(df.index),len(df.columns) ,
-                            {"columns" : [{'header' : 'symbol'}]
-                                + [{'header' : col} for col in df.columns],
-                            'style' : 'Table Style Light 8'})
-        worksheet.set_column('B:B', 30, )
-        worksheet.set_column(f"{col_letter['forcasted_wacc_multiple']}:{col_letter['forcasted_wacc_perpetual']}",
-                                                     0, #11, 
-                                                     percent)
-        worksheet.set_column(f"{col_letter['forcasted_capital_cost_multiple']}:{col_letter['forcasted_capital_cost_perpetual']}",
-                             11, bold_percent)
-        worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}",
-                             11, percent )
-        worksheet.set_column(f"{col_letter['roe']}:{col_letter['roic']}", 0, percent )
-        # worksheet.set_column(f"{col_letter['mean_g_fcf']}:{col_letter['diff_g']}", 13, percent )
-
-        def format_max_min_green_red(ws, col_s : str, col_e : str = None, 
-                                     max_type : str = 'max', 
-                                     max_value : float = None,
-                                     mid_type = 'percentile',
-                                     mid_value = 0):
-            if col_e is None:
-                col_e = col_s
-            format_dic = {"type": "3_color_scale", 'min_type': 'min',
-                'max_type': max_type, 'mid_type' : mid_type,
-                'min_color' : '#F8696B', "max_color" : '#63BE7B', 
-                "mid_color" : "#FFFFFF", "mid_value" : mid_value}
-            if max_type == 'num':
-                format_dic['max_value'] = max_value
-            ws.conditional_format(
-                f"{col_letter[col_s]}2:{col_letter[col_e]}{len(df.index)+1}", format_dic
-                )
-
-   
-        format_max_min_green_red(worksheet, 'history_growth',) 
-        format_max_min_green_red(worksheet, 'forcasted_ebitda_growth')
-        # format_max_min_green_red(worksheet, 'diff_g_forcasted_assumed')
-        # format_max_min_green_red(worksheet, 'forcasted_wacc_multiple' , max_type='num', max_value= 1)
-        # format_max_min_green_red(worksheet, 'forcasted_wacc_perpetual' , max_type='num', max_value= 1)
-        format_max_min_green_red(worksheet, 'forcasted_capital_cost_multiple', max_type='num', max_value= 1, mid_type= "num", mid_value= self.session_model.rate_info.market_rate)
-        format_max_min_green_red(worksheet, 'forcasted_capital_cost_perpetual', max_type='num', max_value= 1, mid_type= "num", mid_value= self.session_model.rate_info.market_rate)
+        summary = RDCFSummary(df, self.session_model)
+        return summary
 
 
-        worksheet.conditional_format(
-            f"{col_letter['debt_to_equity']}2:{col_letter['debt_to_equity']}{len(df.index)+1}",
-                                     {"type": "cell", "criteria": "<", 
-                                      "value": 0, "format": format3})
-        worksheet.conditional_format(
-            f"{col_letter['debt_to_equity']}2:{col_letter['debt_to_equity']}{len(df.index)+1}",
-            {"type": "3_color_scale", 'min_type': 'num',
-                'max_type': 'num', 'mid_type' : 'num',
-                'min_value' : 0, 'mid_value' : 1, "max_value" : 2, 
-                'min_color' : '#63BE7B', "max_color" : '#F8696B', 
-                "mid_color" : "#FFFFFF"})
-        # format PER
-        worksheet.conditional_format(
-            f"{col_letter['per']}2:{col_letter['per']}{len(df.index)+1}",
-            {"type": "cell", "criteria": "<", "value": 0, "format": format3})
-        worksheet.conditional_format(
-            f"{col_letter['per']}2:{col_letter['per']}{len(df.index)+1}",
-            {"type": "3_color_scale", 'min_type': 'num','max_type': 'num',
-                'mid_type' : 'percentile',
-                'min_value' : 3, 'mid_value' : 50, "max_value" : 50,
-                'min_color' : '#63BE7B', "max_color" : '#F8696B', 
-                "mid_color" : "#FFFFFF"})
-        worksheet.conditional_format(
-                    f"{col_letter['price_to_sales']}2:{col_letter['price_to_sales']}{len(df.index)+1}",
-                    {"type": "3_color_scale", 'min_type': 'num','max_type': 'num',
-                        'mid_type' : 'percentile',
-                        'min_value' : 3, 'mid_value' : 50, "max_value" : 50,
-                        'min_color' : '#63BE7B', "max_color" : '#F8696B', 
-                        "mid_color" : "#FFFFFF"})
-        # format ROE
-        worksheet.conditional_format(f"{col_letter['roe']}2:{col_letter['roe']}{len(df.index)+1}",
-                                     {"type": "cell", "criteria": "<",
-                                      "value": 0, "format": format3})
-        worksheet.conditional_format(f"{col_letter['roe']}2:{col_letter['roe']}{len(df.index)+1}",
-                                    {"type": "3_color_scale", 'min_type': 'num','max_type': 'max',
-                                     'mid_type' : 'percentile',
-                                    'min_value' : 0, 'mid_value' : 50, "max_value" : 0.15,
-                                    "min_color" : '#F8696B', 'max_color' : '#63BE7B' ,
-                                    "mid_color" : "#FFFFFF"})
-        # format ROIC
-        worksheet.conditional_format(f"{col_letter['roic']}2:{col_letter['roic']}{len(df.index)+1}",
-                                     {"type": "cell", "criteria": "<",
-                                      "value": 0, "format": format3})
-        worksheet.conditional_format(f"{col_letter['roic']}2:{col_letter['roic']}{len(df.index)+1}",
-                                    {"type": "3_color_scale", 'min_type': 'num','max_type': 'max',
-                                     'mid_type' : 'percentile',
-                                    'min_value' : 0, 'mid_value' : 50,
-                                    "min_color" : '#F8696B', 'max_color' : '#63BE7B' ,
-                                    "mid_color" : "#FFFFFF"})
-
-        # # format Price to Book
-        # worksheet.conditional_format(
-        #     f"{col_letter['price_to_book']}2:{col_letter['price_to_book']}{len(df.index)+1}",
-        #                              {"type": "cell", "criteria": "<", 
-        #                               "value": 0, "format": format3})
-        # worksheet.conditional_format(
-        #     f"{col_letter['price_to_book']}2:{col_letter['price_to_book']}{len(df.index)+1}",
-        #                             {"type": "3_color_scale", 'min_type': 'num',
-        #                              'max_type': 'num', 'mid_type' : 'percentile',
-        #                             'min_value' : 1, 'mid_value' : 50, "max_value" : 10, 
-        #                             'min_color' : '#63BE7B', "max_color" : '#F8696B',
-        #                             "mid_color" : "#FFFFFF"})
-                
-        ##### save config
-        df_config = pd.DataFrame.from_dict({**self.session_model.config_dict, **self.session_model.rate_info.__dict__}, 
-                                           orient= 'index')
         
-        df_config.to_excel(writer, sheet_name= "config")
-        worksheet = writer.sheets["config"]
-        worksheet.set_column('A:A', 30, l_align)
-        
-        writer.close()
 
-        if sys.platform == "linux" :
-            subprocess.call(["open", xl_outfile])
-        else :
-            os.startfile(xl_outfile)
+    
 
  
 

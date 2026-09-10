@@ -1,9 +1,12 @@
+import re
 import sys
-import os 
+import os
+
+import pandas as pd 
 
 sys.path.append(os.path.join(os.getenv('USERPROFILE'),"rdcf", "rdcf_degiro"))
 
-from rdcf_degiro.analysis import RDCFAnal
+from rdcf_degiro.analysis import RDCFAnal, RDCFSummary
 
 # credentials_path = os.path.join(os.getenv('USERPROFILE'), ".degiro", "credentials.json")
 # credentials = build_credentials(location=credentials_path )
@@ -36,7 +39,6 @@ config_dict = {
     'use_last_intraday_price'       : True,
     'output_folder'                 : r'C:\Users\SAFCOB009150\OneDrive - Saipem\Documents\rdcf_degiro_out',
     'taxe_rate'                     : 0.25,
-    'output_name'                   : 'rdcf',
     'yahoo_symbol_cor'              : yahoo_symbol_cor,
     "update_market_rate"            : False,
     'update_statements'             : False,
@@ -46,12 +48,28 @@ config_dict = {
 
 if __name__ == "__main__":
 
-    rdcf_anal = RDCFAnal(config_dict)
+    rdcf_fcff_anal = RDCFAnal(config_dict)
 
-    # rdcf_anal.share_list = [ s for s in rdcf_anal.share_list if s.symbol in [ "MBI"] ]
+    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "MBI"] ]
     
-    # rdcf_anal.load_df()
-    rdcf_anal.process()
+    summary = rdcf_fcff_anal.process()
+    summary.save(os.path.join(config_dict['output_folder'],'FCFF.pkl'))
+    
+    # summary = RDCFSummary.load(os.path.join(config_dict['output_folder'],'FCFF.pkl'))
 
-    rdcf_anal.to_excel()
-  # upload_file(outfile)
+    xl_outfile = os.path.join(rdcf_fcff_anal.session_model.output_folder,  "rdcf.xlsx")
+    while True:
+        try :
+            writer = pd.ExcelWriter(xl_outfile,  engine="xlsxwriter")
+            break
+        except PermissionError:
+            xl_outfile = re.sub(".xlsx$","_1.xlsx", xl_outfile)
+
+    summary.to_excel(writer, 'FCFF')
+    
+    writer.close()
+
+    if sys.platform == "linux" :
+        subprocess.call(["open", xl_outfile])
+    else :
+        os.startfile(xl_outfile)
