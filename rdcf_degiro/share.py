@@ -104,7 +104,7 @@ class Share(FinancialStatements, FinancialForcast):
         self.per : float = np.nan
         self.price_to_sales : float = np.nan
         self.value_to_ebitda : float = None
-        self.value_to_ebitda_terminal : float = None
+        self.value_to_ebitda_bounded : float = None
 
         self.q_inc_statements : pd.DataFrame = None
         self.q_bal_statements : pd.DataFrame = None     
@@ -372,7 +372,7 @@ class Share(FinancialStatements, FinancialForcast):
         return cc * eq/(debt + eq) +  dc * (1-tr) * debt/(debt + eq)
         
 
-    def compute_complementary_values(self,):
+    def compute_multiples(self,):
         """
         compute value and ratios from financial statements and market infos 
         before dcf calculation
@@ -405,9 +405,9 @@ class Share(FinancialStatements, FinancialForcast):
         # self.value_to_ebitda = np.median(df_multiple['value_to_ebitda'])
 
         boud_i, bound_s = self.session_model.terminal_value_to_ebitda_bounds
-        self.value_to_ebitda_terminal = max( boud_i, 1 / max(1/self.value_to_ebitda, 1/bound_s))
-        self.value_to_ocfe_terminal = max( boud_i, 1 / max(1/self.value_to_ocfe, 1/bound_s))
-        self.value_to_ocff_terminal = max( boud_i, 1 / max(1/self.value_to_ocff, 1/bound_s))
+        self.value_to_ebitda_bounded = max( boud_i, 1 / max(1/self.value_to_ebitda, 1/bound_s))
+        self.value_to_ocfe_bounded = max( boud_i, 1 / max(1/self.value_to_ocfe, 1/bound_s))
+        self.value_to_ocff_bounded = max( boud_i, 1 / max(1/self.value_to_ocff, 1/bound_s))
 
         return(0)
         
@@ -482,7 +482,7 @@ class Share(FinancialStatements, FinancialForcast):
 
         self._forcasted_ebitda = self._get_forcasted_ebidta()
 
-        vt_multiple = max(self._forcasted_ebitda[-1]* self.value_to_ebitda_terminal,0)
+        vt_multiple = max(self._forcasted_ebitda[-1]* self.value_to_ebitda_bounded,0)
 
         arr = np.concatenate([np.array([-current_value]), 
                                 self._forcasted_fcf[:-1], 
@@ -543,7 +543,7 @@ class Share(FinancialStatements, FinancialForcast):
         
         """
 
-        self.compute_complementary_values()
+        self.compute_multiples()
 
         self.logger.info(f'{self.name} : compute dcf values                        ')
         if start_fcf is not None:
@@ -556,7 +556,7 @@ class Share(FinancialStatements, FinancialForcast):
         self.market_wacc = self._get_market_wacc()
         up_bound = 2 if self.session_model.use_multiple else self.market_wacc
 
-        if self.session_model.use_multiple and (self.value_to_ebitda_terminal < 0) :
+        if self.session_model.use_multiple and (self.value_to_ebitda_bounded < 0) :
             self.logger.info(f"{self.name} negative terminal price to fcf multiple, can not compute RDCF")
             return
 
@@ -597,7 +597,7 @@ class Share(FinancialStatements, FinancialForcast):
         nb_year_dcf = self.session_model.nb_year_dcf
         if vt is None:
             if self.session_model.use_multiple :
-                terminal_value = self.value_to_ocfe_terminal if self.use_fcfe else self.value_to_ocff_terminal
+                terminal_value = self.value_to_ocfe_bounded if self.use_fcfe else self.value_to_ocff_bounded
                 vt = ocf * (1+g)**(nb_year_dcf ) * terminal_value
             else :
                 vt = ocf * (1+g)**(nb_year_dcf ) / (wacc - g)
