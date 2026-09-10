@@ -52,9 +52,10 @@ if __name__ == "__main__":
 
     # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "MBI"] ]
     
+    rdcf_fcff_anal.retrieve_data()
     summary = rdcf_fcff_anal.process()
     summary.save(os.path.join(config_dict['output_folder'],'FCFF.pkl'))
-    
+
     # summary = RDCFSummary.load(os.path.join(config_dict['output_folder'],'FCFF.pkl'))
 
     xl_outfile = os.path.join(rdcf_fcff_anal.session_model.output_folder,  "rdcf.xlsx")

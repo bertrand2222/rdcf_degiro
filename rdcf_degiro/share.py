@@ -70,6 +70,7 @@ class Share(FinancialStatements, FinancialForcast):
         self.ebitda : float = None # ebitda
         self.rate_factor = 1
         self.nb_shares : float = None
+        self.valid_retrieve = False
 
         self.y_forcasts : pd.DataFrame = None
         self.forcasted_ebitda_growth : float = None
@@ -411,7 +412,7 @@ class Share(FinancialStatements, FinancialForcast):
         return(0)
         
 
-    def retrieves_all_values(self,):
+    def retrieve_share_data(self,):
         """
         Get all the share associated financial infos from degiro api 
         """
@@ -433,12 +434,9 @@ class Share(FinancialStatements, FinancialForcast):
         
         try :
             self.retrieve_values()
-            self.compute_complementary_values()
         except (KeyError, TypeError) as e:
             raise KeyError(f"{self.name} : error while generating values \n {type(e).__name__} : {e}") from e
         
-        self.compute_dcf()
-
         self.valid_retrieve = True
         # self.eval_beta()
 
@@ -533,7 +531,7 @@ class Share(FinancialStatements, FinancialForcast):
         #     self.g_incf_ttm = minimize_scalar(_residual_dincf_on_g, args=(self, self.financial_statements.focf_ttm),
         #                     method= 'bounded', bounds = (-1, up_bound)).x
 
-    def compute_dcf(self, start_fcf : float = None):
+    def compute_share_dcf(self, start_fcf : float = None):
         """
         Evaluate from fundamental financial data and stock value:
         - market assumed growth rate 
@@ -544,6 +542,9 @@ class Share(FinancialStatements, FinancialForcast):
 
         
         """
+
+        self.compute_complementary_values()
+
         self.logger.info(f'{self.name} : compute dcf values                        ')
         if start_fcf is not None:
             ocf = start_fcf + self.capex

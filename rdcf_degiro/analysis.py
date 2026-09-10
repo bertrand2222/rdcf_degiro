@@ -306,7 +306,7 @@ class RDCFAnal():
                                  for s_id, s_dict in product_info.data.items() if s_dict.product_type =='STOCK'
                                  ]
 
-    def process(self ) :
+    def retrieve_data(self ) :
 
         """
         Generate an analysis summary dataframe
@@ -320,7 +320,7 @@ class RDCFAnal():
                 for retrieve_from in ['degiro', 'yahoo']:
                     s.retrieve_from = retrieve_from
                     try :
-                        s.retrieves_all_values()
+                        s.retrieve_share_data()
                         break
                     except MarketCapError as e:
                         self.logger.warning(f"{e} can not retrieve data from {retrieve_from}")
@@ -329,17 +329,27 @@ class RDCFAnal():
                     KeyError, 
                     CurlError
                     ) as e:
-                self.logger.error(f"{s.name} : {type(e).__name__} : {e}   ")
+                self.logger.error(f"{s.name} : Error while retrieving data {type(e).__name__} : {e}   ")
                 continue
-        
 
-        self.logger.info("generate summary table")
-        
+    def process(self) :
+
         valid_share_list = [s for s in self.share_list if s.valid_retrieve]
 
         if not valid_share_list :
-            print('no valid share')
+            print('no share whith valid data, run retrieve_data() first')
             return
+        
+        for s in valid_share_list :
+            try :
+                s.compute_share_dcf()
+            except KeyError as e:
+                self.logger.error(f"{s.name} : Error while computing dcf {type(e).__name__} : {e}   ")
+                continue
+
+        self.logger.info("generate summary table")
+        
+
 
         df = pd.DataFrame.from_records(index = [s.symbol for s in valid_share_list],
                           data= [
