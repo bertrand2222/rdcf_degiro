@@ -77,7 +77,7 @@ class Share(FinancialStatements, FinancialForcast):
         self._forcasted_ocf_growth : float = None
         self._forcasted_capex_growth : float = None
         self._forcasted_ebitda : np.ndarray = None
-        self._forcasted_ocf : np.ndarray = None
+        self._forcasted_ocfe : np.ndarray = None
         self._forcasted_capex : np.ndarray = None
 
         self.price_history : pd.DataFrame = None
@@ -484,15 +484,17 @@ class Share(FinancialStatements, FinancialForcast):
 
         vt_multiple = max(self._forcasted_ebitda[-1]* self.value_to_ebitda_bounded,0)
 
+        fcf = self._forcasted_fcfe if self.use_fcfe else self._forcasted_fcff
+
         arr = np.concatenate([np.array([-current_value]), 
-                                self._forcasted_fcf[:-1], 
+                                fcf[:-1], 
                                 np.array([vt_multiple])])
 
         self.forcasted_wacc_multiple = npf.irr(arr)
 
         # Compute target price from market wacc and forcasted fcf
         vt_act = vt_multiple / (1+self.market_wacc)**(self.session_model.nb_year_dcf)
-        fcf_act = self._forcasted_fcf[:-1] / (1+self.market_wacc)**np.arange(1,self.session_model.nb_year_dcf)
+        fcf_act = fcf[:-1] / (1+self.market_wacc)**np.arange(1,self.session_model.nb_year_dcf)
         fcf_act_sum = fcf_act.sum()
         target_current_value = fcf_act_sum + vt_act
         target_market_value = target_current_value
@@ -564,11 +566,12 @@ class Share(FinancialStatements, FinancialForcast):
         self._compute_assumed_g(ocf, up_bound= up_bound)
         # self._compute_assumed_g_ttm(up_bound= up_bound)
 
-        self._forcasted_ocf = self._get_forcasted_ocf()
+        self._set_forcasted_ocf()
         self._set_forcasted_capex()
-        if self._forcasted_ocf is None:
+        if self._forcasted_ocfe is None:
             return
-        self._forcasted_fcf = self._forcasted_ocf - self._forcasted_capex
+        self._forcasted_fcfe = self._forcasted_ocfe - self._forcasted_capex
+        self._forcasted_fcff = self._forcasted_ocff - self._forcasted_capex
         self.forcasted_ebitda_growth = self._get_forcasted_growth(['EBT', 'PRE'])
 
         self._compute_forcasted_wacc_perpetual()
@@ -621,7 +624,7 @@ class Share(FinancialStatements, FinancialForcast):
         """
         # ocf_g = self.forcasted_ocf_growth
 
-        vt_perpetual = self._forcasted_fcf[-1] / (wacc - self.forcasted_ebitda_growth)
+        vt_perpetual = self._forcasted_fcfe[-1] / (wacc - self.forcasted_ebitda_growth)
         
         nb_year_dcf = self.session_model.nb_year_dcf
         vt_act = vt_perpetual / (1+wacc)**(nb_year_dcf)
@@ -630,7 +633,8 @@ class Share(FinancialStatements, FinancialForcast):
         #               fcf * sum of a**k for k from 1 to nb_year_dcf
         # fcf_act_sum = self.ocf * ((ocf_a**nb_year_dcf - 1)/(ocf_a-1) - 1 + ocf_a**(nb_year_dcf))
         # fcf_act_sum -= self.capex * ((capex_a**nb_year_dcf - 1)/(capex_a-1) - 1 + capex_a**(nb_year_dcf))
-        focf_act = self._forcasted_fcf[:-1] / (1+wacc)**np.arange(1,nb_year_dcf)
+        fcf = self._forcasted_fcfe if self.use_fcfe else self._forcasted_fcff
+        focf_act = fcf[:-1] / (1+wacc)**np.arange(1,nb_year_dcf)
         fcf_act_sum = (focf_act).sum()
         enterprise_value = fcf_act_sum + vt_act
         return enterprise_value
@@ -686,61 +690,60 @@ class Share(FinancialStatements, FinancialForcast):
             self.logger.warning(f"{self.name} no valid value to compute growth estimate from {", ".join(ls)}")
             return np.nan
     
-    def _retreive_forcasted_reported_ocfe(self):
-        """
-        Returned reported foracsted ocfe
-        """
-
-        if 'CPS'  in self.y_forcasts:
-            ys = self.y_forcasts['CPS'].dropna()
-            ys *= self.nb_shares
-            return ys
-
-        last_ocfe = self.y_statements['OCFE'].iloc[-1]
-
-        for val in ['EBT', 'EBI', 'NET', 'PRE', 'SAL' ] :
-            if val not in self.y_forcasts:
-                continue
-            ys = self.y_forcasts[val].dropna()
-
-            # rescale variable array to ratio between last stated ocf 
-            # and first variable value  
-            ratio = last_ocfe/ys.iloc[0]
-            if (ys.index[0].year == self.y_statements.index[-1].year) and ratio > 0:
-                ys *= ratio
-                return ys
-        # no forcasted cash flow per share provided
-        print(f"{self.symbol} no cps")
-        return None
-
     
-    def _get_forcasted_ocf(self):
+    def _set_forcasted_ocf(self):
         """
         retruned forcasted ocf array
         """
+        self._forcasted_ocfe = None
         if self.y_forcasts is None:
-            return None
-
-        ys = self._retreive_forcasted_reported_ocfe()
-            
-        if ys is None:
-            return self.ocfe * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
-        
-        if len(ys) >= self.session_model.nb_year_dcf:
-            return ys[:self.session_model.nb_year_dcf]
-
-        # complete forcasted ocf array with value extrapolated from forcasted growth rate
-        ys = np.concat([
-                ys,
-                ys.iloc[-1] * (1+ self.forcasted_ocf_growth)**np.arange(
-                    1,
-                    1 + self.session_model.nb_year_dcf - len(ys))])
-        
-        if (not self.use_fcfe) and 'SNIN' in self.y_statements:
-            interest = self.y_statements['SNIN'].iloc[-1] * (1-self.session_model.taxe_rate)
+            return
+        interest_exp = 0
+        if 'SNIN' in self.y_statements:
             # interest expense assumed constant
-            ys -= interest
-        return ys
+            interest_exp = self.y_statements['SNIN'].iloc[-1] * (1-self.session_model.taxe_rate)
+
+        if 'CPS'  in self.y_forcasts:
+            self._forcasted_ocfe = self.y_forcasts['CPS'].dropna() * self.nb_shares
+            self._forcasted_ocff = self._forcasted_ocfe - interest_exp
+
+        elif ('EBT' in self.y_forcasts) and ('EBI' in self.y_forcasts) :
+            self._forcasted_ocff = (self.y_forcasts['EBT'] - self.session_model.taxe_rate * self.y_forcasts['EBI']).dropna()
+            last_ocff = self.y_statements['OCFF'].iloc[-1]
+            self._forcasted_ocff *= last_ocff/self._forcasted_ocff.iloc[0]
+            self._forcasted_ocfe = self._forcasted_ocff + interest_exp
+        else:
+            last_ocfe = self.y_statements['OCFE'].iloc[-1]
+            for val in ['EBT', 'EBI', 'NET', 'PRE', 'SAL' ] :
+                if val not in self.y_forcasts:
+                    continue
+                ys = self.y_forcasts[val].dropna()
+
+                # rescale variable array to ratio between last stated ocf 
+                # and first variable value  
+                ratio = last_ocfe/ys.iloc[0]
+                if (ys.index[0].year == self.y_statements.index[-1].year) and ratio > 0:
+                    ys *= ratio
+                    self._forcasted_ocfe = ys
+            
+        if self._forcasted_ocfe is None:
+            self.logger.warning(f"{self.name} Forcasted cash flow could not be computed from forcast data")
+            self._forcasted_ocfe = self.ocfe * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
+            self._forcasted_ocff = self._forcasted_ocfe - interest_exp
+            return
+
+        # Set forcast array lenght equal to dcf model nb year
+        if len(self._forcasted_ocfe) >= self.session_model.nb_year_dcf:
+            self._forcasted_ocfe = self._forcasted_ocfe.iloc[:self.session_model.nb_year_dcf]
+        else :
+            # complete forcasted ocf array with value extrapolated from forcasted growth rate
+            self._forcasted_ocfe = np.concat([
+                    self._forcasted_ocfe,
+                    self._forcasted_ocfe.iloc[-1] * (1+ self.forcasted_ocf_growth)**np.arange(
+                        1,
+                        1 + self.session_model.nb_year_dcf - len(self._forcasted_ocfe))])
+        
+        self._forcasted_ocff = self._forcasted_ocfe - interest_exp
 
 
     def _get_forcasted_ebidta(self):

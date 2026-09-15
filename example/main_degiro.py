@@ -50,7 +50,7 @@ if __name__ == "__main__":
 
     rdcf_fcff_anal = RDCFAnal(config_dict)
 
-    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "MBI"] ]
+    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "SU"] ]
     
     rdcf_fcff_anal.retrieve_data()
     summary = rdcf_fcff_anal.process()
