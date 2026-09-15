@@ -196,6 +196,10 @@ class FinancialForcast(Statements):
 
         self.convert_to_price_currency(['y_forcasts'], statements_currency)
 
+        if 'EBT' not in self.y_forcasts:
+            # Set forcasted EBITDA equal to focasted EBIT
+            self.y_forcasts['EBT'] = self.y_forcasts['EBI']
+
     @property
     def forcasted_ocf_growth(self):
         """

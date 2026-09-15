@@ -686,17 +686,19 @@ class Share(FinancialStatements, FinancialForcast):
             self.logger.warning(f"{self.name} no valid value to compute growth estimate from {", ".join(ls)}")
             return np.nan
     
-    def _get_forcasted_ocf(self):
+    def _retreive_forcasted_reported_ocfe(self):
         """
-        retruned forcasted ocf array
+        Returned reported foracsted ocfe
         """
-        if self.y_forcasts is None:
-            return None
 
-        ys = None
+        if 'CPS'  in self.y_forcasts:
+            ys = self.y_forcasts['CPS'].dropna()
+            ys *= self.nb_shares
+            return ys
+
         last_ocfe = self.y_statements['OCFE'].iloc[-1]
-            
-        for val in ['CPS', 'EBT', 'NET', 'PRE', 'SAL' ] :
+
+        for val in ['EBT', 'EBI', 'NET', 'PRE', 'SAL' ] :
             if val not in self.y_forcasts:
                 continue
             ys = self.y_forcasts[val].dropna()
@@ -706,30 +708,40 @@ class Share(FinancialStatements, FinancialForcast):
             ratio = last_ocfe/ys.iloc[0]
             if (ys.index[0].year == self.y_statements.index[-1].year) and ratio > 0:
                 ys *= ratio
-            elif val == 'CPS' :
-                ys *= self.nb_shares
-            else:
-                continue
-            
-            if len(ys) >= self.session_model.nb_year_dcf:
-                return ys[:self.session_model.nb_year_dcf]
-
-            # complete forcasted ocf array with value extrapolated from forcasted growth rate
-            ys = np.concat([
-                    ys,
-                    ys.iloc[-1] * (1+ self.forcasted_ocf_growth)**np.arange(
-                        1,
-                        1 + self.session_model.nb_year_dcf - len(ys))])
-            
-            if (not self.use_fcfe) and 'SNIN' in self.y_statements:
-                interest = self.y_statements['SNIN'].iloc[-1] * (1-self.session_model.taxe_rate)
-                # interest expense assumed constant
-                ys -= interest
-            return ys
-
-        print(f"{self.symbol} no cps")
+                return ys
         # no forcasted cash flow per share provided
-        return self.ocfe * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
+        print(f"{self.symbol} no cps")
+        return None
+
+    
+    def _get_forcasted_ocf(self):
+        """
+        retruned forcasted ocf array
+        """
+        if self.y_forcasts is None:
+            return None
+
+        ys = self._retreive_forcasted_reported_ocfe()
+            
+        if ys is None:
+            return self.ocfe * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
+        
+        if len(ys) >= self.session_model.nb_year_dcf:
+            return ys[:self.session_model.nb_year_dcf]
+
+        # complete forcasted ocf array with value extrapolated from forcasted growth rate
+        ys = np.concat([
+                ys,
+                ys.iloc[-1] * (1+ self.forcasted_ocf_growth)**np.arange(
+                    1,
+                    1 + self.session_model.nb_year_dcf - len(ys))])
+        
+        if (not self.use_fcfe) and 'SNIN' in self.y_statements:
+            interest = self.y_statements['SNIN'].iloc[-1] * (1-self.session_model.taxe_rate)
+            # interest expense assumed constant
+            ys -= interest
+        return ys
+
 
     def _get_forcasted_ebidta(self):
         """
