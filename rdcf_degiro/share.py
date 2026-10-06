@@ -490,6 +490,10 @@ class Share(FinancialStatements, FinancialForcast):
                                 fcf[:-1], 
                                 np.array([vt_multiple])])
 
+        if np.isnan(arr).any():
+            self.logger.warning(f'{self.name} : nan fcf values forcasted found {arr}, can not compute forcasted wacc multiple: ')
+            return
+
         self.forcasted_wacc_multiple = npf.irr(arr)
 
         # Compute target price from market wacc and forcasted fcf

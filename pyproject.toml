@@ -12,7 +12,8 @@ dependencies = [
     "yahooquery",
     "polars",
     "pytz",
-    "xlsxwriter"
+    "xlsxwriter",
+    "curl_cffi"
 ]
 [tool.poetry]
 package-mode = false
