@@ -26,6 +26,7 @@ yahoo_symbol_cor = {
     'MBI' : '8058.T',
     'UBSG' : 'UBS',
     'SMSN' : '005930.KS',
+    'SMSD' : '005935.KS',
     'HY9H' : '000660.KS',
     'HHPD' : '2317.TW'
 }
