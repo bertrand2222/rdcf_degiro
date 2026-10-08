@@ -132,7 +132,7 @@ class RateInfos():
         self.logger.info(f"free risk rate = {self.free_risk_rate*100:.2f}%")
 
         ### eval market rate
-        sptr_6y = yq.Ticker("^SP500TR", asynchronous=True, verify = False).history(period = '6y', interval= "1mo").loc["^SP500TR"]
+        sptr_6y = yq.Ticker("^SP500TR", asynchronous=True).history(period = '6y', interval= "1mo").loc["^SP500TR"]
         sptr_6y_rm = sptr_6y.rolling(2).mean()
         # sptr = yq.Ticker("^SP500TR").history(period = '5y', interval= "1mo").loc["^SP500TR"]
 
@@ -257,7 +257,7 @@ class SessionModelDCF():
         if self.update_statements or( not os.path.isfile(rate_path)):
             try :
                 
-                currency_history = yq.Ticker(rate_symb, asynchronous=True, verify = False).history(period= '6y',
+                currency_history = yq.Ticker(rate_symb, asynchronous=True).history(period= '6y',
                                                                 interval= "1mo"
                                                                 ).loc[rate_symb]
             except KeyError as e:

@@ -20,6 +20,8 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 
 urllib3.disable_warnings()
 
+from requests.exceptions import RetryError
+
 
 # import google.auth
 # from googleapiclient.discovery import build
@@ -327,7 +329,8 @@ class RDCFAnal():
 
             except (PriceRetrieveError, YahooRetrieveError, 
                     KeyError, 
-                    CurlError
+                    CurlError,
+                    RetryError
                     ) as e:
                 self.logger.error(f"{s.name} : Error while retrieving data {type(e).__name__} : {e}   ")
                 continue

@@ -3,8 +3,9 @@ import sys
 import os
 
 import pandas as pd 
+import subprocess
 
-sys.path.append(os.path.join(os.getenv('USERPROFILE'),"rdcf", "rdcf_degiro"))
+sys.path.append("/home/bertrand/Documents/rdcf_degiro")
 
 from rdcf_degiro.analysis import RDCFAnal, RDCFSummary
 
@@ -32,13 +33,13 @@ yahoo_symbol_cor = {
 }
 
 config_dict = {
-    'credential_file_path'          : os.path.join(os.getenv('USERPROFILE'), "OneDrive - Saipem", ".degiro", "credentials.json"),
+    'credential_file_path'          : "/home/bertrand/.degiro/credentials.json",
     'use_beta'                      : False,
     'use_multiple'                  : True,
     'terminal_value_to_ebitda_bounds'  : [0.1, 20],
     'history_avg_nb_year'           : 3,
     'use_last_intraday_price'       : True,
-    'output_folder'                 : r'C:\Users\SAFCOB009150\OneDrive - Saipem\Documents\rdcf_degiro_out',
+    'output_folder'                 : "/home/bertrand/Documents/rdcf_degiro_out",
     'taxe_rate'                     : 0.25,
     'yahoo_symbol_cor'              : yahoo_symbol_cor,
     "update_market_rate"            : False,
