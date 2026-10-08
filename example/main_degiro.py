@@ -18,7 +18,7 @@ from rdcf_degiro.analysis import RDCFAnal, RDCFSummary
 # client_details_table = trading_api.get_client_details()
 
 symbol_params = {
-
+    'EMEIS' : {"value_to_ebitda" : 10,},
     'RIGD' : {"yahoo_tk" : 'RIGD.IL'},
     'MAU' : {"yahoo_tk" : 'MAU.PA'},
     'BY6' : {"yahoo_tk" : 'BYDDY'},

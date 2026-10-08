@@ -41,7 +41,8 @@ class RDCFSummary():
     def __init__(self, df: pd.DataFrame, session_model: SessionModelDCF, name : str = None):
         
         self.df = df
-        self.config = pd.DataFrame.from_dict({**session_model.config_dict, **session_model.rate_info.__dict__}, 
+        self.config = pd.DataFrame.from_dict({**session_model.config_dict, 
+                                              'market_rate' : session_model.rate_info.market_rate,}, 
                                                     orient= 'index').iloc[:,0]
         self.name = name
 
@@ -251,6 +252,11 @@ class RDCFAnal():
             self.retrieve_shares_from_favorites()
         if self.session_model.retrieve_shares_from_portfolio:
             self.retrieve_shares_from_portfolio()
+
+        # Set special params for shares if defined in config_dict
+        for s in self.share_list:
+            if s.symbol in self.session_model.symbol_params.keys():
+                s.special_params = self.session_model.symbol_params[s.symbol]
 
     def retrieve_shares_from_favorites(self):
         """

@@ -192,8 +192,9 @@ class SessionModelDCF():
         self.current_timestamp = time.time()
         self.degiro_api = None
 
+        self.config_dict = config_dict
+
         self.__dict__.update(config_dict)
-        self.config_dict = self.__dict__.copy()
         # Configuration du logger : FileHandler (sans couleur) + console handler coloré
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)

@@ -127,6 +127,8 @@ class Share(FinancialStatements, FinancialForcast):
         self.target_market_value_perpetual : float = None
         self.target_market_price_multiple : float = None
 
+        self.special_params :dict = {}
+
         self.use_fcfe = False
         
         # self.history_growth : float = None # free oerating cash flow compound annual  growth
@@ -400,16 +402,21 @@ class Share(FinancialStatements, FinancialForcast):
         df_multiple['value_to_ocff'] = df_multiple['ENT_VALUE'] / df_multiple['OCFF']
 
         # price to fcf multilple calculated as harmonic mean of history:
-        self.value_to_ebitda = len(df_multiple) / (1 / df_multiple['value_to_ebitda']).sum()
         self.value_to_ocfe = len(df_multiple) / (1 / df_multiple['value_to_ocfe']).sum()
         self.value_to_ocff = len(df_multiple) / (1 / df_multiple['value_to_ocff']).sum()
 
         # self.value_to_ebitda = np.median(df_multiple['value_to_ebitda'])
 
         boud_i, bound_s = self.session_model.terminal_value_to_ebitda_bounds
-        self.value_to_ebitda_bounded = max( boud_i, 1 / max(1/self.value_to_ebitda, 1/bound_s))
         self.value_to_ocfe_bounded = max( boud_i, 1 / max(1/self.value_to_ocfe, 1/bound_s))
         self.value_to_ocff_bounded = max( boud_i, 1 / max(1/self.value_to_ocff, 1/bound_s))
+
+        if "value_to_ebitda" in self.special_params:
+            self.value_to_ebitda = self.special_params["value_to_ebitda"]
+            self.value_to_ebitda_bounded = self.special_params["value_to_ebitda"]
+        else :
+            self.value_to_ebitda = len(df_multiple) / (1 / df_multiple['value_to_ebitda']).sum()
+            self.value_to_ebitda_bounded = max( boud_i, 1 / max(1/self.value_to_ebitda, 1/bound_s))
 
         return(0)
         
