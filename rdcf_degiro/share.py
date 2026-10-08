@@ -386,12 +386,14 @@ class Share(FinancialStatements, FinancialForcast):
                                 y_statements[["QTCO" , 'EBITDA', 'STLD', 'OCFE', 'OCFF'] + self.cash_code]
                                 ], axis = 0).sort_index().ffill().dropna()
 
+        df_multiple['ENT_PRICE'] = df_multiple['QTCO'] * df_multiple['close']
+
         if self.use_fcfe:
             # Set entreprise value as equity value and use FCFE method
-            df_multiple['ENT_VALUE'] = df_multiple['QTCO'] * df_multiple['close']
+            df_multiple['ENT_VALUE'] = df_multiple['ENT_PRICE']
         else :
             # Get real entreprise value and use FCFF method
-            df_multiple['ENT_VALUE'] = df_multiple['QTCO'] * df_multiple['close'] + df_multiple['STLD'] - df_multiple[self.cash_code].sum(axis = 1)
+            df_multiple['ENT_VALUE'] = df_multiple['ENT_PRICE'] + df_multiple['STLD'] - df_multiple[self.cash_code].sum(axis = 1)
         
         df_multiple['value_to_ebitda'] = df_multiple['ENT_VALUE'] / df_multiple['EBITDA']
         df_multiple['value_to_ocfe'] = df_multiple['ENT_VALUE'] / df_multiple['OCFE']
@@ -491,7 +493,7 @@ class Share(FinancialStatements, FinancialForcast):
                                 np.array([vt_multiple])])
 
         if np.isnan(arr).any():
-            self.logger.warning(f'{self.name} : nan fcf values forcasted found {arr}, can not compute forcasted wacc multiple: ')
+            self.logger.error(f'{self.name} : nan fcf values forcasted found {arr}, can not compute forcasted wacc multiple: ')
             return
 
         self.forcasted_wacc_multiple = npf.irr(arr)

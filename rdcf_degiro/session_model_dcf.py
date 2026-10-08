@@ -180,7 +180,7 @@ class SessionModelDCF():
         self.output_folder = os.getenv("TEMP")
         self.taxe_rate = 0.25
         self.output_name = "rdcf"
-        self.yahoo_symbol_cor = None
+        self.symbol_params = None
         self.retrieve_shares_from_favorites = True
         self.retrieve_shares_from_portfolio = True
         self.update_market_rate = False

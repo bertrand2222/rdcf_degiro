@@ -342,8 +342,8 @@ class FinancialStatements(Statements):
         self.logger.info(f'{self.name} : retrieves financial statement from yahoo             ')
 
         symb = self.symbol
-        if self.symbol in self.session_model.yahoo_symbol_cor:
-            symb = self.session_model.yahoo_symbol_cor[symb]
+        if self.symbol in self.session_model.symbol_params:
+            symb = self.session_model.symbol_params.get("yahoo_tk",symb)
 
         y_statements_path = os.path.join(self.session_model.output_folder,
                                          f"{self.symbol}_y_statement.pckl")

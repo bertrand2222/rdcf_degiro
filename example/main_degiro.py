@@ -17,19 +17,19 @@ from rdcf_degiro.analysis import RDCFAnal, RDCFSummary
 # trading_api.connect()
 # client_details_table = trading_api.get_client_details()
 
-yahoo_symbol_cor = {
+symbol_params = {
 
-    'RIGD' : 'RIGD.IL',
-    'MAU' : 'MAU.PA',
-    'BY6' : 'BYDDY',
-    'TKY' : '8035.T',
-    '3CP' : 'XIACY',
-    'MBI' : '8058.T',
-    'UBSG' : 'UBS',
-    'SMSN' : '005930.KS',
-    'SMSD' : '005935.KS',
-    'HY9H' : '000660.KS',
-    'HHPD' : '2317.TW'
+    'RIGD' : {"yahoo_tk" : 'RIGD.IL'},
+    'MAU' : {"yahoo_tk" : 'MAU.PA'},
+    'BY6' : {"yahoo_tk" : 'BYDDY'},
+    'TKY' : {"yahoo_tk" : '8035.T'},
+    '3CP' : {"yahoo_tk" : 'XIACY'},
+    'MBI' : {"yahoo_tk" : '8058.T'},
+    'UBSG' : {"yahoo_tk" : 'UBS'},
+    'SMSN' : {"yahoo_tk" : '005930.KS'},
+    'SMSD' : {"yahoo_tk" : '005935.KS'},
+    'HY9H' : {"yahoo_tk" : '000660.KS'},
+    'HHPD' : {"yahoo_tk" : '2317.TW'}
 }
 
 config_dict = {
@@ -41,7 +41,7 @@ config_dict = {
     'use_last_intraday_price'       : True,
     'output_folder'                 : "/home/bertrand/Documents/rdcf_degiro_out",
     'taxe_rate'                     : 0.25,
-    'yahoo_symbol_cor'              : yahoo_symbol_cor,
+    'symbol_params'              : symbol_params,
     "update_market_rate"            : False,
     'update_statements'             : False,
     'nb_year_dcf'                   : 10
