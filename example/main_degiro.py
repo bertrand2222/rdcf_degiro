@@ -27,7 +27,9 @@ symbol_params = {
     'MBI' : {"yahoo_tk" : '8058.T'},
     'UBSG' : {"yahoo_tk" : 'UBS'},
     'SMSN' : {"yahoo_tk" : '005930.KS'},
-    'SMSD' : {"yahoo_tk" : '005935.KS'},
+    'SMSD' : {"yahoo_tk" : '005935.KS',
+              "price_currency" : "KRW",
+              "price_from" : "yahoo"},
     'HY9H' : {"yahoo_tk" : '000660.KS'},
     'HHPD' : {"yahoo_tk" : '2317.TW'}
 }
@@ -43,7 +45,7 @@ config_dict = {
     'taxe_rate'                     : 0.25,
     'symbol_params'              : symbol_params,
     "update_market_rate"            : False,
-    'update_statements'             : False,
+    'update_statements'             : True,
     'nb_year_dcf'                   : 10
 }
 # outfile = os.path.join(os.environ["USERPROFILE"], r"Documents\rdcf.xlsx")
@@ -52,7 +54,7 @@ if __name__ == "__main__":
 
     rdcf_fcff_anal = RDCFAnal(config_dict)
 
-    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "SU"] ]
+    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "SMSD"] ]
     
     rdcf_fcff_anal.retrieve_data()
     summary = rdcf_fcff_anal.process()

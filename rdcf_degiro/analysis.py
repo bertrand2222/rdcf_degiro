@@ -253,10 +253,6 @@ class RDCFAnal():
         if self.session_model.retrieve_shares_from_portfolio:
             self.retrieve_shares_from_portfolio()
 
-        # Set special params for shares if defined in config_dict
-        for s in self.share_list:
-            if s.symbol in self.session_model.symbol_params.keys():
-                s.special_params = self.session_model.symbol_params[s.symbol]
 
     def retrieve_shares_from_favorites(self):
         """
@@ -334,9 +330,9 @@ class RDCFAnal():
                         self.logger.warning(f"{e} can not retrieve data from {retrieve_from}")
 
             except (PriceRetrieveError, YahooRetrieveError, 
-                    KeyError, 
+                    # KeyError, 
                     CurlError,
-                    RetryError
+                    # RetryError
                     ) as e:
                 self.logger.error(f"{s.name} : Error while retrieving data {type(e).__name__} : {e}   ")
                 continue

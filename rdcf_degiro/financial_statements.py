@@ -7,6 +7,8 @@ import pandas as pd
 import numpy as np
 import yahooquery as yq
 from dateutil.relativedelta import relativedelta
+from requests.exceptions import RetryError
+
 # from sklearn.linear_model import LinearRegression
 # import matplotlib.pylab as plt
 OVERLAPING_DAYS_TOL = 7
@@ -334,6 +336,42 @@ class FinancialStatements(Statements):
         z = np.polyfit(df['year'],y, deg = 1)
         return np.exp(z[0]) - 1
 
+    def get_yahoo_financial_src(self):
+
+        symb = self.symbol
+        if "yahoo_tk" in self.special_params:
+            symb = self.special_params["yahoo_tk"]
+
+        y_statements_path = os.path.join(self.session_model.output_folder,
+                                                 f"{self.symbol}_y_statement.pckl")
+        q_statements_path = os.path.join(self.session_model.output_folder,
+                                                 f"{self.symbol}_q_statement.pckl")
+        
+
+        if self.session_model.update_statements_need(y_statements_path):
+            tk = self.yq_tk
+
+            try :
+                y_statements : pd.DataFrame = tk.get_financial_data(YA_DATA)
+                if not isinstance(y_statements, pd.DataFrame):
+                    raise YahooRetrieveError(
+                        f"{symb} symbol not available in yahoo database")
+                y_statements.to_pickle(y_statements_path)
+                q_statements : pd.DataFrame = tk.get_financial_data(YA_DATA , frequency= "q",
+                                                        trailing= False).set_index('asOfDate')
+
+                q_statements.to_pickle(q_statements_path)
+                return y_statements, q_statements
+
+            except RetryError as e:
+                self.logger.warning(f'{self.name} : failed to update financial data from yahoo {e}')
+
+        y_statements : pd.DataFrame = pd.read_pickle(y_statements_path)
+        q_statements : pd.DataFrame = pd.read_pickle(q_statements_path)
+
+        return y_statements, q_statements
+
+
     def yahoo_financial_retrieve(self):
 
         """
@@ -341,29 +379,7 @@ class FinancialStatements(Statements):
         """
         self.logger.info(f'{self.name} : retrieves financial statement from yahoo             ')
 
-        symb = self.symbol
-        if self.symbol in self.session_model.symbol_params:
-            symb = self.session_model.symbol_params.get("yahoo_tk",symb)
-
-        y_statements_path = os.path.join(self.session_model.output_folder,
-                                         f"{self.symbol}_y_statement.pckl")
-        q_statements_path = os.path.join(self.session_model.output_folder,
-                                         f"{self.symbol}_q_statement.pckl")
-
-        if self.session_model.update_statements_need(y_statements_path):
-            tk = yq.Ticker(symb, asynchronous=False, verify = False)
-            y_statements : pd.DataFrame = tk.get_financial_data(YA_DATA)
-            if not isinstance(y_statements, pd.DataFrame):
-                raise YahooRetrieveError(
-                    f"{symb} symbol not available in yahoo database")
-            y_statements.to_pickle(y_statements_path)
-            q_statements : pd.DataFrame = tk.get_financial_data(YA_DATA , frequency= "q",
-                                                        trailing= False).set_index('asOfDate')
-
-            q_statements.to_pickle(q_statements_path)
-        else:
-            y_statements : pd.DataFrame = pd.read_pickle(y_statements_path)
-            q_statements : pd.DataFrame = pd.read_pickle(q_statements_path)
+        y_statements, q_statements = self.get_yahoo_financial_src()
 
         if not isinstance(y_statements, pd.DataFrame):
             raise TypeError('financial data is not a valid dataframe')
@@ -431,6 +447,7 @@ class FinancialStatements(Statements):
 
         self.nb_shares = self.y_statements["QTCO"].iloc[-1]
         self.statements_currency = y_statements['currencyCode'].iloc[-1]
+
         self.convert_to_price_currency(['y_statements',
                                         'q_inc_statements',
                                         'q_bal_statements', 

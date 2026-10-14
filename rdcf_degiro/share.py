@@ -6,9 +6,11 @@ import numpy_financial as npf
 from scipy.optimize import minimize_scalar
 from degiro_connector.quotecast.models.chart import ChartRequest, Interval
 from dateutil.relativedelta import relativedelta
-
+import yahooquery as yq
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 from rdcf_degiro.financial_statements import FinancialStatements, FinancialForcast, DegiroRetrieveError
+from requests.exceptions import RetryError
+
 
 ERROR_QUERRY_PRICE = 2
 TOLERANCE_MINIMIZE = 1e-2
@@ -152,29 +154,32 @@ class Share(FinancialStatements, FinancialForcast):
             raise TypeError(
             f"not valid {series_id_name} type : {type(serie_id)}  history\
                              chart not available for the quote") from e
-
-    def retrieve_history(self):
-        """
-        retrieve current history from charts
-        """
         
-        self.logger.info(f'{self.name} : retrieves price history                      ')
+        # Set special params for shares if defined in config_dict
+        if self.symbol in self.session_model.symbol_params.keys():
+            self.special_params = self.session_model.symbol_params[self.symbol]
+            if "yahoo_tk" in self.special_params:
+                self.yq_tk = yq.Ticker(self.special_params["yahoo_tk"])
+            self.share_currency = self.special_params.get("price_currency", self.share_currency)
+            
+
+    def retrieve_price_history_from_degiro(self):
 
         chart_request = ChartRequest(
-            culture="fr-FR",
-            # culture = "en-US",
+                    culture="fr-FR",
+                    # culture = "en-US",
+                
+                    period=Interval.P5Y,
+                    requestid="1",
+                    resolution=Interval.P1M,
         
-            period=Interval.P5Y,
-            requestid="1",
-            resolution=Interval.P1M,
-
-            series=[
-                # "issueid:360148977"+ self.vwd_id ,
-                self.price_series_str,
-            ],
-            tz="Europe/Paris",
-            )
-
+                    series=[
+                        # "issueid:360148977"+ self.vwd_id ,
+                        self.price_series_str,
+                    ],
+                    tz="Europe/Paris",
+                    )
+        
         chart = self.session_model.degiro_chart_fetcher.get_chart(
             chart_request=chart_request,
             raw=False,
@@ -192,8 +197,42 @@ class Share(FinancialStatements, FinancialForcast):
         last_day_current_month = last_day_of_month(chart.series[0].expires)
         history['date'] = [last_day_current_month - relativedelta(months= i) for i in history['time'][::-1]]
 
-        self.price_history = history.set_index('date').tz_localize(None)
-    
+        self.price_history =  history.set_index('date').tz_localize(None)
+
+    def retrieve_price_history_from_yahoo(self):
+
+        y_price_path = os.path.join(self.session_model.output_folder,
+                                                         f"{self.symbol}_y_price.pckl")
+
+        try :
+            yahoo_hist = self.yq_tk.history(period="5y", interval="1mo")['adjclose'].to_frame('close')
+            yahoo_hist.to_pickle(y_price_path)
+
+        except RetryError as e:
+            self.logger.warning(f'{self.name} : failed to update price history from yahoo {e}')
+            yahoo_hist = pd.read_pickle(y_price_path)
+
+        price_history =  yahoo_hist.reset_index()
+        price_history['date'] = pd.to_datetime(price_history['date'],  utc=True)
+        self.price_history = price_history.set_index("date").tz_localize(None)
+
+        self.current_price = yahoo_hist['close'].iloc[-1]
+
+
+
+    def retrieve_price_history(self):
+        """
+        retrieve current history from charts
+        """
+        
+        self.logger.info(f'{self.name} : retrieves price history                      ')
+
+        if self.special_params.get("price_from", None) == "yahoo":
+            self.retrieve_price_history_from_yahoo()
+        else:
+            self.retrieve_price_history_from_degiro()
+
+
         self.price_history_in_financial_currency = self.price_history[['close']].copy()
     
     def retrieve_intra_day_price(self):
@@ -388,6 +427,7 @@ class Share(FinancialStatements, FinancialForcast):
                                 y_statements[["QTCO" , 'EBITDA', 'STLD', 'OCFE', 'OCFF'] + self.cash_code]
                                 ], axis = 0).sort_index().ffill().dropna()
 
+
         df_multiple['ENT_PRICE'] = df_multiple['QTCO'] * df_multiple['close']
 
         if self.use_fcfe:
@@ -400,6 +440,7 @@ class Share(FinancialStatements, FinancialForcast):
         df_multiple['value_to_ebitda'] = df_multiple['ENT_VALUE'] / df_multiple['EBITDA']
         df_multiple['value_to_ocfe'] = df_multiple['ENT_VALUE'] / df_multiple['OCFE']
         df_multiple['value_to_ocff'] = df_multiple['ENT_VALUE'] / df_multiple['OCFF']
+
 
         # price to fcf multilple calculated as harmonic mean of history:
         self.value_to_ocfe = len(df_multiple) / (1 / df_multiple['value_to_ocfe']).sum()
@@ -436,10 +477,10 @@ class Share(FinancialStatements, FinancialForcast):
         except KeyError as e:
             self.logger.warning(f'{self.name} : can not retrieve financial forcast from degiro, {e}')
 
-        try:
-            self.retrieve_history()
-        except (KeyError) as e:
-            raise KeyError(f'error while retrieving price history, {e}') from e
+        self.retrieve_price_history()
+        # try:
+        # except (KeyError) as e:
+        #     raise KeyError(f'error while retrieving price history, {e}') from e
         
         try :
             self.retrieve_values()
