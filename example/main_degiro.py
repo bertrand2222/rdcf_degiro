@@ -31,7 +31,10 @@ symbol_params = {
               "price_currency" : "KRW",
               "price_from" : "yahoo"},
     'HY9H' : {"yahoo_tk" : '000660.KS'},
-    'HHPD' : {"yahoo_tk" : '2317.TW'}
+    'HHPD' : {"yahoo_tk" : '2317.TW'},
+    'SONY' : {"yahoo_tk" : '6758.T',
+              "price_currency" : "JPY",
+              "price_from" : "yahoo"}
 }
 
 config_dict = {
@@ -45,7 +48,7 @@ config_dict = {
     'taxe_rate'                     : 0.25,
     'symbol_params'              : symbol_params,
     "update_market_rate"            : False,
-    'update_statements'             : True,
+    'update_statements'             : False,
     'nb_year_dcf'                   : 10
 }
 # outfile = os.path.join(os.environ["USERPROFILE"], r"Documents\rdcf.xlsx")

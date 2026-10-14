@@ -258,7 +258,7 @@ class SessionModelDCF():
         if self.update_statements or( not os.path.isfile(rate_path)):
             try :
                 
-                currency_history = yq.Ticker(rate_symb, asynchronous=True).history(period= '6y',
+                currency_history = yq.Ticker(rate_symb,).history(period= '6y',
                                                                 interval= "1mo"
                                                                 ).loc[rate_symb]
             except KeyError as e:

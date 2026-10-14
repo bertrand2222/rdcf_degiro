@@ -132,6 +132,7 @@ class Share(FinancialStatements, FinancialForcast):
         self.special_params :dict = {}
 
         self.use_fcfe = False
+        self.error_msg = ""
         
         # self.history_growth : float = None # free oerating cash flow compound annual  growth
 
@@ -205,7 +206,7 @@ class Share(FinancialStatements, FinancialForcast):
                                                          f"{self.symbol}_y_price.pckl")
 
         try :
-            yahoo_hist = self.yq_tk.history(period="5y", interval="1mo")['adjclose'].to_frame('close')
+            yahoo_hist = self.yq_tk.history(period="5y", interval="1mo")['adjclose'].to_frame('close').loc[self.special_params["yahoo_tk"]]
             yahoo_hist.to_pickle(y_price_path)
 
         except RetryError as e:

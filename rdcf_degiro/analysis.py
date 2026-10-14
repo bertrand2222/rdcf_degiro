@@ -330,16 +330,18 @@ class RDCFAnal():
                         self.logger.warning(f"{e} can not retrieve data from {retrieve_from}")
 
             except (PriceRetrieveError, YahooRetrieveError, 
-                    # KeyError, 
+                    KeyError, 
                     CurlError,
-                    # RetryError
+                    RetryError
                     ) as e:
-                self.logger.error(f"{s.name} : Error while retrieving data {type(e).__name__} : {e}   ")
+                s.error_msg = f"Error while retrieving data {type(e).__name__} : {e}   "
+                self.logger.error(f"{s.name} : {s.error_msg}")
                 continue
 
     def process(self) :
 
         valid_share_list = [s for s in self.share_list if s.valid_retrieve]
+        not_valid_share_list = [s for s in self.share_list if not s.valid_retrieve]
 
         if not valid_share_list :
             print('no share whith valid data, run retrieve_data() first')
@@ -356,7 +358,7 @@ class RDCFAnal():
         
 
 
-        df = pd.DataFrame.from_records(index = [s.symbol for s in valid_share_list],
+        valid_df = pd.DataFrame.from_records(index = [s.symbol for s in valid_share_list],
                           data= [
                               {
                                 'short_name' :          s.name  ,
@@ -387,13 +389,20 @@ class RDCFAnal():
                                 # 'price_to_book' :       s.price_to_book ,
                                 'total_payout_ratio' :  s.total_payout_ratio,
                                 # 'market_cap_reliable' : s.market_cap_reliable,
-                                'enterprise_value' : s.enterprise_value
+                                'enterprise_value' : s.enterprise_value,
+                                'error_msg': s.error_msg
                                     } for s in valid_share_list])
-
-
+        
+        unvalid_df = pd.DataFrame.from_records(index=[s.symbol for s in not_valid_share_list],
+                                               data=[{
+                                                   'short_name': s.name,
+                                                   'error_msg': s.error_msg
+                                                  
+                                               } for s in not_valid_share_list])
+        valid_df.sort_values(by = ['forcasted_capital_cost_multiple',]  , inplace= True, ascending= False)
+        df = pd.concat([valid_df, unvalid_df])
         self.degiro_api.logout()
 
-        df.sort_values(by = ['forcasted_capital_cost_multiple',]  , inplace= True, ascending= False)
 
         summary = RDCFSummary(df, self.session_model)
         return summary

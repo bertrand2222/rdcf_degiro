@@ -339,8 +339,9 @@ class FinancialStatements(Statements):
     def get_yahoo_financial_src(self):
 
         symb = self.symbol
-        if "yahoo_tk" in self.special_params:
-            symb = self.special_params["yahoo_tk"]
+        if "yahoo_tk" not in self.special_params:
+            raise KeyError(f"{symb} : yahoo_tk not defined in special_params")
+        symb = self.special_params["yahoo_tk"]
 
         y_statements_path = os.path.join(self.session_model.output_folder,
                                                  f"{self.symbol}_y_statement.pckl")
