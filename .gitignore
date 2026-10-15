@@ -3,3 +3,4 @@ rdcf_degiro/__pycache__/
 rdcf_degiro/.vscode/settings.json
 .venv/
 poetry.lock
+rdcf_test.py

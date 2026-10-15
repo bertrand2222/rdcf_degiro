@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import requests
 from lxml import html
 import pandas as pd
-import yahooquery as yq
+import yfinance as yf
 from dateutil.relativedelta import relativedelta
 from degiro_connector.trading.api import API
 from degiro_connector.quotecast.tools.chart_fetcher import ChartFetcher
@@ -132,9 +132,9 @@ class RateInfos():
         self.logger.info(f"free risk rate = {self.free_risk_rate*100:.2f}%")
 
         ### eval market rate
-        sptr_6y = yq.Ticker("^SP500TR", asynchronous=True).history(period = '6y', interval= "1mo").loc["^SP500TR"]
+        sptr_6y = yf.Ticker("^SP500TR").history(period = '6y', interval= "1mo")
         sptr_6y_rm = sptr_6y.rolling(2).mean()
-        # sptr = yq.Ticker("^SP500TR").history(period = '5y', interval= "1mo").loc["^SP500TR"]
+        # sptr = yf.Ticker("^SP500TR").history(period = '5y', interval= "1mo").loc["^SP500TR"]
 
         last_date = sptr_6y.index[-2]
         time_delta = NO_HISTORY_YEAR
@@ -144,7 +144,7 @@ class RateInfos():
 
         # delta = relativedelta(last_date, past_date)
         # timeDelta = delta.years + delta.months / 12 + delta.days / 365
-        self.market_rate =  (sptr_rm.loc[last_date]['close'] / sptr_rm.loc[past_date]['close'])**(1/time_delta) - 1 # S&P 500 mean year rate over 5 years
+        self.market_rate =  (sptr_rm.loc[last_date]['Close'] / sptr_rm.loc[past_date]['Close'])**(1/time_delta) - 1 # S&P 500 mean year rate over 5 years
         self.logger.info(f"market rate = {self.market_rate*100:.2f}%")
 
     
@@ -258,20 +258,22 @@ class SessionModelDCF():
         if self.update_statements or( not os.path.isfile(rate_path)):
             try :
                 
-                currency_history = yq.Ticker(rate_symb,).history(period= '6y',
+                currency_history = yf.Ticker(rate_symb,).history(period= '6y',
                                                                 interval= "1mo"
-                                                                ).loc[rate_symb]
+                                                                )
             except KeyError as e:
                 raise KeyError(f'rate symbol {rate_symb} not found in yahoofinance database') from e
             
             currency_history.to_pickle(rate_path)
         else :
             currency_history = pd.read_pickle(rate_path)
+        self.rate_history_dic[rate_symb] = currency_history[["Close"]].iloc[:-1].rename(
+            columns = {'Close' : 'change_rate'}).tz_localize(None)
+        
+        # .reindex(
+        #         pd.to_datetime(currency_history.index[:-1])).tz_localize(None)
 
-        self.rate_history_dic[rate_symb] = currency_history[["close"]].iloc[:-1].rename(
-            columns = {'close' : 'change_rate'}).reindex(
-                pd.to_datetime(currency_history.index[:-1]))
-        self.rate_current_dic[rate_symb] = currency_history["close"].iloc[-1]
+        self.rate_current_dic[rate_symb] = currency_history["Close"].iloc[-1]
 
     def update_statements_need(self, path: str) -> bool :
         """

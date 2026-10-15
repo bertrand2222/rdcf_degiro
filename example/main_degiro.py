@@ -47,7 +47,7 @@ config_dict = {
     'output_folder'                 : "/home/bertrand/Documents/rdcf_degiro_out",
     'taxe_rate'                     : 0.25,
     'symbol_params'              : symbol_params,
-    "update_market_rate"            : False,
+    "update_market_rate"            : True,
     'update_statements'             : False,
     'nb_year_dcf'                   : 10
 }

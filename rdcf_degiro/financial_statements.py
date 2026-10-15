@@ -139,12 +139,12 @@ class Statements():
                     val,
                     self.session_model.rate_history_dic[rate_symb] / self.rate_factor
                     ], axis = 0
-                    ).sort_index()
+                    )
+            new_df = new_df.sort_index()
             new_df['change_rate'] = new_df['change_rate'].ffill()
             new_df = new_df.dropna(axis=0, subset= convert_value_cols )
             new_df[convert_value_cols] = new_df[convert_value_cols].multiply(
                 new_df['change_rate'], axis= 0)
-
             return new_df
 
         val.loc[:,convert_value_cols] /= self.rate_factor
@@ -350,15 +350,14 @@ class FinancialStatements(Statements):
         
 
         if self.session_model.update_statements_need(y_statements_path):
-            tk = self.yq_tk
 
             try :
-                y_statements : pd.DataFrame = tk.get_financial_data(YA_DATA)
+                y_statements : pd.DataFrame = self.yq_tk.get_financial_data(YA_DATA)
                 if not isinstance(y_statements, pd.DataFrame):
                     raise YahooRetrieveError(
                         f"{symb} symbol not available in yahoo database")
                 y_statements.to_pickle(y_statements_path)
-                q_statements : pd.DataFrame = tk.get_financial_data(YA_DATA , frequency= "q",
+                q_statements : pd.DataFrame = self.yq_tk.get_financial_data(YA_DATA , frequency= "q",
                                                         trailing= False).set_index('asOfDate')
 
                 q_statements.to_pickle(q_statements_path)

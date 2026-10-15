@@ -6,6 +6,7 @@ import numpy_financial as npf
 from scipy.optimize import minimize_scalar
 from degiro_connector.quotecast.models.chart import ChartRequest, Interval
 from dateutil.relativedelta import relativedelta
+import yfinance as yf
 import yahooquery as yq
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 from rdcf_degiro.financial_statements import FinancialStatements, FinancialForcast, DegiroRetrieveError
@@ -78,7 +79,6 @@ class Share(FinancialStatements, FinancialForcast):
         self.forcasted_ebitda_growth : float = None
         self._forcasted_ocf_growth : float = None
         self._forcasted_capex_growth : float = None
-        self._forcasted_ebitda : np.ndarray = None
         self._forcasted_ocfe : np.ndarray = None
         self._forcasted_capex : np.ndarray = None
 
@@ -160,6 +160,7 @@ class Share(FinancialStatements, FinancialForcast):
         if self.symbol in self.session_model.symbol_params.keys():
             self.special_params = self.session_model.symbol_params[self.symbol]
             if "yahoo_tk" in self.special_params:
+                self.yahoo_tk = yf.Ticker(self.special_params["yahoo_tk"])
                 self.yq_tk = yq.Ticker(self.special_params["yahoo_tk"])
             self.share_currency = self.special_params.get("price_currency", self.share_currency)
             
@@ -206,7 +207,7 @@ class Share(FinancialStatements, FinancialForcast):
                                                          f"{self.symbol}_y_price.pckl")
 
         try :
-            yahoo_hist = self.yq_tk.history(period="5y", interval="1mo")['adjclose'].to_frame('close').loc[self.special_params["yahoo_tk"]]
+            yahoo_hist = self.yahoo_tk.history(period="5y", interval="1mo")[['Close']]
             yahoo_hist.to_pickle(y_price_path)
 
         except RetryError as e:
@@ -430,27 +431,21 @@ class Share(FinancialStatements, FinancialForcast):
 
 
         df_multiple['ENT_PRICE'] = df_multiple['QTCO'] * df_multiple['close']
-
-        if self.use_fcfe:
-            # Set entreprise value as equity value and use FCFE method
-            df_multiple['ENT_VALUE'] = df_multiple['ENT_PRICE']
-        else :
-            # Get real entreprise value and use FCFF method
-            df_multiple['ENT_VALUE'] = df_multiple['ENT_PRICE'] + df_multiple['STLD'] - df_multiple[self.cash_code].sum(axis = 1)
+        df_multiple['ENT_VALUE'] = df_multiple['ENT_PRICE'] + df_multiple['STLD'] - df_multiple[self.cash_code].sum(axis = 1)
         
         df_multiple['value_to_ebitda'] = df_multiple['ENT_VALUE'] / df_multiple['EBITDA']
-        df_multiple['value_to_ocfe'] = df_multiple['ENT_VALUE'] / df_multiple['OCFE']
         df_multiple['value_to_ocff'] = df_multiple['ENT_VALUE'] / df_multiple['OCFF']
+        df_multiple['price_to_ocfe'] = df_multiple['ENT_PRICE'] / df_multiple['OCFE']
 
 
         # price to fcf multilple calculated as harmonic mean of history:
-        self.value_to_ocfe = len(df_multiple) / (1 / df_multiple['value_to_ocfe']).sum()
+        self.price_to_ocfe = len(df_multiple) / (1 / df_multiple['price_to_ocfe']).sum()
         self.value_to_ocff = len(df_multiple) / (1 / df_multiple['value_to_ocff']).sum()
 
         # self.value_to_ebitda = np.median(df_multiple['value_to_ebitda'])
 
         boud_i, bound_s = self.session_model.terminal_value_to_ebitda_bounds
-        self.value_to_ocfe_bounded = max( boud_i, 1 / max(1/self.value_to_ocfe, 1/bound_s))
+        self.price_to_ocfe_bounded = max( boud_i, 1 / max(1/self.price_to_ocfe, 1/bound_s))
         self.value_to_ocff_bounded = max( boud_i, 1 / max(1/self.value_to_ocff, 1/bound_s))
 
         if "value_to_ebitda" in self.special_params:
@@ -531,9 +526,11 @@ class Share(FinancialStatements, FinancialForcast):
 
         current_value = self.market_cap if self.use_fcfe else self.enterprise_value
 
-        self._forcasted_ebitda = self._get_forcasted_ebidta()
-
-        vt_multiple = max(self._forcasted_ebitda[-1]* self.value_to_ebitda_bounded,0)
+        if self.use_fcfe:
+            vt_multiple = max(self._forcasted_ocfe[-1]* self.price_to_ocfe_bounded,0)
+        else :
+            forcasted_ebitda = self._get_forcasted_ebidta()
+            vt_multiple = max(forcasted_ebitda[-1]* self.value_to_ebitda_bounded,0)
 
         fcf = self._forcasted_fcfe if self.use_fcfe else self._forcasted_fcff
 
@@ -655,8 +652,8 @@ class Share(FinancialStatements, FinancialForcast):
         nb_year_dcf = self.session_model.nb_year_dcf
         if vt is None:
             if self.session_model.use_multiple :
-                terminal_value = self.value_to_ocfe_bounded if self.use_fcfe else self.value_to_ocff_bounded
-                vt = ocf * (1+g)**(nb_year_dcf ) * terminal_value
+                terminal_value_multiple = self.price_to_ocfe_bounded if self.use_fcfe else self.value_to_ocff_bounded
+                vt = ocf * (1+g)**(nb_year_dcf ) * terminal_value_multiple
             else :
                 vt = ocf * (1+g)**(nb_year_dcf ) / (wacc - g)
         vt_act = vt / (1+wacc)**(nb_year_dcf)
@@ -665,9 +662,12 @@ class Share(FinancialStatements, FinancialForcast):
         fcf_ar = fcf * (1+g) ** np.arange(1,1 + nb_year_dcf)
         fcf_act_sum = fcf_ar.sum()
         value = fcf_act_sum + vt_act
-        if not self.use_fcfe:
-            return (value/self.enterprise_value -1)**2
-        return (value/self.market_cap -1)**2
+
+        # Compare value to the market price of the company if use Free Cash Flow to Equity (FCFE) or 
+        # Compare value to the total value of the company if use Free Cash Flow to Firm (FCFF) 
+        if self.use_fcfe:
+            return (value/self.market_cap -1)**2
+        return (value/self.enterprise_value -1)**2
 
 
     def _compute_value_perpetual(self, wacc : float):
@@ -759,15 +759,18 @@ class Share(FinancialStatements, FinancialForcast):
             interest_exp = self.y_statements['SNIN'].iloc[-1] * (1-self.session_model.taxe_rate)
 
         if 'CPS'  in self.y_forcasts:
+            # compute forcasted ocf from forcasted cash flow per share
             self._forcasted_ocfe = self.y_forcasts['CPS'].dropna() * self.nb_shares
             self._forcasted_ocff = self._forcasted_ocfe - interest_exp
 
         elif ('EBT' in self.y_forcasts) and ('EBI' in self.y_forcasts) :
+            # compute forcasted ocf from forcasted ebitda and ebit
             self._forcasted_ocff = (self.y_forcasts['EBT'] - self.session_model.taxe_rate * self.y_forcasts['EBI']).dropna()
             last_ocff = self.y_statements['OCFF'].iloc[-1]
             self._forcasted_ocff *= last_ocff/self._forcasted_ocff.iloc[0]
             self._forcasted_ocfe = self._forcasted_ocff + interest_exp
         else:
+            # compute forcasted ocf from forcasted ebitda, ebt, net income, pretax income or sales growth
             last_ocfe = self.y_statements['OCFE'].iloc[-1]
             for val in ['EBT', 'EBI', 'NET', 'PRE', 'SAL' ] :
                 if val not in self.y_forcasts:
