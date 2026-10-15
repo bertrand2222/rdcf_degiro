@@ -7,7 +7,6 @@ from scipy.optimize import minimize_scalar
 from degiro_connector.quotecast.models.chart import ChartRequest, Interval
 from dateutil.relativedelta import relativedelta
 import yfinance as yf
-import yahooquery as yq
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 from rdcf_degiro.financial_statements import FinancialStatements, FinancialForcast, DegiroRetrieveError
 from requests.exceptions import RetryError
@@ -161,7 +160,6 @@ class Share(FinancialStatements, FinancialForcast):
             self.special_params = self.session_model.symbol_params[self.symbol]
             if "yahoo_tk" in self.special_params:
                 self.yahoo_tk = yf.Ticker(self.special_params["yahoo_tk"])
-                self.yq_tk = yq.Ticker(self.special_params["yahoo_tk"])
             self.share_currency = self.special_params.get("price_currency", self.share_currency)
             
 
@@ -214,9 +212,8 @@ class Share(FinancialStatements, FinancialForcast):
             self.logger.warning(f'{self.name} : failed to update price history from yahoo {e}')
             yahoo_hist = pd.read_pickle(y_price_path)
 
-        price_history =  yahoo_hist.reset_index()
-        price_history['date'] = pd.to_datetime(price_history['date'],  utc=True)
-        self.price_history = price_history.set_index("date").tz_localize(None)
+        yahoo_hist = yahoo_hist.rename(columns={'Close': 'close'})
+        self.price_history = yahoo_hist.tz_localize(None)
 
         self.current_price = yahoo_hist['close'].iloc[-1]
 
@@ -234,8 +231,7 @@ class Share(FinancialStatements, FinancialForcast):
         else:
             self.retrieve_price_history_from_degiro()
 
-
-        self.price_history_in_financial_currency = self.price_history[['close']].copy()
+        self.price_history_in_financial_currency = self.price_history.copy()
     
     def retrieve_intra_day_price(self):
         """
@@ -429,7 +425,7 @@ class Share(FinancialStatements, FinancialForcast):
                                 y_statements[["QTCO" , 'EBITDA', 'STLD', 'OCFE', 'OCFF'] + self.cash_code]
                                 ], axis = 0).sort_index().ffill().dropna()
 
-
+        
         df_multiple['ENT_PRICE'] = df_multiple['QTCO'] * df_multiple['close']
         df_multiple['ENT_VALUE'] = df_multiple['ENT_PRICE'] + df_multiple['STLD'] - df_multiple[self.cash_code].sum(axis = 1)
         

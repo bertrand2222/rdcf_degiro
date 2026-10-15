@@ -30,7 +30,9 @@ symbol_params = {
     'SMSD' : {"yahoo_tk" : '005935.KS',
               "price_currency" : "KRW",
               "price_from" : "yahoo"},
-    'HY9H' : {"yahoo_tk" : '000660.KS'},
+    'HY9H' : {"yahoo_tk" : '000660.KS',
+              "price_currency" : "KRW",
+            "price_from" : "yahoo"},
     'HHPD' : {"yahoo_tk" : '2317.TW'},
     'SONY' : {"yahoo_tk" : '6758.T',
               "price_currency" : "JPY",
@@ -47,8 +49,8 @@ config_dict = {
     'output_folder'                 : "/home/bertrand/Documents/rdcf_degiro_out",
     'taxe_rate'                     : 0.25,
     'symbol_params'              : symbol_params,
-    "update_market_rate"            : True,
-    'update_statements'             : False,
+    "update_market_rate"            : False,
+    'update_statements'             : True,
     'nb_year_dcf'                   : 10
 }
 # outfile = os.path.join(os.environ["USERPROFILE"], r"Documents\rdcf.xlsx")

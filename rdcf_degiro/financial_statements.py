@@ -5,7 +5,6 @@ from datetime import datetime
 from typing import List
 import pandas as pd
 import numpy as np
-import yahooquery as yq
 from dateutil.relativedelta import relativedelta
 from requests.exceptions import RetryError
 
@@ -15,14 +14,13 @@ OVERLAPING_DAYS_TOL = 7
 
 YA_INCOME_INFOS = [ 'FreeCashFlow','TotalRevenue', "NetIncome",
                     "OperatingCashFlow", 'CapitalExpenditure', 'ChangeInWorkingCapital', 
-                    # 'NormalizedEBITDA', 
                     "InterestExpense",
                     "NetInterestIncome",
                     "EBITDA", 
                     "PretaxIncome",
                     "DepreciationAndAmortization"]
 YA_PAYOUT_INFOS = [ 'RepurchaseOfCapitalStock', 'CashDividendsPaid', 'CommonStockIssuance']
-YA_BALANCE_INFOS = ['currencyCode', 'TotalDebt', 'CurrentLiabilities', 'CashAndCashEquivalents',
+YA_BALANCE_INFOS = ['TotalDebt', 'CurrentLiabilities', 'CashAndCashEquivalents',
                  'CommonStockEquity', "InvestedCapital",  "BasicAverageShares"]
 
 YA_DATA = YA_INCOME_INFOS + YA_BALANCE_INFOS + YA_PAYOUT_INFOS
@@ -77,7 +75,6 @@ RENAME_DIC = {
     "CommonStockEquity" :       "QTLE", # "Total Equity"
     "BasicAverageShares" :      "QTCO", # "Total Common Shares Outstanding"
     'FreeCashFlow':             "FCFF",
-    "NormalizedEBITDA"  : 'EBITDA',
     "NetInterestIncome" : "SNIN"
 }
 SPECIAL_CURRENCIES = {
@@ -220,14 +217,12 @@ class FinancialStatements(Statements):
     
     def _retrive_financials_src(self):
         
-        if self.retrieve_from == "degiro":
+        if (self.retrieve_from == "degiro") and (self.special_params.get("finance_from", "degiro") == "degiro"):
             try :
                 self.degiro_financial_retrieve()
                 return
             except DegiroRetrieveError as e:
                 self.logger.warning(f'{self.name} : can not retrieve financial data from degiro, {e}')
-            # except Exception as e:
-            #     raise Exception(f'{self.name} {self.symbol} :{e}') from e
 
         self.yahoo_financial_retrieve()
         
@@ -242,9 +237,9 @@ class FinancialStatements(Statements):
         self.y_statements.loc[:,'periodType'] = 'M'
 
         self.q_cashflow_available = 'OTLO' in self.q_cas_statements.columns
-        # compute cash flow from income
+
         self._y_inc_complete_statements = pd.concat([self.y_statements,
-                                         self._inc_ttm_statements_df])
+                                         self._inc_ttm_statements_df],axis= 0)
 
         self.compute_avg_values()
 
@@ -352,13 +347,20 @@ class FinancialStatements(Statements):
         if self.session_model.update_statements_need(y_statements_path):
 
             try :
-                y_statements : pd.DataFrame = self.yq_tk.get_financial_data(YA_DATA)
+                y_statements : pd.DataFrame = pd.concat([self.yahoo_tk.get_income_stmt(pretty=False), 
+                                          self.yahoo_tk.get_balance_sheet(pretty=False),
+                                          self.yahoo_tk.get_cash_flow(pretty=False)
+                                          ], axis = 0).T
+
                 if not isinstance(y_statements, pd.DataFrame):
                     raise YahooRetrieveError(
                         f"{symb} symbol not available in yahoo database")
                 y_statements.to_pickle(y_statements_path)
-                q_statements : pd.DataFrame = self.yq_tk.get_financial_data(YA_DATA , frequency= "q",
-                                                        trailing= False).set_index('asOfDate')
+
+                q_statements = pd.concat([self.yahoo_tk.get_income_stmt(pretty=False, freq='quarterly'), 
+                                        self.yahoo_tk.get_balance_sheet(pretty=False, freq='quarterly'),
+                                        self.yahoo_tk.get_cash_flow(pretty=False, freq='quarterly')
+                                                          ], axis = 0).T
 
                 q_statements.to_pickle(q_statements_path)
                 return y_statements, q_statements
@@ -384,13 +386,7 @@ class FinancialStatements(Statements):
         if not isinstance(y_statements, pd.DataFrame):
             raise TypeError('financial data is not a valid dataframe')
 
-        currency = y_statements.dropna(
-            subset="FreeCashFlow")["currencyCode"].value_counts().idxmax()
-        y_statements = y_statements.sort_values(
-            by = ['asOfDate' , 'BasicAverageShares'], ascending=[1, 0])
-
-        y_statements['BasicAverageShares'] = y_statements['BasicAverageShares'].ffill(axis = 0, )
-        y_statements = y_statements.loc[y_statements['currencyCode'] == currency ]
+        y_statements = y_statements.ffill(axis = 0)
 
         for st in [y_statements, q_statements]:
             if 'TotalDebt' not in st:
@@ -408,20 +404,12 @@ class FinancialStatements(Statements):
             st['FCFE'] = st['OCFE'] + st['SCEX']
             st['FCFF'] = st['OCFF'] + st['SCEX']
 
-        y_statements = y_statements.ffill(axis = 0).drop_duplicates(
-                                                                subset = ['asOfDate', ],
-                                                                keep= 'last').set_index('asOfDate')
 
-        q_statements = q_statements.loc[q_statements['currencyCode'] == currency ]
-        y_statements[[c for c in y_statements.columns if c not in ['periodType', 'currencyCode']]] *= 1e-6
-        q_statements[[c for c in q_statements.columns if c not in ['periodType', 'currencyCode']]] *= 1e-6
+        y_statements *= 1e-6
+        q_statements *= 1e-6
 
-        self._inc_ttm_statements_df = y_statements.loc[
-            y_statements['periodType'] == 'TTM'].iloc[[-1]]
-        self._cas_ttm_statements_df = self._inc_ttm_statements_df
-
-        max_occur_month = y_statements.index.month.value_counts().idxmax()
-        y_statements = y_statements.loc[y_statements.index.month == max_occur_month ]
+        self._inc_ttm_statements_df = self.yahoo_tk.get_income_stmt(pretty=False, freq='trailing').T.iloc[::-1]
+        self._cas_ttm_statements_df = self.yahoo_tk.get_cash_flow(pretty=False, freq='trailing').T.iloc[::-1]
 
         if isinstance(q_statements, pd.DataFrame) :
             q_statements.ffill(axis = 0, inplace = True)
@@ -434,29 +422,24 @@ class FinancialStatements(Statements):
 
         self.y_statements = y_statements
 
-        q_statements['periodLength'] = q_statements['periodType'].apply(
-            lambda x : int(re.search('^[0-9]+',x).group()))
-        q_statements['periodType'] = q_statements['periodType'].apply(
-            lambda x : re.search('[A-Z]+$',x).group())
 
-        self.q_inc_statements = q_statements[
-            ['periodLength' , 'periodType'] + list(set(INC_CODES) & set(q_statements.columns))]
+        self.q_inc_statements = q_statements[list(set(INC_CODES) & set(q_statements.columns))]
         self.q_bal_statements = q_statements[list(set(BAL_CODES) & set(q_statements.columns))]
-        self.q_cas_statements = q_statements[
-            ['periodLength' , 'periodType'] + list(set(CASH_CODES) & set(q_statements.columns))]
+        self.q_cas_statements = q_statements[list(set(CASH_CODES) & set(q_statements.columns))]
 
         self.nb_shares = self.y_statements["QTCO"].iloc[-1]
-        self.statements_currency = y_statements['currencyCode'].iloc[-1]
+        self.statements_currency = self.yahoo_tk.info['financialCurrency']
 
-        self.convert_to_price_currency(['y_statements',
-                                        'q_inc_statements',
-                                        'q_bal_statements', 
-                                        'q_cas_statements',
-                                        '_inc_ttm_statements_df',
-                                        '_cas_ttm_statements_df'
-                                        ], self.statements_currency )
+        if 'statements_currency' in self.special_params:
+            self.convert_to_price_currency(['y_statements',
+                                            'q_inc_statements',
+                                            'q_bal_statements', 
+                                            'q_cas_statements',
+                                            '_inc_ttm_statements_df',
+                                            '_cas_ttm_statements_df'
+                                            ], self.statements_currency )
 
-        self.last_bal_statements = self.y_statements.iloc[-1]
+        self.last_bal_statements = self.q_bal_statements.iloc[-1]
 
 
     def degiro_financial_retrieve(self):
