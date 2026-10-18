@@ -1,11 +1,12 @@
 import re
 import sys
 import os
+import shutil
 
 import pandas as pd 
 import subprocess
 
-sys.path.append("/home/bertrand/Documents/rdcf_degiro")
+sys.path.append(os.environ["HOME"] + "/Documents/rdcf_degiro")
 
 from rdcf_degiro.analysis import RDCFAnal, RDCFSummary
 
@@ -28,29 +29,26 @@ symbol_params = {
     'UBSG' : {"yahoo_tk" : 'UBS'},
     'SMSN' : {"yahoo_tk" : '005930.KS'},
     'SMSD' : {"yahoo_tk" : '005935.KS',
-              "price_currency" : "KRW",
               "price_from" : "yahoo"},
     'HY9H' : {"yahoo_tk" : '000660.KS',
-              "price_currency" : "KRW",
             "price_from" : "yahoo"},
     'HHPD' : {"yahoo_tk" : '2317.TW'},
     'SONY' : {"yahoo_tk" : '6758.T',
-              "price_currency" : "JPY",
               "price_from" : "yahoo"}
 }
 
 config_dict = {
-    'credential_file_path'          : "/home/bertrand/.degiro/credentials.json",
+    'credential_file_path'          : os.environ['HOME'] + "/.degiro/credentials.json",
     'use_beta'                      : False,
     'use_multiple'                  : True,
     'terminal_value_to_ebitda_bounds'  : [0.1, 20],
     'history_avg_nb_year'           : 3,
     'use_last_intraday_price'       : True,
-    'output_folder'                 : "/home/bertrand/Documents/rdcf_degiro_out",
+    'output_folder'                 : os.environ['HOME'] + "/Documents/rdcf_degiro_out",
     'taxe_rate'                     : 0.25,
     'symbol_params'              : symbol_params,
     "update_market_rate"            : False,
-    'update_statements'             : True,
+    'update_statements'             : False,
     'nb_year_dcf'                   : 10
 }
 # outfile = os.path.join(os.environ["USERPROFILE"], r"Documents\rdcf.xlsx")
@@ -80,6 +78,9 @@ if __name__ == "__main__":
     writer.close()
 
     if sys.platform == "linux" :
-        subprocess.call(["open", xl_outfile])
+        if shutil.which("xdg-open") is not None:
+            subprocess.call(["xdg-open", xl_outfile])
+        else:
+            subprocess.call(["open", xl_outfile])
     else :
         os.startfile(xl_outfile)
