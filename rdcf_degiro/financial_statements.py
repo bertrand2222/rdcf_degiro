@@ -249,7 +249,6 @@ class FinancialStatements(Statements):
         Evaluate averaged values and ratios from financial statements
         """
         q_cas_statements =  self.q_cas_statements
-        # q_inc_statements =  self.q_inc_statements
         y_statements = self.y_statements
 
         history_avg_nb_year = min(self.session_model.history_avg_nb_year, len(y_statements.index))
@@ -352,7 +351,7 @@ class FinancialStatements(Statements):
                                           self.yahoo_tk.get_cash_flow(pretty=False)
                                           ], axis = 0).T
 
-                if not isinstance(y_statements, pd.DataFrame):
+                if y_statements.empty:
                     raise YahooRetrieveError(
                         f"{symb} symbol not available in yahoo database")
                 y_statements.to_pickle(y_statements_path)
@@ -382,6 +381,8 @@ class FinancialStatements(Statements):
         self.logger.info(f'{self.name} : retrieves financial statement from yahoo             ')
 
         y_statements, q_statements = self.get_yahoo_financial_src()
+        y_statements = y_statements.iloc[::-1]
+        q_statements = q_statements.iloc[::-1]
 
         if not isinstance(y_statements, pd.DataFrame):
             raise TypeError('financial data is not a valid dataframe')
@@ -391,8 +392,6 @@ class FinancialStatements(Statements):
         for st in [y_statements, q_statements]:
             if 'TotalDebt' not in st:
                 st['TotalDebt'] = st['CurrentLiabilities']
-            # if 'PretaxIncome' not in st:
-            #     st['PretaxIncome'] = st['OperatingIncome']
             if 'EBITDA' not in st:
                 st['EBITDA'] = st['PretaxIncome'] + st['DepreciationAndAmortization']
 
@@ -441,6 +440,8 @@ class FinancialStatements(Statements):
 
         self.last_bal_statements = self.q_bal_statements.iloc[-1]
 
+        y_period_ratio = pd.Timedelta(days=365) / self.q_inc_statements.index.diff()[-1]
+        self.interest_expense_income = self.q_inc_statements["SNIN"].iloc[-1] * y_period_ratio
 
     def degiro_financial_retrieve(self):
         """
@@ -491,13 +492,20 @@ class FinancialStatements(Statements):
 
         self.last_bal_statements = self.q_bal_statements.iloc[-1]
 
+        perod_interest = 0
+        for info in ["SNIN", "SONT"]:
+            if info in self.q_inc_statements:
+                perod_interest += self.q_inc_statements[info].iloc[-1]
+        self.interest_expense_income = perod_interest * 12 / self.q_inc_statements['periodLength'].iloc[-1]
+
     def _compute_free_cash_flow(self, st : pd.DataFrame):
         # st['FCFF'] = st[op_keys[0]] * (1-self.session_model.taxe_rate) + da  # Free cash flow to firm
         st['OCFF'] = st["OTLO"]
         st['OCFE'] = st["OTLO"]
-        if 'SNIN' in st :
-            # Add net non operating interest
-            st['OCFF'] -= st['SNIN'] * (1-self.session_model.taxe_rate)
+        for info in ["SNIN", "SONT"]:
+            if info in st:
+                # Add net non operating interest
+                st['OCFF'] -= st[info] * (1-self.session_model.taxe_rate)
 
         st['FCFF'] = st['OCFF']
         st['FCFE'] = st["OCFE"]

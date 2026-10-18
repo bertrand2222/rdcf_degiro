@@ -160,6 +160,7 @@ class Share(FinancialStatements, FinancialForcast):
             self.special_params = self.session_model.symbol_params[self.symbol]
             if "yahoo_tk" in self.special_params:
                 self.yahoo_tk = yf.Ticker(self.special_params["yahoo_tk"])
+                self.share_currency = self.yahoo_tk.info['currency']
             self.share_currency = self.special_params.get("price_currency", self.share_currency)
             
 
@@ -273,6 +274,7 @@ class Share(FinancialStatements, FinancialForcast):
 
         self.total_debt =  self.last_bal_statements['STLD']
         self.net_debt = self.total_debt - self.last_bal_statements[self.cash_code].sum()
+        self.debt_cost = - self.interest_expense_income / self.net_debt 
         self.enterprise_value = self.market_cap + self.net_debt
 
         # if enterprise value is negative or very low use cash flow to equity
@@ -406,7 +408,7 @@ class Share(FinancialStatements, FinancialForcast):
             debt = self.total_debt
         
         tr = self.session_model.taxe_rate
-        dc = self.session_model.rate_info.debt_cost
+        dc = self.debt_cost
 
         return cc * eq/(debt + eq) +  dc * (1-tr) * debt/(debt + eq)
         
@@ -494,7 +496,7 @@ class Share(FinancialStatements, FinancialForcast):
             eq = self.enterprise_value
             debt = self.total_debt
         tr = self.session_model.taxe_rate
-        dc = self.session_model.rate_info.debt_cost
+        dc = self.debt_cost
 
         return (wacc - dc * (1-tr) * debt/(debt + eq)) * (debt + eq)/eq
 
@@ -749,22 +751,22 @@ class Share(FinancialStatements, FinancialForcast):
         self._forcasted_ocfe = None
         if self.y_forcasts is None:
             return
-        interest_exp = 0
+        net_interest_exp = 0
         if 'SNIN' in self.y_statements:
             # interest expense assumed constant
-            interest_exp = self.y_statements['SNIN'].iloc[-1] * (1-self.session_model.taxe_rate)
+            net_interest_exp = self.interest_expense_income * (1 - self.session_model.taxe_rate)
 
         if 'CPS'  in self.y_forcasts:
             # compute forcasted ocf from forcasted cash flow per share
             self._forcasted_ocfe = self.y_forcasts['CPS'].dropna() * self.nb_shares
-            self._forcasted_ocff = self._forcasted_ocfe - interest_exp
+            self._forcasted_ocff = self._forcasted_ocfe - net_interest_exp
 
         elif ('EBT' in self.y_forcasts) and ('EBI' in self.y_forcasts) :
             # compute forcasted ocf from forcasted ebitda and ebit
             self._forcasted_ocff = (self.y_forcasts['EBT'] - self.session_model.taxe_rate * self.y_forcasts['EBI']).dropna()
             last_ocff = self.y_statements['OCFF'].iloc[-1]
             self._forcasted_ocff *= last_ocff/self._forcasted_ocff.iloc[0]
-            self._forcasted_ocfe = self._forcasted_ocff + interest_exp
+            self._forcasted_ocfe = self._forcasted_ocff + net_interest_exp
         else:
             # compute forcasted ocf from forcasted ebitda, ebt, net income, pretax income or sales growth
             last_ocfe = self.y_statements['OCFE'].iloc[-1]
@@ -783,7 +785,7 @@ class Share(FinancialStatements, FinancialForcast):
         if self._forcasted_ocfe is None:
             self.logger.warning(f"{self.name} Forcasted cash flow could not be computed from forcast data")
             self._forcasted_ocfe = self.ocfe * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
-            self._forcasted_ocff = self._forcasted_ocfe - interest_exp
+            self._forcasted_ocff = self._forcasted_ocfe - net_interest_exp
             return
 
         # Set forcast array lenght equal to dcf model nb year
@@ -797,8 +799,7 @@ class Share(FinancialStatements, FinancialForcast):
                         1,
                         1 + self.session_model.nb_year_dcf - len(self._forcasted_ocfe))])
         
-        self._forcasted_ocff = self._forcasted_ocfe - interest_exp
-
+        self._forcasted_ocff = self._forcasted_ocfe - net_interest_exp
 
     def _get_forcasted_ebidta(self):
         """
