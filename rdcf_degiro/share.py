@@ -158,7 +158,9 @@ class Share(FinancialStatements, FinancialForcast):
         # Set special params for shares if defined in config_dict
         if self.symbol in self.session_model.symbol_params.keys():
             self.special_params = self.session_model.symbol_params[self.symbol]
+            self.yahoo_symb = ""
             if "yahoo_tk" in self.special_params:
+                self.yahoo_symb = self.special_params["yahoo_tk"]
                 self.yahoo_tk = yf.Ticker(self.special_params["yahoo_tk"])
                 self.share_currency = self.yahoo_tk.info['currency']
             self.share_currency = self.special_params.get("price_currency", self.share_currency)
@@ -752,13 +754,16 @@ class Share(FinancialStatements, FinancialForcast):
         if self.y_forcasts is None:
             return
         net_interest_exp = 0
+        last_ocfe = self.y_statements['OCFE'].iloc[-1]
+
         if 'SNIN' in self.y_statements:
             # interest expense assumed constant
             net_interest_exp = self.interest_expense_income * (1 - self.session_model.taxe_rate)
 
         if 'CPS'  in self.y_forcasts:
+            ratio = last_ocfe/self.y_forcasts['CPS'].iloc[0]
             # compute forcasted ocf from forcasted cash flow per share
-            self._forcasted_ocfe = self.y_forcasts['CPS'].dropna() * self.nb_shares
+            self._forcasted_ocfe = self.y_forcasts['CPS'].dropna() * ratio
             self._forcasted_ocff = self._forcasted_ocfe - net_interest_exp
 
         elif ('EBT' in self.y_forcasts) and ('EBI' in self.y_forcasts) :
@@ -769,7 +774,6 @@ class Share(FinancialStatements, FinancialForcast):
             self._forcasted_ocfe = self._forcasted_ocff + net_interest_exp
         else:
             # compute forcasted ocf from forcasted ebitda, ebt, net income, pretax income or sales growth
-            last_ocfe = self.y_statements['OCFE'].iloc[-1]
             for val in ['EBT', 'EBI', 'NET', 'PRE', 'SAL' ] :
                 if val not in self.y_forcasts:
                     continue

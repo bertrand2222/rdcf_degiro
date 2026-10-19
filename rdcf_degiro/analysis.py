@@ -90,7 +90,7 @@ class RDCFSummary():
             "current_price" : {"size" : 13, "format" : number},
             "beta" : {"size" : 0, "format" : number},
             "value_to_ebitda" : {"size" : 0, "format" : number},
-            "wacc" : {"size" : 11, "format" : percent},
+            "market_wacc" : {"size" : 11, "format" : percent},
             "assumed_g" : {"size" : 11, "format" : bold_percent},
             "history_growth" : {"size" : 0, "format" : percent},
             "forcasted_ebitda_growth" : {"size" : 11, "format" : percent},
@@ -106,9 +106,14 @@ class RDCFSummary():
                                             f['format'])
         # add hyperlink
         for i, s in enumerate(df.index):
+            yahoo_symb = df.loc[s, 'yahoo_symb']
+            if isinstance(yahoo_symb, str) and yahoo_symb != "":
+                link = fr'https://finance.yahoo.com/quote/{yahoo_symb}/'
+            else :
+                link = fr'https://www.tradingview.com/symbols/{s}/'
             worksheet.write_url(f'B{i+2}', 
-                                fr'https://www.tradingview.com/symbols/{s}/', 
-                                string= df.loc[s, 'short_name'] )
+                                link, 
+                                string= df.loc[s, 'name'] )
 
         worksheet.add_table(0,0,len(df.index),len(df.columns) ,
                             {"columns" : [{'header' : 'symbol'}]
@@ -337,7 +342,6 @@ class RDCFAnal():
     def process(self) :
 
         valid_share_list = [s for s in self.share_list if s.valid_retrieve]
-        not_valid_share_list = [s for s in self.share_list if not s.valid_retrieve]
 
         if not valid_share_list :
             print('no share whith valid data, run retrieve_data() first')
@@ -352,51 +356,26 @@ class RDCFAnal():
 
         self.logger.info("generate summary table")
         
-
-
-        valid_df = pd.DataFrame.from_records(index = [s.symbol for s in valid_share_list],
-                          data= [
-                              {
-                                'short_name' :          s.name  ,
-                                'current_price' :       s.current_price ,
-                                'currency' :            s.share_currency ,
-                                'beta' :                s.beta ,
-                                'value_to_ebitda' :        s.value_to_ebitda,
-                                # 'market_capital_cost' :   s.market_capital_cost,
-                                'wacc' :                s.market_wacc ,
-                                'assumed_g' :           s.assumed_g ,  
-                                # 'assumed_g_ttm' :       s.assumed_g_ttm,  
-                                # 'assumed_g_incf' :        s.dcf.g_incf ,
-                                # 'assumed_g_incf_ttm' :    s.dcf.g_incf_ttm,
-                                'history_growth'         : s.history_growth,
-                                "forcasted_ebitda_growth" :       s.forcasted_ebitda_growth,
-                                # 'diff_g_forcasted_assumed'         : s.g_delta_forcasted_assumed,
-                                'forcasted_wacc_multiple'         : s.forcasted_wacc_multiple,
-                                'forcasted_wacc_perpetual'         : s.forcasted_wacc_perpetual,
-                                'forcasted_capital_cost_multiple'         : s.forcasted_capital_cost_multiple,
-                                'forcasted_capital_cost_perpetual'         : s.forcasted_capital_cost_perpetual,
-                                # 'target_market_value_perpetual' : s.target_market_value_perpetual,
-                                "target_market_price_multiple" : s.target_market_price_multiple,
-                                'per' :                 s.per,
-                                'price_to_sales' :                 s.price_to_sales,
-                                'roe' :                s.roe , 
-                                'roic' :                s.roic , 
-                                'debt_to_equity' :      s.debt_to_equity,
-                                # 'price_to_book' :       s.price_to_book ,
-                                'total_payout_ratio' :  s.total_payout_ratio,
-                                # 'market_cap_reliable' : s.market_cap_reliable,
-                                'enterprise_value' : s.enterprise_value,
-                                'error_msg': s.error_msg
-                                    } for s in valid_share_list])
+        attributes = ['name', 'current_price', 'share_currency', 'beta', 'value_to_ebitda',
+                      'market_wacc', 'assumed_g', 'history_growth', 'forcasted_ebitda_growth', 
+                      'forcasted_wacc_multiple', 'forcasted_wacc_perpetual', 'forcasted_capital_cost_multiple', 
+                      'forcasted_capital_cost_perpetual', 'forcasted_capital_cost_multiple' , 
+                      'forcasted_capital_cost_perpetual', 
+                      'target_market_price_multiple',
+                      'per', 'price_to_sales', 'roe', 'roic', 'debt_to_equity', 
+                      'total_payout_ratio', 
+                      'enterprise_value', 
+                      "yahoo_symb",
+                      'error_msg']
         
-        unvalid_df = pd.DataFrame.from_records(index=[s.symbol for s in not_valid_share_list],
-                                               data=[{
-                                                   'short_name': s.name,
-                                                   'error_msg': s.error_msg
-                                                  
-                                               } for s in not_valid_share_list])
-        valid_df.sort_values(by = ['forcasted_capital_cost_multiple',]  , inplace= True, ascending= False)
-        df = pd.concat([valid_df, unvalid_df])
+        data = [ {attr : getattr(s, attr, None) for attr in attributes} for s in self.share_list]
+        df = pd.DataFrame.from_records(
+            index = [s.symbol for s in self.share_list],
+            data= data
+                              )
+        
+        df.sort_values(by = ['forcasted_capital_cost_multiple',]  , inplace= True, ascending= False)
+
         self.degiro_api.logout()
 
 
