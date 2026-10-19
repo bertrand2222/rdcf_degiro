@@ -34,7 +34,9 @@ symbol_params = {
             "price_from" : "yahoo"},
     'HHPD' : {"yahoo_tk" : '2317.TW'},
     'SONY' : {"yahoo_tk" : '6758.T',
-              "price_from" : "yahoo"}
+              "price_from" : "yahoo"},
+    'TM' : {"yahoo_tk" : '7203.T',
+            "price_from" : "yahoo"},    
 }
 
 config_dict = {
