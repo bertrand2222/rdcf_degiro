@@ -132,17 +132,16 @@ class RDCFSummary():
 
         def format_max_min_green_red(ws, col_s : str, col_e : str = None, 
                                         max_type : str = 'max', 
-                                        max_value : float = None,
                                         mid_type = 'percentile',
-                                        mid_value = 0):
+                                        mid_value = 0,
+                                        **kwargs):
             if col_e is None:
                 col_e = col_s
             format_dic = {"type": "3_color_scale", 'min_type': 'min',
                 'max_type': max_type, 'mid_type' : mid_type,
                 'min_color' : '#F8696B', "max_color" : '#63BE7B', 
-                "mid_color" : "#FFFFFF", "mid_value" : mid_value}
-            if max_type == 'num':
-                format_dic['max_value'] = max_value
+                "mid_color" : "#FFFFFF", "mid_value" : mid_value,
+                **kwargs}
             ws.conditional_format(
                 f"{col_letter[col_s]}2:{col_letter[col_e]}{len(df.index)+1}", format_dic
                 )
@@ -155,6 +154,7 @@ class RDCFSummary():
         # format_max_min_green_red(worksheet, 'forcasted_wacc_perpetual' , max_type='num', max_value= 1)
         format_max_min_green_red(worksheet, 'forcasted_capital_cost_multiple', max_type='num', max_value= 1, mid_type= "num", mid_value= self.config.loc['market_rate'])
         format_max_min_green_red(worksheet, 'forcasted_capital_cost_perpetual', max_type='num', max_value= 1, mid_type= "num", mid_value= self.config.loc['market_rate'])
+        format_max_min_green_red(worksheet, 'roic', max_type='num', max_value= 1, mid_type= "num", mid_value= 0.08, min_type='num', min_value= 0)
 
 
         worksheet.conditional_format(
@@ -190,22 +190,13 @@ class RDCFSummary():
         # worksheet.conditional_format(f"{col_letter['roe']}2:{col_letter['roe']}{len(df.index)+1}",
         #                                 {"type": "cell", "criteria": "<",
         #                                 "value": 0, "format": format3})
-        worksheet.conditional_format(f"{col_letter['roe']}2:{col_letter['roe']}{len(df.index)+1}",
-                                    {"type": "3_color_scale", 'min_type': 'num','max_type': 'max',
-                                        'mid_type' : 'percentile',
-                                    'min_value' : 0, 'mid_value' : 50, "max_value" : 0.15,
-                                    "min_color" : '#F8696B', 'max_color' : '#63BE7B' ,
-                                    "mid_color" : "#FFFFFF"})
-        # format ROIC
-        worksheet.conditional_format(f"{col_letter['roic']}2:{col_letter['roic']}{len(df.index)+1}",
-                                        {"type": "cell", "criteria": "<",
-                                        "value": 0, "format": format3})
-        worksheet.conditional_format(f"{col_letter['roic']}2:{col_letter['roic']}{len(df.index)+1}",
-                                    {"type": "3_color_scale", 'min_type': 'num','max_type': 'max',
-                                        'mid_type' : 'percentile',
-                                    'min_value' : 0, 'mid_value' : 50,
-                                    "min_color" : '#F8696B', 'max_color' : '#63BE7B' ,
-                                    "mid_color" : "#FFFFFF"})
+        # worksheet.conditional_format(f"{col_letter['roe']}2:{col_letter['roe']}{len(df.index)+1}",
+        #                             {"type": "3_color_scale", 'min_type': 'num','max_type': 'max',
+        #                                 'mid_type' : 'percentile',
+        #                             'min_value' : 0, 'mid_value' : 50, "max_value" : 0.15,
+        #                             "min_color" : '#F8696B', 'max_color' : '#63BE7B' ,
+        #                             "mid_color" : "#FFFFFF"})
+   
 
   
                 
