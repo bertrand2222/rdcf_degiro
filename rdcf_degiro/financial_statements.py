@@ -61,7 +61,7 @@ PAYOUT_INFOS = ["FCDP", "FPSS" ]
 FINANCIAL_ST_CODES =   INC_CODES + BAL_CODES + CASH_CODES
 
 FINANCIAL_FCST_CODES =  ['NET', 'SAL', 'PRE', 'CPX', 'CPS', 'EBT']
-RENAME_DIC = {
+RENAME_DIC_YAHOO = {
     "TotalRevenue" :                "RTLR",
     "OperatingCashFlow" :           "OTLO",
     "NetIncome" :                   "NINC",
@@ -77,9 +77,22 @@ RENAME_DIC = {
     'FreeCashFlow':             "FCFF",
     "NetInterestIncome" : "SNIN"
 }
+
+RENAME_DIC_DEGIRO = {
+    "SOPI" : "EBIT",}
 SPECIAL_CURRENCIES = {
     'GBX' : {'real' : 'GBP', 'rate_factor' : 0.01}
 }
+
+def multiply_df_scalar(df: pd.DataFrame, scalar: float, exclude_cols: List[str] = None) -> pd.DataFrame:
+    """
+    multiply a dataframe by a scalar
+    """
+    new_df = df.copy()
+    cols = [c for c in new_df.columns if exclude_cols is None or c not in exclude_cols]
+    new_df.loc[:, cols] *= scalar
+
+    return new_df
 
 class YahooRetrieveError(Exception):
     """
@@ -92,6 +105,11 @@ class DegiroRetrieveError(Exception):
     """
     pass
 
+class MissingDataError(Exception):
+    """
+    Exception relative to missing data in financial statements
+    """
+    pass
 class Statements():
 
     def convert_to_price_currency(self, attr_list : List[str], statements_currency: str = None):
@@ -236,7 +254,7 @@ class FinancialStatements(Statements):
         self.y_statements.loc[:,'periodLength'] = 12
         self.y_statements.loc[:,'periodType'] = 'M'
 
-        self.q_cashflow_available = 'OTLO' in self.q_cas_statements.columns
+        self.q_cashflow_available =  (self.q_cas_statements is not None) and ('OTLO' in self.q_cas_statements.columns)
 
         self._y_inc_complete_statements = pd.concat([self.y_statements,
                                          self._inc_ttm_statements_df],axis= 0)
@@ -266,7 +284,9 @@ class FinancialStatements(Statements):
         self.ocfe = all_cas.loc[:,'OCFE'].sum() / all_cas_time
         self.ocff = all_cas.loc[:,'OCFF'].sum() / all_cas_time
         self.capex = self.ocfe - self.fcfe
-        self.ebitda = y_statements['EBITDA'].iloc[-1]
+
+        if "EBITDA" in y_statements.columns:
+            self.ebitda = y_statements['EBITDA'].iloc[-1]
 
 
     @property
@@ -392,10 +412,8 @@ class FinancialStatements(Statements):
         for st in [y_statements, q_statements]:
             if 'TotalDebt' not in st:
                 st['TotalDebt'] = st['CurrentLiabilities']
-            if 'EBITDA' not in st:
-                st['EBITDA'] = st['PretaxIncome'] + st['DepreciationAndAmortization']
 
-            st.rename(columns= RENAME_DIC, inplace = True)
+            st.rename(columns= RENAME_DIC_YAHOO, inplace = True)
             st['OCFF'] = st['OTLO']
             st['OCFE'] = st['OTLO']
             if 'SNIN' in st:
@@ -403,12 +421,11 @@ class FinancialStatements(Statements):
             st['FCFE'] = st['OCFE'] + st['SCEX']
             st['FCFF'] = st['OCFF'] + st['SCEX']
 
+        y_statements = multiply_df_scalar(y_statements, 1e-6, exclude_cols = ['TaxRateForCalcs'])
+        q_statements = multiply_df_scalar(q_statements, 1e-6, exclude_cols = ['TaxRateForCalcs'])
 
-        y_statements *= 1e-6
-        q_statements *= 1e-6
-
-        self._inc_ttm_statements_df = self.yahoo_tk.get_income_stmt(pretty=False, freq='trailing').T.iloc[::-1]
-        self._cas_ttm_statements_df = self.yahoo_tk.get_cash_flow(pretty=False, freq='trailing').T.iloc[::-1]
+        self._inc_ttm_statements_df = multiply_df_scalar(self.yahoo_tk.get_income_stmt(pretty=False, freq='trailing').T.iloc[::-1], 1e-6, exclude_cols = ['TaxRateForCalcs'])
+        self._cas_ttm_statements_df = multiply_df_scalar(self.yahoo_tk.get_cash_flow(pretty=False, freq='trailing').T.iloc[::-1], 1e-6, exclude_cols = ['TaxRateForCalcs'])
 
         if isinstance(q_statements, pd.DataFrame) :
             q_statements.ffill(axis = 0, inplace = True)
@@ -544,12 +561,12 @@ class FinancialStatements(Statements):
         y_statements[inc_cols] = y_statements[inc_cols].fillna(0)
 
         # compute EBITDA        = Operating income + depreciation and amortizing
-        op_keys = [k for k in ['SOPI', 'EIBT'] if k in y_statements]
+        y_statements = y_statements.rename(columns= RENAME_DIC_DEGIRO)
         da_keys = [k for k in ['SDPR', 'SDED'] if k in y_statements]
         da = y_statements[da_keys[0]] if da_keys else 0
 
-        # y_statements['EBIT'] = y_statements[op_keys[0]]
-        y_statements['EBITDA'] = y_statements[op_keys[0]] + da
+        if 'EBIT' in y_statements:
+            y_statements['EBITDA'] = y_statements['EBIT'] + da
 
         # compute free cash flow
         self._compute_free_cash_flow(y_statements)
@@ -582,28 +599,17 @@ class FinancialStatements(Statements):
 
         q_inc_statements = gb.get_group('INC').dropna(axis=1, how= 'all').fillna(0)
         q_bal_statements = gb.get_group('BAL').dropna(axis=1, how= 'all').ffill()
-        q_cas_statements = gb.get_group('CAS').dropna(axis=1, how= 'all').fillna(0)
 
         self.cash_code = [key for key in BAL_CASH_CODES if key  in q_bal_statements.columns]
 
         q_inc_statements = remove_overlapping_data(q_inc_statements)
-        q_cas_statements = remove_overlapping_data(q_cas_statements)
 
-        # op_keys = [k for k in ['SOPI', 'EIBT'] if k in q_inc_statements]
         # da_keys = [k for k in ['SDPR'] if k in q_inc_statements]
         # da = q_inc_statements[da_keys[0]] if da_keys else 0
-
-        # free cash flow            = Cash from Operating Activities - Capital Expenditures,
-        # q_cas_statements['FCFF'] = q_cas_statements[op_keys[0]] * (1-self.session_model.taxe_rate) + da  # Free cash flow to firm
-        q_cas_statements['FCFF'] = q_cas_statements["OTLO"] 
-        if "SCEX" in q_cas_statements:
-            # q_cas_statements['FCFF'] += q_cas_statements["SCEX"]
-            q_cas_statements['FCFF'] += q_cas_statements["SCEX"]
-
+        q_inc_statements = q_inc_statements.rename(columns= RENAME_DIC_DEGIRO)
 
         q_inc_statements.set_index('endDate', inplace= True)
         q_bal_statements.set_index('endDate', inplace= True)
-        q_cas_statements.set_index('endDate', inplace= True)
 
         self.nb_shares = q_bal_statements["QTCO"].iloc[-1]
 
@@ -620,7 +626,24 @@ class FinancialStatements(Statements):
                     (q_inc_ttm_statements['periodType'] == 'W') * q_inc_ttm_statements['periodLength']).sum() /52)
         self._inc_ttm_statements_df[list(set(INC_CODES) & set(self._inc_ttm_statements_df.columns))] /= ttm_period
 
+        self.q_inc_statements = q_inc_statements
+        self.q_bal_statements = q_bal_statements
+
         #### cash flows
+        if 'CAS' not in gb.groups:
+            raise MissingDataError(f'{self.name} : no cash flow statement found in degiro data')
+
+        q_cas_statements = gb.get_group('CAS').dropna(axis=1, how= 'all').fillna(0)
+        q_cas_statements = remove_overlapping_data(q_cas_statements)
+
+        # free cash flow            = Cash from Operating Activities - Capital Expenditures,
+        # q_cas_statements['FCFF'] = q_cas_statements[op_keys[0]] * (1-self.session_model.taxe_rate) + da  # Free cash flow to firm
+        q_cas_statements['FCFF'] = q_cas_statements["OTLO"] 
+        if "SCEX" in q_cas_statements:
+            # q_cas_statements['FCFF'] += q_cas_statements["SCEX"]
+            q_cas_statements['FCFF'] += q_cas_statements["SCEX"]
+
+        q_cas_statements.set_index('endDate', inplace= True)
         ttm_start_time = q_cas_statements.index[-1] - relativedelta(years= 1)
         q_cas_ttm_statements = q_cas_statements.loc[
             q_cas_statements.index > ttm_start_time]
@@ -634,8 +657,6 @@ class FinancialStatements(Statements):
         self._cas_ttm_statements_df[
             list(set(CASH_CODES) & set(self._cas_ttm_statements_df.columns))] /= ttm_period
 
-        self.q_inc_statements = q_inc_statements
-        self.q_bal_statements = q_bal_statements
         self.q_cas_statements = q_cas_statements
 
 def remove_overlapping_data(p_df:pd.DataFrame):

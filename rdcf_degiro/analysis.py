@@ -11,7 +11,7 @@ import pickle
 from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
 from rdcf_degiro.share import MarketCapError, Share, PriceRetrieveError
 from rdcf_degiro.session_model_dcf import SessionModelDCF
-from rdcf_degiro.financial_statements import YahooRetrieveError
+from rdcf_degiro.financial_statements import MissingDataError, YahooRetrieveError
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 urllib3.disable_warnings()
@@ -127,7 +127,7 @@ class RDCFSummary():
                                 11, bold_percent)
         worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}",
                                 11, percent )
-        worksheet.set_column(f"{col_letter['roe']}:{col_letter['roic']}", 0, percent )
+        worksheet.set_column(f"{col_letter['roic']}:{col_letter['roic']}", 0, percent )
         # worksheet.set_column(f"{col_letter['mean_g_fcf']}:{col_letter['diff_g']}", 13, percent )
 
         def format_max_min_green_red(ws, col_s : str, col_e : str = None, 
@@ -187,9 +187,9 @@ class RDCFSummary():
                         'min_color' : '#63BE7B', "max_color" : '#F8696B', 
                         "mid_color" : "#FFFFFF"})
         # format ROE
-        worksheet.conditional_format(f"{col_letter['roe']}2:{col_letter['roe']}{len(df.index)+1}",
-                                        {"type": "cell", "criteria": "<",
-                                        "value": 0, "format": format3})
+        # worksheet.conditional_format(f"{col_letter['roe']}2:{col_letter['roe']}{len(df.index)+1}",
+        #                                 {"type": "cell", "criteria": "<",
+        #                                 "value": 0, "format": format3})
         worksheet.conditional_format(f"{col_letter['roe']}2:{col_letter['roe']}{len(df.index)+1}",
                                     {"type": "3_color_scale", 'min_type': 'num','max_type': 'max',
                                         'mid_type' : 'percentile',
@@ -207,18 +207,7 @@ class RDCFSummary():
                                     "min_color" : '#F8696B', 'max_color' : '#63BE7B' ,
                                     "mid_color" : "#FFFFFF"})
 
-        # # format Price to Book
-        # worksheet.conditional_format(
-        #     f"{col_letter['price_to_book']}2:{col_letter['price_to_book']}{len(df.index)+1}",
-        #                              {"type": "cell", "criteria": "<", 
-        #                               "value": 0, "format": format3})
-        # worksheet.conditional_format(
-        #     f"{col_letter['price_to_book']}2:{col_letter['price_to_book']}{len(df.index)+1}",
-        #                             {"type": "3_color_scale", 'min_type': 'num',
-        #                              'max_type': 'num', 'mid_type' : 'percentile',
-        #                             'min_value' : 1, 'mid_value' : 50, "max_value" : 10, 
-        #                             'min_color' : '#63BE7B', "max_color" : '#F8696B',
-        #                             "mid_color" : "#FFFFFF"})
+  
                 
         ##### save config
         
@@ -331,7 +320,8 @@ class RDCFAnal():
                         self.logger.warning(f"{e} can not retrieve data from {retrieve_from}")
 
             except (PriceRetrieveError, YahooRetrieveError, 
-                    KeyError, 
+                    MissingDataError,
+                    KeyError,
                     CurlError,
                     RetryError
                     ) as e:
@@ -362,7 +352,9 @@ class RDCFAnal():
                       'forcasted_capital_cost_perpetual', 'forcasted_capital_cost_multiple' , 
                       'forcasted_capital_cost_perpetual', 
                       'target_market_price_multiple',
-                      'per', 'price_to_sales', 'roe', 'roic', 'debt_to_equity', 
+                      'per', 'price_to_sales', 
+                    #   'roe', 
+                      'roic', 'debt_to_equity', 
                       'total_payout_ratio', 
                       'enterprise_value', 
                       "yahoo_symb",

@@ -282,6 +282,9 @@ class Share(FinancialStatements, FinancialForcast):
         # if enterprise value is negative or very low use cash flow to equity
         self.use_fcfe = (self.enterprise_value / self.market_cap) < 0.05 
 
+        if 'EBIT' in self.inc_ttm_statements:
+            self.roic = self.inc_ttm_statements['EBIT'] * (1-self.session_model.taxe_rate) / (self.stock_equity + self.net_debt)  
+
 
 
     def check_market_cap(self):
@@ -342,8 +345,8 @@ class Share(FinancialStatements, FinancialForcast):
         self.per  = float(ratio_dic.get("PEEXCLXOR", self.per))  # "P/E excluding extraordinary items - TTM",
         self.price_to_sales = float(ratio_dic.get('TTMPR2REV', self.price_to_sales))
 
-        if "TTMROIPCT" in ratio_dic : 
-            self.roic = float(ratio_dic['TTMROIPCT']) / 100 # return on investec capital - TTM
+        # if "TTMROIPCT" in ratio_dic : 
+        #     self.roic = float(ratio_dic['TTMROIPCT']) / 100 # return on investec capital - TTM
         if "TTMROEPCT" in ratio_dic : 
             self.roe = float(ratio_dic['TTMROEPCT']) / 100 # return on equity - TTM
 
@@ -366,11 +369,6 @@ class Share(FinancialStatements, FinancialForcast):
         self.check_market_cap()
         self.per = self.market_cap / net_income
         self.price_to_sales = self.market_cap / self.inc_ttm_statements['RTLR']
-        
-        # return on invested capital
-        invested_capital = self.last_bal_statements['InvestedCapital']
-        if invested_capital > 0 :
-            self.roic = net_income / invested_capital
 
         # return on equity
         if self.stock_equity > 0 :
