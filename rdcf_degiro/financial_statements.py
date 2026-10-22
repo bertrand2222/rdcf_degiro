@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import os
 import json
 import re
@@ -7,6 +8,8 @@ import pandas as pd
 import numpy as np
 from dateutil.relativedelta import relativedelta
 from requests.exceptions import RetryError
+import yfinance as yf
+from rdcf_degiro.session_model_dcf import SessionModelDCF
 
 # from sklearn.linear_model import LinearRegression
 # import matplotlib.pylab as plt
@@ -60,7 +63,6 @@ PAYOUT_INFOS = ["FCDP", "FPSS" ]
 
 FINANCIAL_ST_CODES =   INC_CODES + BAL_CODES + CASH_CODES
 
-FINANCIAL_FCST_CODES =  ['NET', 'SAL', 'PRE', 'CPX', 'CPS', 'EBT']
 RENAME_DIC_YAHOO = {
     "TotalRevenue" :                "RTLR",
     "OperatingCashFlow" :           "OTLO",
@@ -110,7 +112,37 @@ class MissingDataError(Exception):
     Exception relative to missing data in financial statements
     """
     pass
+
+
 class Statements():
+
+    FINANCIAL_FCST_CODES =  ['NET', 'SAL', 'PRE', 'CPX', 'CPS', 'EBT']
+
+
+    def __init__(self,
+                session_model : SessionModelDCF,
+                share_params : dict
+                ):
+
+        self.session_model = session_model
+        self.logger = self.session_model.logger
+        self.share_params = share_params
+        self.price_currency :str = share_params.get("price_currency")
+        self.yahoo_tk : yf.Ticker = share_params.get("yahoo_tk")
+        self.symbol : str = share_params.get("symbol")
+        self.name : str  = share_params.get("name")
+
+        self.retrieve_from = "degiro"
+        self.statements_currency : str = None
+        self.ebitda : float = None # ebitda
+        self.capex : float = None # capital expenditure
+        self.ocfe : float = None # operating cash flow
+
+        self.last_bal_statements : pd.Series = None 
+        self.q_cashflow_available : bool = None
+        self._y_inc_complete_statements : pd.DataFrame = None
+        self.history_growth : float = None # free oerating cash flow compound annual  growth
+
 
     def convert_to_price_currency(self, attr_list : List[str], statements_currency: str = None):
 
@@ -118,22 +150,22 @@ class Statements():
         Convert financial statement from statement curency to share price history 
         curency considering the change rate history over the period
         """
-        if statements_currency == self.share_currency:
+        if statements_currency == self.price_currency:
             return
         self.logger.info(f'{self.name} : convert statement to price currency                               ')
-        share_currency_special = self.share_currency
-        if self.share_currency in  SPECIAL_CURRENCIES :
-            share_currency_special = SPECIAL_CURRENCIES[self.share_currency]['real']
-            self.rate_factor = SPECIAL_CURRENCIES[self.share_currency]['rate_factor']
+        price_currency_special = self.price_currency
+        if self.price_currency in  SPECIAL_CURRENCIES :
+            price_currency_special = SPECIAL_CURRENCIES[self.price_currency]['real']
+            self.rate_factor = SPECIAL_CURRENCIES[self.price_currency]['rate_factor']
 
         rate_symb = None
-        if share_currency_special != statements_currency:
-            self.logger.info(f'{self.name} : retrieve {statements_currency}/{share_currency_special} history       ')
-            self.session_model.update_rate_dic(  statements_currency, share_currency_special
+        if price_currency_special != statements_currency:
+            self.logger.info(f'{self.name} : retrieve {statements_currency}/{price_currency_special} history       ')
+            self.session_model.update_rate_dic(  statements_currency, price_currency_special
                                                             )
-            rate_symb = statements_currency +  share_currency_special   + "=X"
+            rate_symb = statements_currency +  price_currency_special   + "=X"
         for  attr in attr_list:
-            self.__dict__[attr] = self._convert_to_price_curency_attr(self.__dict__[attr], rate_symb)
+            setattr(self, attr, self._convert_to_price_curency_attr(getattr(self, attr), rate_symb))
 
     def _convert_to_price_curency_attr(self, val: float | pd.DataFrame, rate_symb: str = None) -> pd.DataFrame:
         """
@@ -146,7 +178,7 @@ class Statements():
             return val / self.rate_factor
         
         convert_value_cols = [c for c in val.columns if (
-            c in FINANCIAL_ST_CODES + FINANCIAL_FCST_CODES ) and (c != "QTCO")]
+            c in FINANCIAL_ST_CODES + self.FINANCIAL_FCST_CODES ) and (c != "QTCO")]
         if not convert_value_cols:
             return val
         if  rate_symb :
@@ -165,77 +197,41 @@ class Statements():
         val.loc[:,convert_value_cols] /= self.rate_factor
         return val
 
-class FinancialForcast(Statements):
-    """
-    Class computing and containing fincancial forcast
-    """
-
-    def retrieve_forcasts(self):
-        """
-        retrive forcated financial data
-        """
-
-        self.logger.info(f'{self.name} : retrieves forcast                    ')
-        statement_path = os.path.join(self.session_model.output_folder,
-                                    f"{self.symbol}_company_forcast.json")
-        if self.session_model.update_statements_need(statement_path):
-            try:
-                estimates_summaries = self.session_model.degiro_api.get_estimates_summaries(
-                product_isin= self.isin,
-                raw=True,
-                )['data']
-
-            except KeyError as e:
-                raise KeyError(f'no forcast statement found for isin {self.isin}') from e
-
-            with open(statement_path,
-                        "w", 
-                        encoding= "utf8") as json_file: 
-                json.dump(estimates_summaries, json_file, indent = 4)
-        else :
-            with open(statement_path, "r", encoding= "utf8") as json_file:
-                estimates_summaries = json.load(json_file)
-
-         ### Retrieve annual data
-        data = []
-        for y in estimates_summaries['annual'] :
-            y_dict = {
-                      "endDate"  :  pd.Timestamp(year = int(y['year']), month = 12, day = 31)}
-            for statement in y['statements']:
-                for  item in  statement['items'] :
-                    if item['code'] in FINANCIAL_FCST_CODES:
-                        y_dict[item["code"]] = item["value"]
-            data.append(y_dict)
-
-        self.y_forcasts = pd.DataFrame.from_records(
-            data).set_index('endDate').sort_index()
-        statements_currency = estimates_summaries['currency']
-
-        self.convert_to_price_currency(['y_forcasts'], statements_currency)
-
-        if 'EBT' not in self.y_forcasts:
-            # Set forcasted EBITDA equal to focasted EBIT
-            self.y_forcasts['EBT'] = self.y_forcasts['EBI']
-
-    @property
-    def forcasted_ocf_growth(self):
-        """
-        forcasted annual growth rate
-        """
-        if self._forcasted_ocf_growth is None :
-            self._forcasted_ocf_growth = self._get_forcasted_growth(['CPS', 'EBT', 'NET', 'PRE', 'SAL', ])
-        return self._forcasted_ocf_growth
-    
 
 class FinancialStatements(Statements):
     """
     Share financial statement from degiro
     
     """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        
+        self._history_growth : float = None
+        self.y_statements : pd.DataFrame = None
+
+        self.q_inc_statements : pd.DataFrame = None
+        self.q_bal_statements : pd.DataFrame = None     
+        self.q_cas_statements : pd.DataFrame = None
+        
+        self._inc_ttm_statements_df : pd.DataFrame = None
+        self._cas_ttm_statements_df : pd.DataFrame = None
+        self.total_revenue_code : str = 'RTLR'
+
+        self.roic: float = np.nan
+        self.fcff : float = None # free cash flow
+
+        self.cash_code : str = ['ACAE']
+
+
+    @property
+    def stock_equity(self):
+        return self.last_bal_statements['QTLE']
+
     
     def _retrive_financials_src(self):
         
-        if (self.retrieve_from == "degiro") and (self.special_params.get("finance_from", "degiro") == "degiro"):
+        if (self.retrieve_from == "degiro") and (self.share_params.get("finance_from", "degiro") == "degiro"):
             try :
                 self.degiro_financial_retrieve()
                 return
@@ -260,6 +256,13 @@ class FinancialStatements(Statements):
                                          self._inc_ttm_statements_df],axis= 0)
 
         self.compute_avg_values()
+
+        self.total_debt =  self.last_bal_statements['STLD']
+        self.net_debt = self.total_debt - self.last_bal_statements[self.cash_code].sum()
+        self.debt_cost = - self.interest_expense_income / self.net_debt 
+
+        if 'EBIT' in self.inc_ttm_statements:
+            self.roic = self.inc_ttm_statements['EBIT'] * (1-self.session_model.taxe_rate) / (self.stock_equity + self.net_debt)  
 
 
     def compute_avg_values(self):
@@ -353,9 +356,9 @@ class FinancialStatements(Statements):
     def get_yahoo_financial_src(self):
 
         symb = self.symbol
-        if "yahoo_tk" not in self.special_params:
-            raise KeyError(f"{symb} : yahoo_tk not defined in special_params")
-        symb = self.special_params["yahoo_tk"]
+        if "yahoo_tk" not in self.share_params:
+            raise KeyError(f"{symb} : yahoo_tk not defined in share_params")
+        symb = self.share_params["yahoo_tk"]
 
         y_statements_path = os.path.join(self.session_model.output_folder,
                                                  f"{self.symbol}_y_statement.pckl")
@@ -446,7 +449,7 @@ class FinancialStatements(Statements):
         self.nb_shares = self.y_statements["QTCO"].iloc[-1]
         self.statements_currency = self.yahoo_tk.info['financialCurrency']
 
-        if 'statements_currency' in self.special_params:
+        if 'statements_currency' in self.share_params:
             self.convert_to_price_currency(['y_statements',
                                             'q_inc_statements',
                                             'q_bal_statements', 
@@ -491,10 +494,6 @@ class FinancialStatements(Statements):
 
         self.statements_currency = financial_st['currency']
 
-        # avoid retrieving bad total shares number from degiro for statemenet 
-        # recorded in specific curency
-        # if statements_currency in ['BRL', 'TWD', 'CNY', 'JPY']:
-        #     raise DegiroRetrieveError(f'currency {statements_currency}')
         
         self.degiro_retrieve_annual(financial_st= financial_st)
         self.degiro_retrieve_quarterly(financial_st= financial_st)
