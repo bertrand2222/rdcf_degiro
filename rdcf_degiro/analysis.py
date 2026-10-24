@@ -9,9 +9,10 @@ import pickle
 # from importlib import reload
 # from colorama import Fore
 from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
-from rdcf_degiro.share import MarketCapError, Share, PriceRetrieveError
+from rdcf_degiro.share import MarketCapError, Share
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 from rdcf_degiro.financial_statements import MissingDataError, YahooRetrieveError
+from rdcf_degiro.price_history import PriceRetrieveError
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 urllib3.disable_warnings()
@@ -312,7 +313,7 @@ class RDCFAnal():
 
             except (PriceRetrieveError, YahooRetrieveError, 
                     MissingDataError,
-                    KeyError,
+                    # KeyError,
                     CurlError,
                     RetryError
                     ) as e:
@@ -337,7 +338,7 @@ class RDCFAnal():
 
         self.logger.info("generate summary table")
         
-        attributes = ['name', 'current_price', 'share_currency', 'beta', 'value_to_ebitda',
+        attributes = ['name', 'current_price', 'price_currency', 'beta', 'value_to_ebitda',
                       'market_wacc', 'assumed_g', 'history_growth', 'forcasted_ebitda_growth', 
                       'forcasted_wacc_multiple', 'forcasted_wacc_perpetual', 'forcasted_capital_cost_multiple', 
                       'forcasted_capital_cost_perpetual', 'forcasted_capital_cost_multiple' , 
@@ -351,7 +352,9 @@ class RDCFAnal():
                       "yahoo_symb",
                       'error_msg']
         
-        data = [ {attr : getattr(s, attr, None) for attr in attributes} for s in self.share_list]
+        data = [ {attr : getattr(s, attr, 
+                                 getattr(s.statements, attr, None) # get from statements if not in share
+                                 ) for attr in attributes} for s in self.share_list]
         df = pd.DataFrame.from_records(
             index = [s.symbol for s in self.share_list],
             data= data
