@@ -10,8 +10,8 @@ class FinancialForcast(Statements):
     Class computing and containing fincancial forcast
     """
 
-    def __init__(self, statements : FinancialStatements, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, statements : FinancialStatements, *args, **kwargs):
+        super().__init__(*args,**kwargs)
         self.statements = statements
 
 

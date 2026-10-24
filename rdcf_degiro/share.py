@@ -53,11 +53,7 @@ class Share():
         self.vwd_identifier_type_secondary : str = None
 
         self.retrieve_from = "degiro"
-        self.rate_factor = 1
-        self.nb_shares : float = None
         self.valid_retrieve = False
-
-        self.current_price : float = None
 
         self.assumed_g           : float = np.nan
         self.assumed_g_ttm       : float = np.nan
@@ -106,7 +102,9 @@ class Share():
                                    "symbol" : self.symbol, 
                                    "price_currency" : s_dict['currency'], 
                                    "price_from" : None,
-                                   "price_series_str" : self.price_series_str}
+                                   "price_series_str" : self.price_series_str,
+                                   "isin" : self.isin
+                                   }
         
         # Set special params for shares if defined in config_dict
         if self.symbol in self.session_model.symbol_params.keys():
@@ -180,7 +178,7 @@ class Share():
             with open(statement_path, "r", encoding= "utf8") as json_file:
                 ratios = json.load(json_file)
 
-        self.market_cap = self.nb_shares * self.current_price
+        self.market_cap = self.statements.nb_shares * self.price_history.current_price
 
         statement_currency = ratios['currentRatios']['priceCurrency']
         ratio_dic = {}
@@ -323,7 +321,10 @@ class Share():
         
         try :
             self.retrieve_values()
-        except (KeyError, TypeError) as e:
+        except (
+            KeyError, 
+                # TypeError
+                ) as e:
             raise KeyError(f"{self.name} : error while generating values \n {type(e).__name__} : {e}") from e
         
         self.valid_retrieve = True
@@ -395,7 +396,7 @@ class Share():
         target_market_value = target_current_value
         if not self.use_fcfe :
             target_market_value -= self.statements.net_debt
-        self.target_market_price_multiple = target_market_value / self.nb_shares
+        self.target_market_price_multiple = target_market_value / self.statements.nb_shares
 
     def _compute_assumed_g(self, ocf :float, up_bound : float):
         """

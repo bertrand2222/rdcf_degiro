@@ -131,17 +131,14 @@ class Statements():
         self.yahoo_tk : yf.Ticker = share_params.get("yahoo_tk")
         self.symbol : str = share_params.get("symbol")
         self.name : str  = share_params.get("name")
+        self.isin : str = share_params.get('isin')
 
         self.retrieve_from = "degiro"
         self.statements_currency : str = None
         self.ebitda : float = None # ebitda
         self.capex : float = None # capital expenditure
         self.ocfe : float = None # operating cash flow
-
-        self.last_bal_statements : pd.Series = None 
-        self.q_cashflow_available : bool = None
-        self._y_inc_complete_statements : pd.DataFrame = None
-        self.history_growth : float = None # free oerating cash flow compound annual  growth
+        self.rate_factor = 1
 
 
     def convert_to_price_currency(self, attr_list : List[str], statements_currency: str = None):
@@ -204,8 +201,8 @@ class FinancialStatements(Statements):
     
     """
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args,**kwargs)
         
         self._history_growth : float = None
         self.y_statements : pd.DataFrame = None
@@ -222,6 +219,10 @@ class FinancialStatements(Statements):
         self.fcff : float = None # free cash flow
 
         self.cash_code : str = ['ACAE']
+
+        self.last_bal_statements : pd.Series = None 
+        self.q_cashflow_available : bool = None
+        self._y_inc_complete_statements : pd.DataFrame = None
 
 
     @property

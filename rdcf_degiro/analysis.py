@@ -9,9 +9,10 @@ import pickle
 # from importlib import reload
 # from colorama import Fore
 from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
-from rdcf_degiro.share import MarketCapError, Share, PriceRetrieveError
+from rdcf_degiro.share import MarketCapError, Share
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 from rdcf_degiro.financial_statements import MissingDataError, YahooRetrieveError
+from rdcf_degiro.price_history import PriceRetrieveError
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 urllib3.disable_warnings()
@@ -312,7 +313,7 @@ class RDCFAnal():
 
             except (PriceRetrieveError, YahooRetrieveError, 
                     MissingDataError,
-                    KeyError,
+                    # KeyError,
                     CurlError,
                     RetryError
                     ) as e:
