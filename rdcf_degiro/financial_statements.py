@@ -114,10 +114,63 @@ class MissingDataError(Exception):
     pass
 
 
+class CurrencyConvertrer():
+        def __init__(self, session_model : SessionModelDCF,
+                     share_params : dict,
+                     currency_convertible_cols : list[str] = None):
+            
+            self.session_model = session_model
+            self.price_currency : str = share_params.get("price_currency")
+            self.currency_convertible_cols = currency_convertible_cols
+            
+
+        def convert_to_price_currency_attr(self, val: float | pd.DataFrame, statements_currency: str = None) -> pd.DataFrame:
+            """
+            convert a single dataframe currency
+            """
+    
+            if statements_currency == self.price_currency:
+                return val
+            rate_factor = 1
+            price_currency = self.price_currency
+            if self.price_currency in  SPECIAL_CURRENCIES :
+                price_currency = SPECIAL_CURRENCIES[self.price_currency]['real']
+                rate_factor = SPECIAL_CURRENCIES[self.price_currency]['rate_factor']
+    
+            rate_symb = None
+            if price_currency != statements_currency:
+                self.session_model.update_rate_dic(  statements_currency, price_currency
+                                                                )
+                rate_symb = statements_currency +  price_currency   + "=X"
+    
+            if isinstance(val, float):
+                if  rate_symb:
+                    return val * self.session_model.rate_history_dic[rate_symb]['change_rate'].iloc[-1] / rate_factor
+                return val / rate_factor
+
+            convert_value_cols = [c for c in val.columns if c in self.currency_convertible_cols]
+            if not convert_value_cols:
+                return val
+            if  rate_symb :
+                new_df  = pd.concat([
+                        val,
+                        self.session_model.rate_history_dic[rate_symb] / rate_factor
+                        ], axis = 0
+                        )
+                new_df = new_df.sort_index()
+                new_df['change_rate'] = new_df['change_rate'].ffill()
+                new_df = new_df.dropna(axis=0, subset= convert_value_cols )
+                new_df[convert_value_cols] = new_df[convert_value_cols].multiply(
+                    new_df['change_rate'], axis= 0)
+                return new_df
+    
+            val.loc[:,convert_value_cols] /= rate_factor
+            return val
+
+
 class Statements():
 
-    FINANCIAL_FCST_CODES =  ['NET', 'SAL', 'PRE', 'CPX', 'CPS', 'EBT']
-
+    currency_convertible_cols = None
 
     def __init__(self,
                 session_model : SessionModelDCF,
@@ -138,61 +191,23 @@ class Statements():
         self.ebitda : float = None # ebitda
         self.capex : float = None # capital expenditure
         self.ocfe : float = None # operating cash flow
-        self.rate_factor = 1
+
+        self.currency_converter = CurrencyConvertrer(session_model=session_model, 
+                                                     share_params=share_params, 
+                                                     currency_convertible_cols = self.currency_convertible_cols)
 
 
-    def convert_to_price_currency(self, attr_list : List[str], statements_currency: str = None):
+    def convert_to_price_currency(self, attr_list : List[str], rate_symb: str = None):
 
         """
-        Convert financial statement from statement curency to share price history 
-        curency considering the change rate history over the period
+        Convert financial statement from statement currency to share price history 
+        currency considering the change rate history over the period
         """
-        if statements_currency == self.price_currency:
-            return
-        self.logger.info(f'{self.name} : convert statement to price currency                               ')
-        price_currency_special = self.price_currency
-        if self.price_currency in  SPECIAL_CURRENCIES :
-            price_currency_special = SPECIAL_CURRENCIES[self.price_currency]['real']
-            self.rate_factor = SPECIAL_CURRENCIES[self.price_currency]['rate_factor']
-
-        rate_symb = None
-        if price_currency_special != statements_currency:
-            self.logger.info(f'{self.name} : retrieve {statements_currency}/{price_currency_special} history       ')
-            self.session_model.update_rate_dic(  statements_currency, price_currency_special
-                                                            )
-            rate_symb = statements_currency +  price_currency_special   + "=X"
-        for  attr in attr_list:
-            setattr(self, attr, self._convert_to_price_curency_attr(getattr(self, attr), rate_symb))
-
-    def _convert_to_price_curency_attr(self, val: float | pd.DataFrame, rate_symb: str = None) -> pd.DataFrame:
-        """
-        convert a single dataframe currency
-        """
-
-        if isinstance(val, float):
-            if  rate_symb:
-                return val * self.session_model.rate_history_dic[rate_symb]['change_rate'].iloc[-1] / self.rate_factor
-            return val / self.rate_factor
         
-        convert_value_cols = [c for c in val.columns if (
-            c in FINANCIAL_ST_CODES + self.FINANCIAL_FCST_CODES ) and (c != "QTCO")]
-        if not convert_value_cols:
-            return val
-        if  rate_symb :
-            new_df  = pd.concat([
-                    val,
-                    self.session_model.rate_history_dic[rate_symb] / self.rate_factor
-                    ], axis = 0
-                    )
-            new_df = new_df.sort_index()
-            new_df['change_rate'] = new_df['change_rate'].ffill()
-            new_df = new_df.dropna(axis=0, subset= convert_value_cols )
-            new_df[convert_value_cols] = new_df[convert_value_cols].multiply(
-                new_df['change_rate'], axis= 0)
-            return new_df
+        for  attr in attr_list:
+            setattr(self, attr, 
+                    self.currency_converter.convert_to_price_currency_attr(getattr(self, attr), rate_symb))
 
-        val.loc[:,convert_value_cols] /= self.rate_factor
-        return val
 
 
 class FinancialStatements(Statements):
@@ -200,6 +215,8 @@ class FinancialStatements(Statements):
     Share financial statement from degiro
     
     """
+
+    currency_convertible_cols = [c for c in  FINANCIAL_ST_CODES  if c != "QTCO"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args,**kwargs)
@@ -450,8 +467,7 @@ class FinancialStatements(Statements):
         self.nb_shares = self.y_statements["QTCO"].iloc[-1]
         self.statements_currency = self.yahoo_tk.info['financialCurrency']
 
-        if 'statements_currency' in self.share_params:
-            self.convert_to_price_currency(['y_statements',
+        self.convert_to_price_currency(['y_statements',
                                             'q_inc_statements',
                                             'q_bal_statements', 
                                             'q_cas_statements',

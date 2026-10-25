@@ -9,11 +9,12 @@ class FinancialForcast(Statements):
     """
     Class computing and containing fincancial forcast
     """
+    FINANCIAL_FCST_CODES =  ['NET', 'SAL', 'PRE', 'CPX', 'CPS', 'EBT']
+    currency_convertible_cols = FINANCIAL_FCST_CODES
 
     def __init__(self, statements : FinancialStatements, *args, **kwargs):
         super().__init__(*args,**kwargs)
         self.statements = statements
-
 
         self._forcasted_ocf_growth : float = None
         self._forcasted_capex_growth : float = None

@@ -250,6 +250,9 @@ class SessionModelDCF():
         """
         Record change rate hystory and curent value for one currency pair
         """
+
+        self.logger.info(f'Update rate {currency_1}/{currency_2}                               ')
+
         if currency_1 == currency_2 :
             return
         rate_symb = currency_1 + currency_2 + "=X"

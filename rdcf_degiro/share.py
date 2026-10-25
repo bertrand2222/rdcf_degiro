@@ -5,7 +5,7 @@ import numpy_financial as npf
 from scipy.optimize import minimize_scalar
 import yfinance as yf
 from rdcf_degiro.session_model_dcf import SessionModelDCF
-from rdcf_degiro.financial_statements import  DegiroRetrieveError, FinancialStatements
+from rdcf_degiro.financial_statements import  CurrencyConvertrer, DegiroRetrieveError, FinancialStatements
 from rdcf_degiro.price_history import    PriceHistory
 from rdcf_degiro.forcast import FinancialForcast
 
@@ -66,7 +66,6 @@ class Share():
         self.exchange_id : str = None
 
         self.market_cap : float = None
-        self.market_cap_reported : float = None
         self.roe : float = np.nan
         self.beta : float = None
         self.per : float = np.nan
@@ -116,7 +115,8 @@ class Share():
                 self.share_params.update({"price_currency" : self.yahoo_tk.info['currency']})
         
         self.price_currency = self.share_params["price_currency"]
-        
+
+        self.currency_convertrer = CurrencyConvertrer(session_model, self.share_params)
         self.statements = FinancialStatements(session_model, self.share_params)
         self.forcast = FinancialForcast(self.statements, session_model, self.share_params)
         self.price_history = PriceHistory(session_model, self.share_params)
@@ -148,7 +148,7 @@ class Share():
 
         err_market_cap = abs(self.market_cap - self.market_cap_reported)/min(self.market_cap_reported, self.market_cap )
         if err_market_cap > 0.8 :
-            msg = f"{self.name}  err_market_cap: {err_market_cap:.2f} reported: {self.market_cap_reported:.2f} calculated: {self.market_cap:.2f} nb shares {self.nb_shares}"
+            msg = f"{self.name}  err_market_cap: {err_market_cap:.2f} reported: {self.market_cap_reported:.2f} calculated: {self.market_cap:.2f} nb shares {self.statements.nb_shares}"
             self.market_cap_reliable = False
             raise MarketCapError(msg)
 
@@ -202,7 +202,7 @@ class Share():
 
         if "MKTCAP" in ratio_dic : 
             self.market_cap_reported = float(ratio_dic['MKTCAP']) *1e-6# market cap
-            self.statements.convert_to_price_currency(["market_cap_reported"], statement_currency)
+            self.currency_convertrer.convert_to_price_currency_attr(self.market_cap_reported, statement_currency)
             self.check_market_cap()
                 
 
