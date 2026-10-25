@@ -200,6 +200,7 @@ class SessionModelDCF():
         self.logger.setLevel(logging.INFO)
 
         # File handler (plain formatter, no ANSI sequences)
+        os.makedirs(self.output_folder, exist_ok= True )
         file_path = os.path.join(self.output_folder, 'rdcf.log')
         if os.path.isfile(file_path):
             os.remove(file_path)
@@ -249,6 +250,9 @@ class SessionModelDCF():
         """
         Record change rate hystory and curent value for one currency pair
         """
+
+        self.logger.info(f'Update rate {currency_1}/{currency_2}                               ')
+
         if currency_1 == currency_2 :
             return
         rate_symb = currency_1 + currency_2 + "=X"
