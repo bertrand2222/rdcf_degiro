@@ -354,9 +354,10 @@ class RDCFAnal():
                       'error_msg']
         
         data = [ {attr : getattr(s, attr, 
-                                 getattr(s.statements, attr, # get attr from statements if not in share
-                                         getattr(s.price_history, attr, # get attr from price_history if not in statements
-                                                             None)) 
+                            getattr(s.statements, attr, # get attr from statements if not in share
+                                getattr(s.price_history, attr, # get attr from price_history if not in statements
+                                    getattr(s.forcast, attr,None)) # get attr from forcast if not in statements
+                                                             ) 
                                  ) for attr in attributes} for s in self.share_list]
         df = pd.DataFrame.from_records(
             index = [s.symbol for s in self.share_list],
