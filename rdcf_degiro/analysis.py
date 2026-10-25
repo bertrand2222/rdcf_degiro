@@ -313,11 +313,11 @@ class RDCFAnal():
 
             except (PriceRetrieveError, YahooRetrieveError, 
                     MissingDataError,
-                    # KeyError,
+                    KeyError,
                     CurlError,
                     RetryError
                     ) as e:
-                s.error_msg = f"Error while retrieving data {type(e).__name__} : {e}   "
+                s.error_msg += f"Error while retrieving data {type(e).__name__} : {e}   "
                 self.logger.error(f"{s.name} : {s.error_msg}")
                 continue
 
@@ -332,8 +332,9 @@ class RDCFAnal():
         for s in valid_share_list :
             try :
                 s.compute_share_dcf()
-            except KeyError as e:
-                self.logger.error(f"{s.name} : Error while computing dcf {type(e).__name__} : {e}   ")
+            except (KeyError, TypeError) as e:
+                s.error_msg += f"Error while computing dcf {type(e).__name__} : {e}   "
+                self.logger.error(f"{s.name} : {s.error_msg}")
                 continue
 
         self.logger.info("generate summary table")
@@ -353,7 +354,9 @@ class RDCFAnal():
                       'error_msg']
         
         data = [ {attr : getattr(s, attr, 
-                                 getattr(s.statements, attr, None) # get from statements if not in share
+                                 getattr(s.statements, attr, # get attr from statements if not in share
+                                         getattr(s.price_history, attr, # get attr from price_history if not in statements
+                                                             None)) 
                                  ) for attr in attributes} for s in self.share_list]
         df = pd.DataFrame.from_records(
             index = [s.symbol for s in self.share_list],

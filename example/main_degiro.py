@@ -20,23 +20,28 @@ from rdcf_degiro.analysis import RDCFAnal, RDCFSummary
 
 symbol_params = {
     'EMEIS' : {"value_to_ebitda" : 10,},
-    'RIGD' : {"yahoo_tk" : 'RIGD.IL'},
-    'MAU' : {"yahoo_tk" : 'MAU.PA'},
-    'BY6' : {"yahoo_tk" : 'BYDDY'},
-    'TKY' : {"yahoo_tk" : '8035.T'},
-    '3CP' : {"yahoo_tk" : 'XIACY'},
-    'MBI' : {"yahoo_tk" : '8058.T'},
-    'UBSG' : {"yahoo_tk" : 'UBS'},
-    'SMSN' : {"yahoo_tk" : '005930.KS'},
-    'SMSD' : {"yahoo_tk" : '005935.KS',
+    'RIGD' : {"yahoo_symb" : 'RIGD.IL'},
+    'MAU' : {"yahoo_symb" : 'MAU.PA'},
+    'BY6' : {"yahoo_symb" : 'BYDDY'},
+    'TKY' : {"yahoo_symb" : '8035.T'},
+    '3CP' : {"yahoo_symb" : 'XIACY'},
+    'UBSG' : {"yahoo_symb" : 'UBS'},
+    'SMSN' : {"yahoo_symb" : '005930.KS'},
+    'SMSD' : {"yahoo_symb" : '005935.KS',
               "price_from" : "yahoo"},
-    'HY9H' : {"yahoo_tk" : '000660.KS',
+    'HY9H' : {"yahoo_symb" : '000660.KS',
             "price_from" : "yahoo"},
-    'HHPD' : {"yahoo_tk" : '2317.TW'},
-    'SONY' : {"yahoo_tk" : '6758.T',
+    'HHPD' : {"yahoo_symb" : '2317.TW'},
+    'SONY' : {"yahoo_symb" : '6758.T',
               "price_from" : "yahoo"},
-    'TM' : {"yahoo_tk" : '7203.T',
-            "price_from" : "yahoo"},    
+    'TM' : {"yahoo_symb" : '7203.T',   # Toyota
+            "price_from" : "yahoo"},
+    'MBI'  : {"yahoo_symb" : '8058.T',  # Mitsubishi Corp
+            "price_from" : "yahoo"},
+    'TKY'  : {"yahoo_symb" : '8035.T', # Tokyo Electron
+            "price_from" : "yahoo"},
+    'VAN'  : {"yahoo_symb" : '6857.T', # Advantest
+                "price_from" : "yahoo"},
 }
 
 config_dict = {
@@ -59,8 +64,8 @@ if __name__ == "__main__":
 
     rdcf_fcff_anal = RDCFAnal(config_dict)
 
-    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "SU"] ]
-    
+    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "UBSG"] ]
+
     rdcf_fcff_anal.retrieve_data()
     summary = rdcf_fcff_anal.process()
     summary.save(os.path.join(config_dict['output_folder'],'FCFF.pkl'))

@@ -374,18 +374,16 @@ class FinancialStatements(Statements):
     def get_yahoo_financial_src(self):
 
         symb = self.symbol
-        if "yahoo_tk" not in self.share_params:
-            raise KeyError(f"{symb} : yahoo_tk not defined in share_params")
-        symb = self.share_params["yahoo_tk"]
+        if "yahoo_symb" not in self.share_params:
+            raise YahooRetrieveError(f"{symb} : yahoo_symb not defined in share_params")
+        symb = self.share_params["yahoo_symb"]
 
         y_statements_path = os.path.join(self.session_model.output_folder,
                                                  f"{self.symbol}_y_statement.pckl")
         q_statements_path = os.path.join(self.session_model.output_folder,
                                                  f"{self.symbol}_q_statement.pckl")
         
-
         if self.session_model.update_statements_need(y_statements_path):
-
             try :
                 y_statements : pd.DataFrame = pd.concat([self.yahoo_tk.get_income_stmt(pretty=False), 
                                           self.yahoo_tk.get_balance_sheet(pretty=False),

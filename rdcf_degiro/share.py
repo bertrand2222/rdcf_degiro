@@ -108,12 +108,11 @@ class Share():
         # Set special params for shares if defined in config_dict
         if self.symbol in self.session_model.symbol_params.keys():
             self.share_params.update(self.session_model.symbol_params[self.symbol])
-            self.yahoo_symb = ""
-            if "yahoo_tk" in self.share_params:
-                self.yahoo_symb = self.share_params["yahoo_tk"]
-                self.yahoo_tk = yf.Ticker(self.share_params["yahoo_tk"])
-                self.share_params.update({"price_currency" : self.yahoo_tk.info['currency']})
-        
+            if "yahoo_symb" in self.share_params:
+                self.yahoo_tk = yf.Ticker(self.share_params["yahoo_symb"])
+                self.share_params.update({"price_currency" : self.yahoo_tk.info['currency'],
+                                          "yahoo_tk" : self.yahoo_tk})
+
         self.price_currency = self.share_params["price_currency"]
 
         self.currency_convertrer = CurrencyConvertrer(session_model, self.share_params)
@@ -215,7 +214,7 @@ class Share():
         # self.logger.info(f'{self.name} : retrieves ratio from yahoo              ', flush= True, end = "\r")
         net_income = self.statements.inc_ttm_statements['NINC']
 
-        self.market_cap = self.nb_shares * self.current_price
+        self.market_cap = self.statements.nb_shares * self.price_history.current_price
         self.check_market_cap()
         self.per = self.market_cap / net_income
         self.price_to_sales = self.market_cap / self.statements.inc_ttm_statements['RTLR']
