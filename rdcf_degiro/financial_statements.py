@@ -34,6 +34,7 @@ INC_CODES = [
     # "SGRP", # Gross profit
     "SOPI", # Operating income
     "SDPR", # depreciation and amortizing
+    "SUIE", # unusual expense
     "EIBT", # "Net Income Before Taxes",
     "NINC", # "NetIncome", 
     "SNIN", # "Non operating net interest income"
@@ -159,7 +160,7 @@ class CurrencyConvertrer():
                         )
                 new_df = new_df.sort_index()
                 new_df['change_rate'] = new_df['change_rate'].ffill()
-                new_df = new_df.dropna(axis=0, subset= convert_value_cols )
+                new_df = new_df.dropna(axis=0, subset= convert_value_cols, how = "all" )
                 new_df[convert_value_cols] = new_df[convert_value_cols].multiply(
                     new_df['change_rate'], axis= 0)
                 return new_df
@@ -420,8 +421,8 @@ class FinancialStatements(Statements):
         self.logger.info(f'{self.name} : retrieves financial statement from yahoo             ')
 
         y_statements, q_statements = self.get_yahoo_financial_src()
-        y_statements = y_statements.iloc[::-1]
-        q_statements = q_statements.iloc[::-1]
+        y_statements = y_statements.sort_index()
+        q_statements = q_statements.sort_index()
 
         if not isinstance(y_statements, pd.DataFrame):
             raise TypeError('financial data is not a valid dataframe')
@@ -576,11 +577,16 @@ class FinancialStatements(Statements):
 
         # compute EBITDA        = Operating income + depreciation and amortizing
         y_statements = y_statements.rename(columns= RENAME_DIC_DEGIRO)
-        da_keys = [k for k in ['SDPR', 'SDED'] if k in y_statements]
-        da = y_statements[da_keys[0]] if da_keys else 0
 
         if 'EBIT' in y_statements:
-            y_statements['EBITDA'] = y_statements['EBIT'] + da
+            y_statements['EBITDA'] = y_statements['EBIT'] 
+            da_keys = [k for k in ['SDPR', 'SDED'] if k in y_statements]
+            if da_keys :
+                # Add depreciation and amortization
+                y_statements['EBITDA'] += y_statements[da_keys[0]]
+            if 'SUIE' in y_statements :
+                # Add unusual expense
+                y_statements['EBITDA'] += y_statements['SUIE']
 
         # compute free cash flow
         self._compute_free_cash_flow(y_statements)

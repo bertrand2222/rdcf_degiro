@@ -9,7 +9,8 @@ import pickle
 # from importlib import reload
 # from colorama import Fore
 from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
-from rdcf_degiro.share import MarketCapError, Share
+from rdcf_degiro.forcast import InconsistentStatementsError
+from rdcf_degiro.share import MarketCapError, OptiError, Share
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 from rdcf_degiro.financial_statements import MissingDataError, YahooRetrieveError
 from rdcf_degiro.price_history import PriceRetrieveError
@@ -315,7 +316,7 @@ class RDCFAnal():
                     MissingDataError,
                     KeyError,
                     CurlError,
-                    RetryError
+                    RetryError,
                     ) as e:
                 s.error_msg += f"Error while retrieving data {type(e).__name__} : {e}   "
                 self.logger.error(f"{s.name} : {s.error_msg}")
@@ -332,7 +333,11 @@ class RDCFAnal():
         for s in valid_share_list :
             try :
                 s.compute_share_dcf()
-            except (KeyError, TypeError) as e:
+            except (KeyError,
+                     TypeError, 
+                    # OptiError,
+                    InconsistentStatementsError
+                    ) as e:
                 s.error_msg += f"Error while computing dcf {type(e).__name__} : {e}   "
                 self.logger.error(f"{s.name} : {s.error_msg}")
                 continue
@@ -354,9 +359,10 @@ class RDCFAnal():
                       'error_msg']
         
         data = [ {attr : getattr(s, attr, 
-                                 getattr(s.statements, attr, # get attr from statements if not in share
-                                         getattr(s.price_history, attr, # get attr from price_history if not in statements
-                                                             None)) 
+                            getattr(s.statements, attr, # get attr from statements if not in share
+                                getattr(s.price_history, attr, # get attr from price_history if not in statements
+                                    getattr(s.forcast, attr,None)) # get attr from forcast if not in statements
+                                                             ) 
                                  ) for attr in attributes} for s in self.share_list]
         df = pd.DataFrame.from_records(
             index = [s.symbol for s in self.share_list],

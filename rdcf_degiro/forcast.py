@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 from rdcf_degiro.financial_statements import FinancialStatements, Statements
 
+class InconsistentStatementsError(Exception):
+    """ Error retrived when Forcast and Histrory statement are not consistant"""
 
 class FinancialForcast(Statements):
     """
@@ -75,23 +77,24 @@ class FinancialForcast(Statements):
         Get the fitted growth rate of a forcasted variable
         """
         if self.y_forcasts is None:
-            return np.nan
-        
+            return None
         for val in ls :
             if val not in self.y_forcasts :
                 continue
             ys  = self.y_forcasts[val].dropna()
-            if len(ys) <= 1 or  ys.min() <= 0 :
+            ys = ys.loc[ys >0 ]
+            if len(ys) <= 1 :
                 continue
             y = np.log(ys.values / ys.iloc[0])
-            x = np.arange(len(y))
+            x = ys.index.year
             z = np.polyfit(x,y, deg = 1)
             g = np.exp(z[0]) - 1
+
             return g
 
         
         self.logger.warning(f"{self.name} no valid value to compute growth estimate from {", ".join(ls)}")
-        return np.nan
+        return None
 
     @property
     def forcasted_ocf_growth(self):
@@ -99,7 +102,7 @@ class FinancialForcast(Statements):
         forcasted annual growth rate
         """
         if self._forcasted_ocf_growth is None :
-            self._forcasted_ocf_growth = self._get_forcasted_growth(['CPS', 'EBT', 'NET', 'PRE', 'SAL', ])
+            self._forcasted_ocf_growth = self._get_forcasted_growth(['CPS', 'EBT',  'PRE', 'SAL', 'NET'])
         return self._forcasted_ocf_growth
 
 
@@ -169,24 +172,35 @@ class FinancialForcast(Statements):
         if self.y_forcasts is None:
             return None
 
+        f_year = self.y_forcasts.index[0].year 
+        h_year = self.statements.y_statements.index[-1].year
+        if h_year !=  f_year :
+            raise InconsistentStatementsError(f"Inconsistent first forcast year and last history report year: {f_year} {h_year}" )
+        revenu_ratio = self.statements.y_statements['RTLR'].iloc[-1] / self.y_forcasts['SAL'].iloc[0]
+        if np.isinf(revenu_ratio):
+            raise InconsistentStatementsError(f"Inconsistent first forcast year and last history report year revenu: {self.statements.y_statements['RTLR'].iloc[-1]} {self.y_forcasts['SAL'].iloc[0]}")
         ys = None
-        for val in ['EBT', 'PRE',] :
-            if val in self.y_forcasts:
-                ys = self.y_forcasts[val].dropna()
 
-                if val != 'EBT' :
-                    # if forcasted metric array is not EBITDA rescale it to
-                    # ratio between last stated ebitda and first array value
-                    ratio = self.statements.y_statements['EBITDA'].iloc[-1]/ys.iloc[0]
-                    if (ys.index[0].year == self.statements.y_statements.index[-1].year) and ratio > 0:
-                        ys *= ratio
-                    else:
-                        continue
+        for val in ['EBT', 'EBI',] :
+            if val in self.y_forcasts:
+                ys = self.y_forcasts[val] * revenu_ratio
+
+                if ys.isna().iloc[0]:
+                    ys.iloc[0] = self.statements.y_statements['EBITDA'].iloc[-1]
+                
+                ys = ys.dropna()
+                # rescale data  to ratio between last stated ebitda and first array value
+                # f_year = ys.index[0].year 
+                # h_year = self.statements.y_statements.index[-1].year
+                # ratio = self.statements.y_statements['EBITDA'].iloc[-1]/ys.iloc[0]
+                # if (ys.index[0].year != h_year) or ratio < 0:
+                #     raise InconsistentStatementsError(f"Inconsistent EBITDA stated in forcast and history report: year {f_year} {h_year} ratio :{ratio}")
+                # ys *=ratio
                 
                 if len(ys) >= self.session_model.nb_year_dcf:
                     return ys[:self.session_model.nb_year_dcf]
 
-                if np.isnan(self.forcasted_ebitda_growth) :
+                if self.forcasted_ebitda_growth is None :
                     continue
                 
                 # complete forcasted array with value extrapolated from forcasted growth rate
@@ -199,7 +213,7 @@ class FinancialForcast(Statements):
                 return ys
 
         # no forcasted cash flow per share provided
-        return self.ebitda * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
+        return self.statements.ebitda * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
 
     def _set_forcasted_capex(self):
         """
@@ -238,4 +252,4 @@ class FinancialForcast(Statements):
             return
         self.forcasted_fcfe = self._forcasted_ocfe - self._forcasted_capex
         self.forcasted_fcff = self._forcasted_ocff - self._forcasted_capex
-        self.forcasted_ebitda_growth = self._get_forcasted_growth(['EBT', 'PRE'])
+        self.forcasted_ebitda_growth = self._get_forcasted_growth(['EBT', 'EBI'])

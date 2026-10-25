@@ -56,7 +56,7 @@ config_dict = {
     'symbol_params'              : symbol_params,
     "update_market_rate"            : False,
     'update_statements'             : False,
-    'nb_year_dcf'                   : 10
+    'nb_year_dcf'                   : 8
 }
 # outfile = os.path.join(os.environ["USERPROFILE"], r"Documents\rdcf.xlsx")
 
@@ -64,11 +64,13 @@ if __name__ == "__main__":
 
     rdcf_fcff_anal = RDCFAnal(config_dict)
 
-    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "SNDK"] ]
+    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "PAH3"] ]
 
     rdcf_fcff_anal.retrieve_data()
     summary = rdcf_fcff_anal.process()
     summary.save(os.path.join(config_dict['output_folder'],'FCFF.pkl'))
+
+    # exit()
 
     # summary = RDCFSummary.load(os.path.join(config_dict['output_folder'],'FCFF.pkl'))
 
