@@ -35,6 +35,9 @@ RATIO_CODES = [
 class MarketCapError(Exception):
     pass
 
+class OptiError(Exception):
+    pass
+
 class Share():
     """
     Object containing a share and its financial informations
@@ -314,7 +317,7 @@ class Share():
         try :
             self.forcast.retrieve_forcasts()
         except KeyError as e:
-            self.logger.warning(f'{self.name} : can not retrieve financial forcast from degiro, {e}')
+            self.logger.error(f'{self.name} : can not retrieve financial forcast from degiro, {e}')
 
         self.price_history.retrieve_price_history()
         
@@ -347,14 +350,17 @@ class Share():
 
     def _compute_forcasted_wacc_perpetual(self):
 
-        if np.isnan(self.forcast.forcasted_ebitda_growth)  :
+        if self.forcast.forcasted_ebitda_growth is None :
             return
 
         self.g_delta_forcasted_assumed = self.forcast.forcasted_ebitda_growth - self.assumed_g
 
         # Perpetual method
-        optimized_res = minimize_scalar(self._residual_dcf_on_wacc_perpetual,
+        try :
+            optimized_res = minimize_scalar(self._residual_dcf_on_wacc_perpetual,
                             method= 'bounded', bounds = (self.forcast.forcasted_ebitda_growth, self.forcast.forcasted_ebitda_growth + 6))
+        except ValueError as e:
+            raise  OptiError(str(e))
         err =  optimized_res.fun
         if err <= TOLERANCE_MINIMIZE :
             self.forcasted_wacc_perpetual = optimized_res.x
@@ -374,7 +380,6 @@ class Share():
         else :
             forcasted_ebitda = self.forcast._get_forcasted_ebidta()
             vt_multiple = max(forcasted_ebitda[-1]* self.value_to_ebitda_bounded,0)
-
         fcf = self.forcast.forcasted_fcfe if self.use_fcfe else self.forcast.forcasted_fcff
 
         arr = np.concatenate([np.array([-current_value]), 
@@ -382,7 +387,9 @@ class Share():
                                 np.array([vt_multiple])])
 
         if np.isnan(arr).any():
-            self.logger.error(f'{self.name} : nan fcf values forcasted found {arr}, can not compute forcasted wacc multiple: ')
+            err_msg = f'Error : nan fcf values forcasted found {arr}, can not compute forcasted wacc multiple: '
+            self.error_msg += err_msg
+            self.logger.error(f'{self.name} :  {err_msg} ')
             return
 
         self.forcasted_wacc_multiple = npf.irr(arr)
