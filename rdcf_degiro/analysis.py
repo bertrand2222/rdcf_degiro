@@ -40,7 +40,8 @@ class RDCFSummary():
         
         self.df = df
         self.config = pd.DataFrame.from_dict({**session_model.config_dict, 
-                                              'market_rate' : session_model.rate_info.market_rate,}, 
+                                              'market_rate' : session_model.rate_info.market_rate,
+                                              'risk_free_rate' : session_model.rate_info.risk_free_rate}, 
                                                     orient= 'index').iloc[:,0]
         self.name = name
 

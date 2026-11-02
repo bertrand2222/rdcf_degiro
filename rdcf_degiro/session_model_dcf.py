@@ -95,7 +95,7 @@ FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
 
 class RateInfos():
     debt_cost : float = None
-    free_risk_rate : float = None
+    risk_free_rate : float = None
     market_rate : float = None
     
     def __init__(self, logger: logging.Logger = None):
@@ -127,9 +127,9 @@ class RateInfos():
 
         ### get free risk rate
         #us treasury ten years yield
-        free_risk_rate = self.fed_request("DGS10")
-        self.free_risk_rate = float(free_risk_rate)/100
-        self.logger.info(f"free risk rate = {self.free_risk_rate*100:.2f}%")
+        risk_free_rate = self.fed_request("DGS10")
+        self.risk_free_rate = float(risk_free_rate)/100
+        self.logger.info(f"free risk rate = {self.risk_free_rate*100:.2f}%")
 
         ### eval market rate
         sptr_6y = yf.Ticker("^SP500TR").history(period = '6y', interval= "1mo")

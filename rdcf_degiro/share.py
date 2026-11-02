@@ -233,8 +233,8 @@ class Share():
         if (not self.session_model.use_beta) or (not self.beta):
             return market_infos.market_rate
         
-        free_risk_rate = market_infos.free_risk_rate
-        return free_risk_rate + self.beta * (market_infos.market_rate - free_risk_rate)
+        risk_free_rate = market_infos.risk_free_rate
+        return risk_free_rate + self.beta * (market_infos.market_rate - risk_free_rate)
     
     @property
     def debt_to_equity(self) :
@@ -472,7 +472,7 @@ class Share():
         self._compute_forcasted_wacc_perpetual()
         self._compute_forcasted_wacc_multiple()
 
-        rf = self.session_model.rate_info.free_risk_rate
+        rf = self.session_model.rate_info.risk_free_rate
         rm = self.session_model.rate_info.market_rate
         # compute return on capital from wacc
         self.expected_return_multiple = self._get_cc_from_wacc(self.forcasted_wacc_multiple)
