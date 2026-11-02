@@ -109,6 +109,10 @@ symbol_params = {
             "price_from" : "yahoo"},
     'VAN'  : {"yahoo_symb" : '6857.T', # Advantest
                 "price_from" : "yahoo"},
+    "CLS" : {"yahoo_symb" : 'CLS', # Celestica,
+               },
+    "TSM" : {"yahoo_symb" : '2330.TW', # Taiwan Semiconductor Manufacturing Company
+              "price_from" : "yahoo"}
 }
 
 config_dict = {
@@ -131,7 +135,7 @@ if __name__ == "__main__":
 
     rdcf_fcff_anal = RDCFAnal(config_dict)
 
-    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "SMSD"] ]
+    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "TSM"] ]
 
     rdcf_fcff_anal.retrieve_data()
     summary = rdcf_fcff_anal.process()

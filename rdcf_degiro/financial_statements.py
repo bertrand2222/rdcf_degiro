@@ -125,24 +125,27 @@ class CurrencyConvertrer():
             self.currency_convertible_cols = currency_convertible_cols
             
 
-        def convert_to_price_currency_attr(self, val: float | pd.DataFrame, statements_currency: str = None) -> pd.DataFrame:
+        def convert(self, val: float | pd.DataFrame, statements_currency: str = None, target_currency: str = None) -> pd.DataFrame:
             """
             convert a single dataframe currency
             """
-    
-            if statements_currency == self.price_currency:
+
+            if target_currency is None:
+                target_currency = self.price_currency
+
+            if statements_currency == target_currency:
                 return val
             rate_factor = 1
-            price_currency = self.price_currency
-            if self.price_currency in  SPECIAL_CURRENCIES :
-                price_currency = SPECIAL_CURRENCIES[self.price_currency]['real']
-                rate_factor = SPECIAL_CURRENCIES[self.price_currency]['rate_factor']
+
+            if target_currency in  SPECIAL_CURRENCIES :
+                target_currency = SPECIAL_CURRENCIES[target_currency]['real']
+                rate_factor = SPECIAL_CURRENCIES[target_currency]['rate_factor']
     
             rate_symb = None
-            if price_currency != statements_currency:
-                self.session_model.update_rate_dic(  statements_currency, price_currency
+            if target_currency != statements_currency:
+                self.session_model.update_rate_dic(  statements_currency, target_currency
                                                                 )
-                rate_symb = statements_currency +  price_currency   + "=X"
+                rate_symb = statements_currency +  target_currency   + "=X"
     
             if isinstance(val, float):
                 if  rate_symb:
@@ -198,7 +201,7 @@ class Statements():
                                                      currency_convertible_cols = self.currency_convertible_cols)
 
 
-    def convert_to_price_currency(self, attr_list : List[str], rate_symb: str = None):
+    def convert_to_price_currency(self, attr_list : List[str], satement_currency: str = None):
 
         """
         Convert financial statement from statement currency to share price history 
@@ -207,7 +210,7 @@ class Statements():
         
         for  attr in attr_list:
             setattr(self, attr, 
-                    self.currency_converter.convert_to_price_currency_attr(getattr(self, attr), rate_symb))
+                    self.currency_converter.convert(getattr(self, attr), satement_currency))
 
 
 
