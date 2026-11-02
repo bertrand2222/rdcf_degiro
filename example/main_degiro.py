@@ -126,7 +126,7 @@ config_dict = {
     'taxe_rate'                     : 0.25,
     'symbol_params'              : symbol_params,
     "update_market_rate"            : False,
-    'update_statements'             : False,
+    'update_statements'             : True,
     'nb_year_dcf'                   : 8
 }
 # outfile = os.path.join(os.environ["USERPROFILE"], r"Documents\rdcf.xlsx")
@@ -135,7 +135,7 @@ if __name__ == "__main__":
 
     rdcf_fcff_anal = RDCFAnal(config_dict)
 
-    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "TSM"] ]
+    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "CLS"] ]
 
     rdcf_fcff_anal.retrieve_data()
     summary = rdcf_fcff_anal.process()

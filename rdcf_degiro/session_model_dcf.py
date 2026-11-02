@@ -271,13 +271,10 @@ class SessionModelDCF():
             currency_history.to_pickle(rate_path)
         else :
             currency_history = pd.read_pickle(rate_path)
-        self.rate_history_dic[rate_symb] = currency_history[["Close"]].iloc[:-1].rename(
-            columns = {'Close' : 'change_rate'}).tz_localize(None)
+        currency_history = currency_history.rename(columns={'Close': 'change_rate', "close": 'change_rate'})
+        self.rate_history_dic[rate_symb] = currency_history[["change_rate"]].iloc[:-1].tz_localize(None)
         
-        # .reindex(
-        #         pd.to_datetime(currency_history.index[:-1])).tz_localize(None)
-
-        self.rate_current_dic[rate_symb] = currency_history["Close"].iloc[-1]
+        self.rate_current_dic[rate_symb] = currency_history["change_rate"].iloc[-1]
 
     def update_statements_need(self, path: str) -> bool :
         """
