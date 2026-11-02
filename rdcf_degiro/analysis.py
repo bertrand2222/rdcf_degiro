@@ -354,7 +354,7 @@ class RDCFAnal():
                     #   'roe', 
                       'roic', 'debt_to_equity', 
                       'total_payout_ratio', 
-                      'enterprise_value', 
+                      'market_cap_usd', 
                       "yahoo_symb",
                       'error_msg']
         

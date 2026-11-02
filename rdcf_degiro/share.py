@@ -112,7 +112,8 @@ class Share():
         if self.symbol in self.session_model.symbol_params.keys():
             self.share_params.update(self.session_model.symbol_params[self.symbol])
             if "yahoo_symb" in self.share_params:
-                self.yahoo_tk = yf.Ticker(self.share_params["yahoo_symb"])
+                self.yahoo_symb = self.share_params["yahoo_symb"]
+                self.yahoo_tk = yf.Ticker(self.yahoo_symb)
                 self.share_params.update({"price_currency" : self.yahoo_tk.info['currency'],
                                           "yahoo_tk" : self.yahoo_tk})
 
@@ -134,7 +135,7 @@ class Share():
                 self.logger.warning(f'{self.name} : can not retrieve value ratios from degiro api, {e}     ')
                 self.yahoo_values_retrieve()
         
-
+        self.market_cap_usd = self.currency_convertrer.convert(self.market_cap, self.price_currency, "USD")
         self.enterprise_value = self.market_cap + self.statements.net_debt
 
         # if enterprise value is negative or very low use cash flow to equity
@@ -204,7 +205,7 @@ class Share():
 
         if "MKTCAP" in ratio_dic : 
             self.market_cap_reported = float(ratio_dic['MKTCAP']) *1e-6# market cap
-            self.currency_convertrer.convert_to_price_currency_attr(self.market_cap_reported, statement_currency)
+            self.currency_convertrer.convert(self.market_cap_reported, statement_currency)
             self.check_market_cap()
                 
 
