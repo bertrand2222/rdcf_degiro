@@ -353,7 +353,10 @@ class FinancialStatements(Statements):
 
     def _get_history_growth(self) -> float:
         """
-        Return : revenu history growth calculated by logaritmic fit
+        Returns : 
+
+            float: revenu history growth calculated by logaritmic fit
+
         """
 
         y = None
@@ -372,46 +375,44 @@ class FinancialStatements(Statements):
         z = np.polyfit(df['year'],y, deg = 1)
         return np.exp(z[0]) - 1
 
-    def get_yahoo_financial_src(self):
-
-        symb = self.symbol
-        if "yahoo_symb" not in self.share_params:
-            raise YahooRetrieveError(f"{symb} : yahoo_symb not defined in share_params")
-        symb = self.share_params["yahoo_symb"]
-
-        y_statements_path = os.path.join(self.session_model.output_folder,
-                                                 f"{self.symbol}_y_statement.pckl")
-        q_statements_path = os.path.join(self.session_model.output_folder,
-                                                 f"{self.symbol}_q_statement.pckl")
-        
-        if self.session_model.update_statements_need(y_statements_path):
-            try :
-                y_statements : pd.DataFrame = pd.concat([self.yahoo_tk.get_income_stmt(pretty=False), 
+    def yahoo_q_inc_statements_ttm_update(self):
+        return self.yahoo_tk.get_income_stmt(pretty=False, freq='trailing').T
+    
+    def yahoo_q_cas_statements_ttm_update(self):
+        return self.yahoo_tk.get_cash_flow(pretty=False, freq='trailing').T
+    
+    def yahoo_y_statements_update(self) -> pd.DataFrame:
+        return  pd.concat([self.yahoo_tk.get_income_stmt(pretty=False), 
                                           self.yahoo_tk.get_balance_sheet(pretty=False),
                                           self.yahoo_tk.get_cash_flow(pretty=False)
                                           ], axis = 0).T
 
-                if y_statements.empty:
-                    raise YahooRetrieveError(
-                        f"{symb} symbol not available in yahoo database")
-                y_statements.to_pickle(y_statements_path)
-
-                q_statements = pd.concat([self.yahoo_tk.get_income_stmt(pretty=False, freq='quarterly'), 
+    def yahoo_q_statements_update(self) -> pd.DataFrame :
+        return pd.concat([self.yahoo_tk.get_income_stmt(pretty=False, freq='quarterly'), 
                                         self.yahoo_tk.get_balance_sheet(pretty=False, freq='quarterly'),
                                         self.yahoo_tk.get_cash_flow(pretty=False, freq='quarterly')
                                                           ], axis = 0).T
 
-                q_statements.to_pickle(q_statements_path)
-                return y_statements, q_statements
+    def get_yahoo_financial_src(self, stm :str) -> dict[str, pd.DataFrame]:
+        """
+        Returns :
 
-            except RetryError as e:
-                self.logger.warning(f'{self.name} : failed to update financial data from yahoo {e}')
+            pd.DataFrame : the statement 
+        """
 
-        y_statements : pd.DataFrame = pd.read_pickle(y_statements_path)
-        q_statements : pd.DataFrame = pd.read_pickle(q_statements_path)
+        path = os.path.join(self.session_model.output_folder,
+                                    f"{self.symbol}_{stm}.pckl")
 
-        return y_statements, q_statements
-
+        if self.session_model.update_statements_need(path):
+            df : pd.DataFrame = getattr(self, f"yahoo_{stm}_update")()
+            df.to_pickle(path) 
+        else : 
+            df : pd.DataFrame = pd.read_pickle(path)
+        
+        if not isinstance(df, pd.DataFrame):
+            raise YahooRetrieveError(f"{stm} retrieved from yahoo is not a valid DataFrame")
+        
+        return df.sort_index()
 
     def yahoo_financial_retrieve(self):
 
@@ -420,12 +421,13 @@ class FinancialStatements(Statements):
         """
         self.logger.info(f'{self.name} : retrieves financial statement from yahoo             ')
 
-        y_statements, q_statements = self.get_yahoo_financial_src()
-        y_statements = y_statements.sort_index()
-        q_statements = q_statements.sort_index()
+        if "yahoo_symb" not in self.share_params:
+            raise YahooRetrieveError(f"{self.symbol} : yahoo_symb not defined in share_params")
 
-        if not isinstance(y_statements, pd.DataFrame):
-            raise TypeError('financial data is not a valid dataframe')
+        y_statements = self.get_yahoo_financial_src('y_statements')
+        q_statements = self.get_yahoo_financial_src('q_statements')
+        q_inc_statements_ttm = self.get_yahoo_financial_src('q_inc_statements_ttm')
+        q_cas_statements_ttm = self.get_yahoo_financial_src('q_cas_statements_ttm')
 
         y_statements = y_statements.ffill(axis = 0)
 
@@ -444,8 +446,8 @@ class FinancialStatements(Statements):
         y_statements = multiply_df_scalar(y_statements, 1e-6, exclude_cols = ['TaxRateForCalcs'])
         q_statements = multiply_df_scalar(q_statements, 1e-6, exclude_cols = ['TaxRateForCalcs'])
 
-        self._inc_ttm_statements_df = multiply_df_scalar(self.yahoo_tk.get_income_stmt(pretty=False, freq='trailing').T.iloc[::-1], 1e-6, exclude_cols = ['TaxRateForCalcs'])
-        self._cas_ttm_statements_df = multiply_df_scalar(self.yahoo_tk.get_cash_flow(pretty=False, freq='trailing').T.iloc[::-1], 1e-6, exclude_cols = ['TaxRateForCalcs'])
+        self._inc_ttm_statements_df = multiply_df_scalar(q_inc_statements_ttm, 1e-6, exclude_cols = ['TaxRateForCalcs'])
+        self._cas_ttm_statements_df = multiply_df_scalar(q_cas_statements_ttm, 1e-6, exclude_cols = ['TaxRateForCalcs'])
 
         if isinstance(q_statements, pd.DataFrame) :
             q_statements.ffill(axis = 0, inplace = True)
