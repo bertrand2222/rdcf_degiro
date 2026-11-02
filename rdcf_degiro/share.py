@@ -70,14 +70,14 @@ class Share():
 
         self.market_cap : float = None
         self.roe : float = np.nan
-        self.beta : float = None
+        self.beta : float = 1
         self.per : float = np.nan
         self.price_to_sales : float = np.nan
         self.value_to_ebitda : float = None
         self.value_to_ebitda_bounded : float = None
 
-        self.forcasted_capital_cost_multiple :float = None
-        self.forcasted_capital_cost_perpetual :float = None
+        self.expected_return_multiple :float = None
+        self.expected_return_perpetual :float = None
         self.target_market_value_perpetual : float = None
         self.target_market_price_multiple : float = None
 
@@ -472,9 +472,13 @@ class Share():
         self._compute_forcasted_wacc_perpetual()
         self._compute_forcasted_wacc_multiple()
 
+        rf = self.session_model.rate_info.free_risk_rate
+        rm = self.session_model.rate_info.market_rate
         # compute return on capital from wacc
-        self.forcasted_capital_cost_multiple = self._get_cc_from_wacc(self.forcasted_wacc_multiple)
-        self.forcasted_capital_cost_perpetual = self._get_cc_from_wacc(self.forcasted_wacc_perpetual)
+        self.expected_return_multiple = self._get_cc_from_wacc(self.forcasted_wacc_multiple)
+        if (not self.expected_return_multiple is None) and (not np.isnan(self.expected_return_multiple)):
+            self.beta_ajusted_expected_return_multiple = self.expected_return_multiple - (rf + self.beta * (rm - rf))
+        self.expected_return_perpetual = self._get_cc_from_wacc(self.forcasted_wacc_perpetual)
 
         # compute taget price from market capital cost
         # self.target_market_value_perpetual = (self._compute_value_perpetual(self.market_wacc)    -  self.net_debt

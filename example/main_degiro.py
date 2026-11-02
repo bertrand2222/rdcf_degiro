@@ -112,7 +112,9 @@ symbol_params = {
     "CLS" : {"yahoo_symb" : 'CLS', # Celestica,
                },
     "TSM" : {"yahoo_symb" : '2330.TW', # Taiwan Semiconductor Manufacturing Company
-              "price_from" : "yahoo"}
+              "price_from" : "yahoo"},
+
+    "INFY" : {"yahoo_symb" : "INFY.NS", "price_from" : "yahoo"}
 }
 
 config_dict = {
@@ -125,8 +127,8 @@ config_dict = {
     'output_folder'                 : os.environ['HOME'] + "/Documents/rdcf_degiro_out",
     'taxe_rate'                     : 0.25,
     'symbol_params'              : symbol_params,
-    "update_market_rate"            : False,
-    'update_statements'             : True,
+    "update_market_rate"            : True,
+    'update_statements'             : False,
     'nb_year_dcf'                   : 8
 }
 # outfile = os.path.join(os.environ["USERPROFILE"], r"Documents\rdcf.xlsx")

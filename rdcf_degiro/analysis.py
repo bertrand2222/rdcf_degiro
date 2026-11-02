@@ -125,7 +125,7 @@ class RDCFSummary():
         worksheet.set_column(f"{col_letter['forcasted_wacc_multiple']}:{col_letter['forcasted_wacc_perpetual']}",
                                                         0, #11, 
                                                         percent)
-        worksheet.set_column(f"{col_letter['forcasted_capital_cost_multiple']}:{col_letter['forcasted_capital_cost_perpetual']}",
+        worksheet.set_column(f"{col_letter['expected_return_multiple']}:{col_letter['beta_ajusted_expected_return_multiple']}",
                                 11, bold_percent)
         worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}",
                                 11, percent )
@@ -154,8 +154,9 @@ class RDCFSummary():
         # format_max_min_green_red(worksheet, 'diff_g_forcasted_assumed')
         # format_max_min_green_red(worksheet, 'forcasted_wacc_multiple' , max_type='num', max_value= 1)
         # format_max_min_green_red(worksheet, 'forcasted_wacc_perpetual' , max_type='num', max_value= 1)
-        format_max_min_green_red(worksheet, 'forcasted_capital_cost_multiple', max_type='num', max_value= 1, mid_type= "num", mid_value= self.config.loc['market_rate'])
-        format_max_min_green_red(worksheet, 'forcasted_capital_cost_perpetual', max_type='num', max_value= 1, mid_type= "num", mid_value= self.config.loc['market_rate'])
+        format_max_min_green_red(worksheet, 'expected_return_multiple', max_type='num', max_value= 1, mid_type= "num", mid_value= self.config.loc['market_rate'])
+        format_max_min_green_red(worksheet, 'expected_return_perpetual', max_type='num', max_value= 1, mid_type= "num", mid_value= self.config.loc['market_rate'])
+        format_max_min_green_red(worksheet, 'beta_ajusted_expected_return_multiple', max_type='num', max_value= 1, mid_type= "num", mid_value= 0)
         format_max_min_green_red(worksheet, 'roic', max_type='num', max_value= 1, mid_type= "num", mid_value= 0.08, min_type='num', min_value= 0)
 
 
@@ -346,9 +347,10 @@ class RDCFAnal():
         
         attributes = ['name', 'current_price', 'price_currency', 'beta', 'value_to_ebitda',
                       'market_wacc', 'assumed_g', 'history_growth', 'forcasted_ebitda_growth', 
-                      'forcasted_wacc_multiple', 'forcasted_wacc_perpetual', 'forcasted_capital_cost_multiple', 
-                      'forcasted_capital_cost_perpetual', 'forcasted_capital_cost_multiple' , 
-                      'forcasted_capital_cost_perpetual', 
+                      'forcasted_wacc_multiple', 'forcasted_wacc_perpetual', 'expected_return_multiple', 
+                      'expected_return_perpetual', 'expected_return_multiple' , 
+                      'expected_return_perpetual', 
+                      'beta_ajusted_expected_return_multiple',
                       'target_market_price_multiple',
                       'per', 'price_to_sales', 
                     #   'roe', 
@@ -369,7 +371,7 @@ class RDCFAnal():
             data= data
                               )
         
-        df.sort_values(by = ['forcasted_capital_cost_multiple',]  , inplace= True, ascending= False)
+        df.sort_values(by = ['expected_return_multiple',]  , inplace= True, ascending= False)
 
         self.degiro_api.logout()
 
