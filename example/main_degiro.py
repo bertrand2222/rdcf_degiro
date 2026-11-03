@@ -93,10 +93,13 @@ symbol_params = {
     'TKY' : {"yahoo_symb" : '8035.T'},
     '3CP' : {"yahoo_symb" : 'XIACY'},
     'UBSG' : {"yahoo_symb" : 'UBS'},
-    'SMSN' : {"yahoo_symb" : '005930.KS'},
+    'SMSN' : {"yahoo_symb" : '005930.KS'
+              },
     'SMSD' : {"yahoo_symb" : '005935.KS',
+            "sector" : "Technology",
               "price_from" : "yahoo"},
     'HY9H' : {"yahoo_symb" : '000660.KS',
+            "sector" : "Technology",
             "price_from" : "yahoo"},
     'HHPD' : {"yahoo_symb" : '2317.TW'},
     'SONY' : {"yahoo_symb" : '6758.T',
@@ -106,15 +109,20 @@ symbol_params = {
     'MBI'  : {"yahoo_symb" : '8058.T',  # Mitsubishi Corp
             "price_from" : "yahoo"},
     'TKY'  : {"yahoo_symb" : '8035.T', # Tokyo Electron
-            "price_from" : "yahoo"},
+            "price_from" : "yahoo",
+            "sector" : "Technology",
+            },
     'VAN'  : {"yahoo_symb" : '6857.T', # Advantest
+            "sector" : "Technology",
                 "price_from" : "yahoo"},
     "CLS" : {"yahoo_symb" : 'CLS', # Celestica,
+            "sector" : "Technology",
                },
     "TSM" : {"yahoo_symb" : '2330.TW', # Taiwan Semiconductor Manufacturing Company
+            "sector" : "Technology",
               "price_from" : "yahoo"},
-
-    "INFY" : {"yahoo_symb" : "INFY.NS", "price_from" : "yahoo"}
+    "INFY" : {"yahoo_symb" : "INFY.NS", 
+              "price_from" : "yahoo"}
 }
 
 config_dict = {
@@ -137,7 +145,7 @@ if __name__ == "__main__":
 
     rdcf_fcff_anal = RDCFAnal(config_dict)
 
-    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "CLS"] ]
+    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "TSM"] ]
 
     rdcf_fcff_anal.retrieve_data()
     summary = rdcf_fcff_anal.process()

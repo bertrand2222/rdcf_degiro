@@ -33,24 +33,25 @@ class PriceHistory:
 
         self.history_in_financial_currency : pd.DataFrame = None
 
-
-    def retrieve_price_history_from_degiro(self):
+    def _get_price_history_from_degiro(self, serie_str: str) -> pd.DataFrame:
 
         chart_request = ChartRequest(
-                    culture="fr-FR",
-                    # culture = "en-US",
+                            culture="fr-FR",
+                            # culture = "en-US",
+                        
+                            period=Interval.P5Y,
+                            requestid="1",
+                            resolution=Interval.P1M,
                 
-                    period=Interval.P5Y,
-                    requestid="1",
-                    resolution=Interval.P1M,
-        
-                    series=[
-                        # "issueid:360148977"+ self.vwd_id ,
-                        self.price_series_str,
-                    ],
-                    tz="Europe/Paris",
-                    )
-        
+                            series=[
+                                # "issueid:360148977"+ self.vwd_id ,
+                                # f"issueid:260011946",
+                                # self.price_series_str,
+                                serie_str
+                            ],
+                            tz="Europe/Paris",
+                            )
+                
         chart = self.session_model.degiro_chart_fetcher.get_chart(
             chart_request=chart_request,
             raw=False,
@@ -60,15 +61,33 @@ class PriceHistory:
             raise PriceRetrieveError('error while fetching price history chart')
 
         history = pd.DataFrame(data=chart.series[0].data, columns = ['time', 'close'])
-        self.current_price = history['close'].iloc[-1]
 
         if self.session_model.use_last_intraday_price:
             self.retrieve_intra_day_price()
 
         last_day_current_month = last_day_of_month(chart.series[0].expires)
-        history['date'] = [last_day_current_month - relativedelta(months= i) for i in history['time'][::-1]]
+        history['date'] = [last_day_current_month - relativedelta(months= 60 - i) for i in history['time']]
 
-        self.history =  history.set_index('date').tz_localize(None)
+        return history.set_index('date').tz_localize(None)
+
+
+    def retrieve_price_history_from_degiro(self):
+
+        self.history = self._get_price_history_from_degiro(self.price_series_str)
+        self.current_price = self.history['close'].iloc[-1]
+
+
+        # compute unlevered beta from share and market history
+        if (self.session_model.rate_info.degiro_market_history_chg is None):
+            self.session_model.rate_info.degiro_market_history_chg = self._get_price_history_from_degiro("price:issueid:260011946")['close'].pct_change()
+
+        cov_df = pd.concat([self.history.reset_index()['close'].pct_change(), 
+                            self.session_model.rate_info.degiro_market_history_chg.iloc[-len(self.history):].reset_index()['close']], 
+                           axis=1, 
+                           keys=['share', 'market']).dropna().cov()
+        market_var = cov_df.loc['market', 'market']
+        cov = cov_df.loc['share', 'market']
+        self.unlevered_beta = cov / market_var
 
     def retrieve_price_history_from_yahoo(self):
 
@@ -88,6 +107,13 @@ class PriceHistory:
 
         self.current_price = yahoo_hist['close'].iloc[-1]
 
+        cov_df = pd.concat([self.history.reset_index()['close'].pct_change(), 
+                            self.session_model.rate_info.market_history_chg.iloc[-len(self.history):].reset_index()['Close']], 
+                            axis=1, 
+                            keys=['share', 'market']).dropna().cov()
+        market_var = cov_df.loc['market', 'market']
+        cov = cov_df.loc['share', 'market']
+        self.unlevered_beta = cov / market_var
 
     def retrieve_price_history(self):
         """
