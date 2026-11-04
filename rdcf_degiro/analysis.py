@@ -36,7 +36,7 @@ IS = 0.25
 
 class RDCFSummary():    
 
-    def __init__(self, df: pd.DataFrame, session_model: SessionModelDCF, name : str = None):
+    def __init__(self, df: pd.DataFrame, session_model: SessionModelDCF, sector_beta: pd.Series = None, name : str = None):
         
         self.df = df
         self.config = pd.DataFrame.from_dict({**session_model.config_dict, 
@@ -44,6 +44,7 @@ class RDCFSummary():
                                               'risk_free_rate' : session_model.rate_info.risk_free_rate}, 
                                                     orient= 'index').iloc[:,0]
         self.name = name
+        self.sector_beta = sector_beta
 
     def save(self, path):
         with open(path, "wb") as f:
@@ -91,7 +92,9 @@ class RDCFSummary():
 
         format_dict = {
             "current_price" : {"size" : 13, "format" : number},
-            "beta" : {"size" : 0, "format" : number},
+            "unlevered_beta" : {"size" : 0, "format" : number},
+            "levered_beta" : {"size" : 0, "format" : number},
+            "market_cap_usd" : {"size" : 11, "format" : number},
             "value_to_ebitda" : {"size" : 0, "format" : number},
             "market_wacc" : {"size" : 11, "format" : percent},
             "assumed_g" : {"size" : 11, "format" : bold_percent},
@@ -161,10 +164,7 @@ class RDCFSummary():
         format_max_min_green_red(worksheet, 'roic', max_type='num', max_value= 1, mid_type= "num", mid_value= 0.08, min_type='num', min_value= 0)
 
 
-        worksheet.conditional_format(
-            f"{col_letter['debt_to_equity']}2:{col_letter['debt_to_equity']}{len(df.index)+1}",
-                                        {"type": "cell", "criteria": "<", 
-                                        "value": 0, "format": format3})
+        # Format debt to equity
         worksheet.conditional_format(
             f"{col_letter['debt_to_equity']}2:{col_letter['debt_to_equity']}{len(df.index)+1}",
             {"type": "3_color_scale", 'min_type': 'num',
@@ -208,6 +208,7 @@ class RDCFSummary():
         
         
         self.config.to_excel(writer, sheet_name= sheet_name+"_config")
+        self.sector_beta.to_excel(writer, sheet_name= "sector_beta")
         worksheet = writer.sheets[sheet_name+"_config"]
         worksheet.set_column('A:A', 30, l_align)
         
@@ -251,12 +252,18 @@ class RDCFAnal():
             product_list= ids,
             raw=False,
         )
-        
-        self.share_list += [Share( s_dict.__dict__ ,
+
+        self.share_list = []
+        for s_id, s_dict in product_info.data.items():
+            if s_dict.product_type =='STOCK':
+                try :
+                    self.share_list.append(Share( s_dict.__dict__ ,
                                  session_model = self.session_model,
                                  )
-                                 for s_id, s_dict in product_info.data.items() if s_dict.product_type =='STOCK'
-                                 ]
+                                 )
+                except YahooRetrieveError as e:
+                    self.logger.warning(f'{s_dict.name} : can not retrieve yahoo info, {e}     ')
+        
         
     def retrieve_shares_from_portfolio(self):
         """
@@ -319,20 +326,33 @@ class RDCFAnal():
                     KeyError,
                     CurlError,
                     RetryError,
+                    IndexError,
                     ) as e:
                 s.error_msg += f"Error while retrieving data {type(e).__name__} : {e}   "
                 self.logger.error(f"{s.name} : {s.error_msg}")
                 continue
 
+
     def process(self) :
 
         valid_share_list = [s for s in self.share_list if s.valid_retrieve]
-
         if not valid_share_list :
             print('no share whith valid data, run retrieve_data() first')
             return
         
+        beta_df = pd.DataFrame.from_dict({s.symbol : {
+                                                      'unlevered_beta' : s.price_history.unlevered_beta,
+                                                      'market_cap_usd' : s.market_cap_usd,
+                                                      'sector' : s.share_params.get('sector', 'Unknown'),
+                                                      } for s in valid_share_list},
+                                         orient= 'index')
+        
+        sector_beta = beta_df.groupby('sector').apply(lambda x: x['unlevered_beta'].median())
+
         for s in valid_share_list :
+            s.sector_unlevered_beta = sector_beta.get(s.share_params.get('sector', 'Unknown'), 1)
+            s.levered_beta = s.sector_unlevered_beta * (1 + (1 - self.session_model.taxe_rate) * s.debt_to_equity)
+
             try :
                 s.compute_share_dcf()
             except (KeyError,
@@ -346,7 +366,7 @@ class RDCFAnal():
 
         self.logger.info("generate summary table")
         
-        attributes = ['name', 'current_price', 'price_currency', 'beta', 'value_to_ebitda',
+        attributes = ['name', 'current_price', 'price_currency', 'unlevered_beta','levered_beta', 'value_to_ebitda',
                       'market_wacc', 'assumed_g', 'history_growth', 'forcasted_ebitda_growth', 
                       'forcasted_wacc_multiple', 'forcasted_wacc_perpetual', 'expected_return_multiple', 
                       'expected_return_perpetual', 'expected_return_multiple' , 
@@ -372,12 +392,14 @@ class RDCFAnal():
             data= data
                               )
         
-        df.sort_values(by = ['expected_return_multiple',]  , inplace= True, ascending= False)
+        df.sort_values(by = ['beta_ajusted_expected_return_multiple',]  , inplace= True, ascending= False)
 
         self.degiro_api.logout()
 
 
-        summary = RDCFSummary(df, self.session_model)
+        summary = RDCFSummary(df, self.session_model, 
+                              sector_beta= sector_beta, 
+                              name= self.session_model.config_dict.get('name', None))
         return summary
 
 

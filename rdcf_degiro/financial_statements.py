@@ -7,7 +7,6 @@ from typing import List
 import pandas as pd
 import numpy as np
 from dateutil.relativedelta import relativedelta
-from requests.exceptions import RetryError
 import yfinance as yf
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 
@@ -125,7 +124,7 @@ class CurrencyConvertrer():
             self.currency_convertible_cols = currency_convertible_cols
             
 
-        def convert(self, val: float | pd.DataFrame, statements_currency: str = None, target_currency: str = None) -> pd.DataFrame:
+        def convert(self, val: float | pd.DataFrame, statements_currency: str , target_currency: str = None) -> pd.DataFrame:
             """
             convert a single dataframe currency
             """
@@ -138,8 +137,9 @@ class CurrencyConvertrer():
             rate_factor = 1
 
             if target_currency in  SPECIAL_CURRENCIES :
-                target_currency = SPECIAL_CURRENCIES[target_currency]['real']
-                rate_factor = SPECIAL_CURRENCIES[target_currency]['rate_factor']
+                currency_info = SPECIAL_CURRENCIES[target_currency]
+                target_currency = currency_info['real']
+                rate_factor = currency_info['rate_factor']
     
             rate_symb = None
             if target_currency != statements_currency:

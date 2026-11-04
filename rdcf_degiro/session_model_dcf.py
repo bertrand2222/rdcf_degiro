@@ -135,7 +135,7 @@ class RateInfos():
         sptr_6y = yf.Ticker("^SP500TR").history(period = '6y', interval= "1mo")
 
         # eval market variance for 5 years
-        self.market_history_chg = sptr_6y['Close'].iloc[-60:].pct_change()
+        self.market_history_chg = sptr_6y.rename(columns={'Close': 'close'})['close'].iloc[-60:].pct_change()
         self.degiro_market_history_chg :pd.DataFrame = None
 
         ### eval market rate

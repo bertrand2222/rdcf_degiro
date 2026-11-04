@@ -5,8 +5,8 @@ import numpy_financial as npf
 from scipy.optimize import minimize_scalar
 import yfinance as yf
 from rdcf_degiro.session_model_dcf import SessionModelDCF
-from rdcf_degiro.financial_statements import  CurrencyConvertrer, DegiroRetrieveError, FinancialStatements
-from rdcf_degiro.price_history import    PriceHistory
+from rdcf_degiro.financial_statements import  CurrencyConvertrer, DegiroRetrieveError, FinancialStatements, YahooRetrieveError
+from rdcf_degiro.price_history import    DegiroPriceHistory, YahooPriceHistory
 from rdcf_degiro.forcast import FinancialForcast
 
 ERROR_QUERRY_PRICE = 2
@@ -80,6 +80,8 @@ class Share():
         self.expected_return_perpetual :float = None
         self.target_market_value_perpetual : float = None
         self.target_market_price_multiple : float = None
+        self.levered_beta : float = None
+        self.sector_unlevered_beta : float = None
 
         self.use_fcfe = False
         self.error_msg = ""
@@ -111,18 +113,31 @@ class Share():
         # Set special params for shares if defined in config_dict
         if self.symbol in self.session_model.symbol_params.keys():
             self.share_params.update(self.session_model.symbol_params[self.symbol])
-            if "yahoo_symb" in self.share_params:
-                self.yahoo_symb = self.share_params["yahoo_symb"]
-                self.yahoo_tk = yf.Ticker(self.yahoo_symb)
-                self.share_params.update({"price_currency" : self.yahoo_tk.info['currency'],
-                                          "yahoo_tk" : self.yahoo_tk})
+
+        # if "yahoo_symb" in self.share_params:
+        self.yahoo_symb = self.share_params.get("yahoo_symb", self.symbol)
+        self.yahoo_tk = yf.Ticker(self.yahoo_symb)
+
+        try :
+            info = self.yahoo_tk.info
+            self.share_params.update({"price_currency" : info['currency'],
+                                      "sector" : info['sectorKey'],
+                                    "yahoo_tk" : self.yahoo_tk,
+                                    "name" : info["longName"]})
+            self.name = info["longName"]
+        except KeyError as e:
+            raise YahooRetrieveError(f"{self.yahoo_symb} unknown symbol in yahoo finance database, can not instanciate Share") from e
 
         self.price_currency = self.share_params["price_currency"]
 
         self.currency_convertrer = CurrencyConvertrer(session_model, self.share_params)
         self.statements = FinancialStatements(session_model, self.share_params)
         self.forcast = FinancialForcast(self.statements, session_model, self.share_params)
-        self.price_history = PriceHistory(session_model, self.share_params)
+
+        # if self.share_params.get("price_from", None) == "yahoo":
+        self.price_history = YahooPriceHistory(session_model, self.share_params)
+        # else :
+        #     self.price_history = DegiroPriceHistory(session_model, self.share_params)
 
     def retrieve_values(self):
         """
@@ -137,6 +152,7 @@ class Share():
         
         self.market_cap_usd = self.currency_convertrer.convert(self.market_cap, self.price_currency, "USD")
         self.enterprise_value = self.market_cap + self.statements.net_debt
+        self.debt_to_equity = self.statements.net_debt / self.market_cap
 
         # if enterprise value is negative or very low use cash flow to equity
         self.use_fcfe = (self.enterprise_value / self.market_cap) < 0.05 
@@ -183,7 +199,6 @@ class Share():
 
         self.market_cap = self.statements.nb_shares * self.price_history.current_price
 
-        statement_currency = ratios['currentRatios']['priceCurrency']
         ratio_dic = {}
         for rg in ratios['currentRatios']['ratiosGroups'] :
             for item in rg['items']:
@@ -194,8 +209,8 @@ class Share():
                     #     self.logger.warning(f"{self.name} : Warning {item['id']} value not found")
 
 
-        if 'BETA' in ratio_dic:
-            self.beta    = float(ratio_dic['BETA'])
+        # if 'BETA' in ratio_dic:
+        #     self.beta    = float(ratio_dic['BETA'])
 
         self.per  = float(ratio_dic.get("PEEXCLXOR", self.per))  # "P/E excluding extraordinary items - TTM",
         self.price_to_sales = float(ratio_dic.get('TTMPR2REV', self.price_to_sales))
@@ -203,10 +218,11 @@ class Share():
         if "TTMROEPCT" in ratio_dic : 
             self.roe = float(ratio_dic['TTMROEPCT']) / 100 # return on equity - TTM
 
+        # statement_currency = ratios['currentRatios']['priceCurrency']
         if "MKTCAP" in ratio_dic : 
             self.market_cap_reported = float(ratio_dic['MKTCAP']) *1e-6# market cap
-            self.currency_convertrer.convert(self.market_cap_reported, statement_currency)
-            self.check_market_cap()
+            # self.currency_convertrer.convert(self.market_cap_reported, statement_currency)
+            # self.check_market_cap()
                 
 
     def yahoo_values_retrieve(self):
@@ -236,10 +252,6 @@ class Share():
         risk_free_rate = market_infos.risk_free_rate
         return risk_free_rate + self.beta * (market_infos.market_rate - risk_free_rate)
     
-    @property
-    def debt_to_equity(self) :
-        return self.statements.total_debt / self.market_cap
-
     @property
     def price_to_book(self):
         return  self.market_cap / self.statements.stock_equity
@@ -477,7 +489,7 @@ class Share():
         # compute return on capital from wacc
         self.expected_return_multiple = self._get_cc_from_wacc(self.forcasted_wacc_multiple)
         if (not self.expected_return_multiple is None) and (not np.isnan(self.expected_return_multiple)):
-            self.beta_ajusted_expected_return_multiple = self.expected_return_multiple - (rf + self.beta * (rm - rf))
+            self.beta_ajusted_expected_return_multiple = self.expected_return_multiple - (rf + self.levered_beta * (rm - rf))
         self.expected_return_perpetual = self._get_cc_from_wacc(self.forcasted_wacc_perpetual)
 
         # compute taget price from market capital cost
