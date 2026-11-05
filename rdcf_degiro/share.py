@@ -47,6 +47,7 @@ class Share():
     def __init__(self, s_dict : dict = None,
             session_model : SessionModelDCF  = None):
 
+        self.valid_init = False
         self.name : str = None
         self.isin :str = None
         self.vwd_id : str = None
@@ -70,7 +71,6 @@ class Share():
 
         self.market_cap : float = None
         self.roe : float = np.nan
-        self.beta : float = 1
         self.per : float = np.nan
         self.price_to_sales : float = np.nan
         self.value_to_ebitda : float = None
@@ -86,27 +86,26 @@ class Share():
         self.use_fcfe = False
         self.error_msg = ""
         
-
         self.__dict__.update(s_dict)
 
         self.session_model = session_model
 
 
-        series_id_name = self.vwd_identifier_type
-        serie_id = self.vwd_id
+        # series_id_name = self.vwd_identifier_type
+        # serie_id = self.vwd_id
         self.logger = self.session_model.logger
-        try :
-            self.price_series_str = f"price:{series_id_name}:{serie_id}"
-        except TypeError as e:
-            raise TypeError(
-            f"not valid {series_id_name} type : {type(serie_id)}  history\
-                             chart not available for the quote") from e
+        # try :
+        #     self.price_series_str = f"price:{series_id_name}:{serie_id}"
+        # except TypeError as e:
+        #     raise TypeError(
+        #     f"not valid {series_id_name} type : {type(serie_id)}  history\
+        #                      chart not available for the quote") from e
         
         self.share_params :dict = {"name" : self.name, 
                                    "symbol" : self.symbol, 
                                    "price_currency" : s_dict['currency'], 
                                    "price_from" : None,
-                                   "price_series_str" : self.price_series_str,
+                                #    "price_series_str" : self.price_series_str,
                                    "isin" : self.isin
                                    }
         
@@ -118,6 +117,10 @@ class Share():
         self.yahoo_symb = self.share_params.get("yahoo_symb", self.symbol)
         self.yahoo_tk = yf.Ticker(self.yahoo_symb)
 
+        self.statements = None
+        self.forcast = None
+        self.price_history = None
+
         try :
             info = self.yahoo_tk.info
             self.share_params.update({"price_currency" : info['currency'],
@@ -126,8 +129,9 @@ class Share():
                                     "name" : info["longName"]})
             self.name = info["longName"]
         except KeyError as e:
-            raise YahooRetrieveError(f"{self.yahoo_symb} unknown symbol in yahoo finance database, can not instanciate Share") from e
-
+            self.error_msg += f"{self.yahoo_symb} unknown symbol in yahoo finance database, can not instanciate Share: {e}"
+            return
+        
         self.price_currency = self.share_params["price_currency"]
 
         self.currency_convertrer = CurrencyConvertrer(session_model, self.share_params)
@@ -138,6 +142,7 @@ class Share():
         self.price_history = YahooPriceHistory(session_model, self.share_params)
         # else :
         #     self.price_history = DegiroPriceHistory(session_model, self.share_params)
+        self.valid_init = True
 
     def retrieve_values(self):
         """
@@ -243,23 +248,15 @@ class Share():
         if self.statements.stock_equity > 0 :
             self.roe = net_income / self.statements.stock_equity
     
-    @property
-    def market_capital_cost(self):
-        market_infos = self.session_model.rate_info
-        if (not self.session_model.use_beta) or (not self.beta):
-            return market_infos.market_rate
-        
-        risk_free_rate = market_infos.risk_free_rate
-        return risk_free_rate + self.beta * (market_infos.market_rate - risk_free_rate)
     
     @property
     def price_to_book(self):
         return  self.market_cap / self.statements.stock_equity
     
-    def _get_market_wacc(self) :
+    def _get_wacc(self) :
         """ Get weight averaged capital cost """
 
-        cc = self.market_capital_cost
+        cc = self.capital_cost
         if self.use_fcfe :
             return cc
         eq = self.market_cap
@@ -408,14 +405,15 @@ class Share():
         self.forcasted_wacc_multiple = npf.irr(arr)
 
         # Compute target price from market wacc and forcasted fcf
-        vt_act = vt_multiple / (1+self.market_wacc)**(self.session_model.nb_year_dcf)
-        fcf_act = fcf[:-1] / (1+self.market_wacc)**np.arange(1,self.session_model.nb_year_dcf)
+        vt_act = vt_multiple / (1+self.wacc)**(self.session_model.nb_year_dcf)
+        fcf_act = fcf[:-1] / (1+self.wacc)**np.arange(1,self.session_model.nb_year_dcf)
         fcf_act_sum = fcf_act.sum()
         target_current_value = fcf_act_sum + vt_act
         target_market_value = target_current_value
         if not self.use_fcfe :
             target_market_value -= self.statements.net_debt
         self.target_market_price_multiple = target_market_value / self.statements.nb_shares
+        self.potential_price_evolution = (self.target_market_price_multiple - self.price_history.current_price) / self.price_history.current_price
 
     def _compute_assumed_g(self, ocf :float, up_bound : float):
         """
@@ -460,6 +458,8 @@ class Share():
         
         """
 
+        self.history_growth = self.statements.get_history_growth()
+
         self.compute_multiples()
 
         self.logger.info(f'{self.name} : compute dcf values                        ')
@@ -468,8 +468,12 @@ class Share():
         else :
             ocf = self.statements.ocff
 
-        self.market_wacc = self._get_market_wacc()
-        up_bound = 2 if self.session_model.use_multiple else self.market_wacc
+        rf = self.session_model.rate_info.risk_free_rate
+        rm = self.session_model.rate_info.market_rate
+        self.capital_cost = rf + self.levered_beta * (rm - rf)
+
+        self.wacc = self._get_wacc()
+        up_bound = 2 if self.session_model.use_multiple else self.wacc
 
         if self.session_model.use_multiple and (self.value_to_ebitda_bounded < 0) :
             self.logger.info(f"{self.name} negative terminal price to fcf multiple, can not compute RDCF")
@@ -493,7 +497,7 @@ class Share():
         self.expected_return_perpetual = self._get_cc_from_wacc(self.forcasted_wacc_perpetual)
 
         # compute taget price from market capital cost
-        # self.target_market_value_perpetual = (self._compute_value_perpetual(self.market_wacc)    -  self.net_debt
+        # self.target_market_value_perpetual = (self._compute_value_perpetual(self.wacc)    -  self.net_debt
         #                                       ) / self.nb_shares
 
 
@@ -578,6 +582,6 @@ class Share():
 
         return self.residual_dcf(g = g,
                             ocf = ocf,
-                            wacc = self.market_wacc,
+                            wacc = self.wacc,
                             )
 

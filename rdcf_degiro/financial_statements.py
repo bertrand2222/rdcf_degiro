@@ -225,7 +225,6 @@ class FinancialStatements(Statements):
     def __init__(self, *args, **kwargs):
         super().__init__(*args,**kwargs)
         
-        self._history_growth : float = None
         self.y_statements : pd.DataFrame = None
 
         self.q_inc_statements : pd.DataFrame = None
@@ -344,17 +343,9 @@ class FinancialStatements(Statements):
                 -self.session_model.history_avg_nb_year:].sum()
         return payout / self.y_statements.loc[:,'NINC'].iloc[
             -self.session_model.history_avg_nb_year:].sum()
+    
 
-    @property
-    def history_growth(self):
-        """
-        history growth rate
-        """
-        if self._history_growth is None :
-            self._history_growth = self._get_history_growth()
-        return self._history_growth
-
-    def _get_history_growth(self) -> float:
+    def get_history_growth(self) -> float:
         """
         Returns : 
 

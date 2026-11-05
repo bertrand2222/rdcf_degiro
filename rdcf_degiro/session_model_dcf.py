@@ -233,6 +233,7 @@ class SessionModelDCF():
             raise FileNotFoundError(f"The specified output folder does not exist {self.output_folder}")
 
     def connect_degiro_api(self):
+
         # Connexion
         print("connect to degiro trading API")
         

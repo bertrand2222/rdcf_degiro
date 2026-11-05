@@ -61,12 +61,6 @@ def upload_excel_to_drive(file_path : str):
     # Construction du service Drive avec votre propre compte
     service = build('drive', 'v3', credentials=creds)
 
-    # Métadonnées avec conversion automatique en Google Sheets
-    # file_metadata = {
-    #     'name': 'rdcf_summary',
-    #     'parents': [GDRIVE_FILE_ID],
-    #     'mimeType': 'application/vnd.google-apps.spreadsheet'
-    # }
     
     media = MediaFileUpload(
         file_path, 
@@ -197,6 +191,18 @@ symbol_params = {
     "VU" : {"yahoo_symb" : "VU.PA"},
     "BAS" : {"yahoo_symb" : "BAS.DE"},
     "LDO" : {"yahoo_symb" : "LDO.MI"},
+    "GLE" : {"yahoo_symb" : "GLE.PA"},
+    "DG" : {"yahoo_symb" : "DG.PA"},
+    "SUBC" : {"yahoo_symb" : "SUBC.OL"},
+    "DBG" : {"yahoo_symb" : "DBG.PA"},
+    "IBE" : {"yahoo_symb" : "IBE.MC"},
+    "GLEN" : {"yahoo_symb" : "GLEN.L"},
+    "ALRIB" : {"yahoo_symb" : "ALRIB.PA"},
+    "LNA" : {"yahoo_symb" : "LNA.PA"},
+    "EC" : {"yahoo_symb" : "EC.PA"},
+    "VOW3" : {"yahoo_symb" : "VOW3.DE"},
+    "RIGD" : {"yahoo_symb" : "RELIANCE.NS"},
+    "RR." : {"yahoo_symb" : "RR.L"},
 }
 
 config_dict = {
@@ -219,9 +225,9 @@ if __name__ == "__main__":
 
     rdcf_fcff_anal = RDCFAnal(config_dict)
 
-    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "INTC", 'CRWV', 'ORCL'] ]
 
     rdcf_fcff_anal.retrieve_data()
+    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "INTC", 'CRWV', 'ORCL', 'RR.'] ]
     summary = rdcf_fcff_anal.process()
     summary.save(os.path.join(config_dict['output_folder'],'FCFF.pkl'))
 
