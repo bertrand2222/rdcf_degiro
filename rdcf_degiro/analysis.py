@@ -36,13 +36,15 @@ IS = 0.25
 
 class RDCFSummary():    
 
-    def __init__(self, df: pd.DataFrame, session_model: SessionModelDCF, name : str = None):
+    def __init__(self, df: pd.DataFrame, session_model: SessionModelDCF, sector_beta: pd.Series = None, name : str = None):
         
         self.df = df
         self.config = pd.DataFrame.from_dict({**session_model.config_dict, 
-                                              'market_rate' : session_model.rate_info.market_rate,}, 
+                                              'market_rate' : session_model.rate_info.market_rate,
+                                              'risk_free_rate' : session_model.rate_info.risk_free_rate}, 
                                                     orient= 'index').iloc[:,0]
         self.name = name
+        self.sector_beta = sector_beta
 
     def save(self, path):
         with open(path, "wb") as f:
@@ -75,6 +77,7 @@ class RDCFSummary():
         df.to_excel(writer, sheet_name= sheet_name)
         wb = writer.book
         number = wb.add_format({'num_format': '0.00'})
+        price = wb.add_format({'num_format': '###,##0.00'})
         percent = wb.add_format({'num_format': '0.00%'})
         bold_percent = wb.add_format({'bold': True, 'num_format': '0.00%'})
         l_align =  wb.add_format()
@@ -89,14 +92,17 @@ class RDCFSummary():
         worksheet = writer.sheets[sheet_name]
 
         format_dict = {
-            "current_price" : {"size" : 13, "format" : number},
-            "beta" : {"size" : 0, "format" : number},
+            "current_price" : {"size" : 13, "format" : price},
+            "unlevered_beta" : {"size" : 0, "format" : number},
+            "levered_beta" : {"size" : 0, "format" : number},
+            "market_cap_usd" : {"size" : 11, "format" : price},
             "value_to_ebitda" : {"size" : 0, "format" : number},
-            "market_wacc" : {"size" : 11, "format" : percent},
+            "wacc" : {"size" : 11, "format" : percent},
             "assumed_g" : {"size" : 11, "format" : bold_percent},
             "history_growth" : {"size" : 0, "format" : percent},
             "forcasted_ebitda_growth" : {"size" : 11, "format" : percent},
-            "target_market_price_multiple" : {"size" : 11, "format" : number},
+            "target_market_price_multiple" : {"size" : 11, "format" : price},
+            "potential_price_evolution" : {"size" : 11, "format" : bold_percent},
             # "target_market_price_perpetual" : {"size" : 11, "format" : number},
             "price_to_sales" : {"size" : 11, "format" : number},
             "debt_to_equity" : {"size" : 0, "format" : number},
@@ -125,7 +131,7 @@ class RDCFSummary():
         worksheet.set_column(f"{col_letter['forcasted_wacc_multiple']}:{col_letter['forcasted_wacc_perpetual']}",
                                                         0, #11, 
                                                         percent)
-        worksheet.set_column(f"{col_letter['forcasted_capital_cost_multiple']}:{col_letter['forcasted_capital_cost_perpetual']}",
+        worksheet.set_column(f"{col_letter['expected_return_multiple']}:{col_letter['beta_ajusted_expected_return_multiple']}",
                                 11, bold_percent)
         worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}",
                                 11, percent )
@@ -154,15 +160,14 @@ class RDCFSummary():
         # format_max_min_green_red(worksheet, 'diff_g_forcasted_assumed')
         # format_max_min_green_red(worksheet, 'forcasted_wacc_multiple' , max_type='num', max_value= 1)
         # format_max_min_green_red(worksheet, 'forcasted_wacc_perpetual' , max_type='num', max_value= 1)
-        format_max_min_green_red(worksheet, 'forcasted_capital_cost_multiple', max_type='num', max_value= 1, mid_type= "num", mid_value= self.config.loc['market_rate'])
-        format_max_min_green_red(worksheet, 'forcasted_capital_cost_perpetual', max_type='num', max_value= 1, mid_type= "num", mid_value= self.config.loc['market_rate'])
+        format_max_min_green_red(worksheet, 'expected_return_multiple', max_type='num', max_value= 1, mid_type= "num", mid_value= self.config.loc['market_rate'])
+        format_max_min_green_red(worksheet, 'expected_return_perpetual', max_type='num', max_value= 1, mid_type= "num", mid_value= self.config.loc['market_rate'])
+        format_max_min_green_red(worksheet, 'potential_price_evolution', max_type='num',  max_value = 2, mid_type= "num", mid_value= 0, min_type='num', min_value= -0.1)
+        format_max_min_green_red(worksheet, 'beta_ajusted_expected_return_multiple', max_type='num', max_value= 1, mid_type= "num", mid_value= 0)
         format_max_min_green_red(worksheet, 'roic', max_type='num', max_value= 1, mid_type= "num", mid_value= 0.08, min_type='num', min_value= 0)
 
 
-        worksheet.conditional_format(
-            f"{col_letter['debt_to_equity']}2:{col_letter['debt_to_equity']}{len(df.index)+1}",
-                                        {"type": "cell", "criteria": "<", 
-                                        "value": 0, "format": format3})
+        # Format debt to equity
         worksheet.conditional_format(
             f"{col_letter['debt_to_equity']}2:{col_letter['debt_to_equity']}{len(df.index)+1}",
             {"type": "3_color_scale", 'min_type': 'num',
@@ -206,6 +211,7 @@ class RDCFSummary():
         
         
         self.config.to_excel(writer, sheet_name= sheet_name+"_config")
+        self.sector_beta.to_excel(writer, sheet_name= "sector_beta")
         worksheet = writer.sheets[sheet_name+"_config"]
         worksheet.set_column('A:A', 30, l_align)
         
@@ -225,17 +231,17 @@ class RDCFAnal():
         self.__dict__.update(config_dict)
 
         self.session_model = SessionModelDCF(config_dict)
-        self.session_model.connect_degiro_api()
-        self.degiro_api = self.session_model.degiro_api
-
         self.logger = self.session_model.logger
+        self.degiro_api = None
 
-        self.get_client_details_table = self.session_model.degiro_api.get_client_details
-        if self.session_model.retrieve_shares_from_favorites:
-            self.retrieve_shares_from_favorites()
-        if self.session_model.retrieve_shares_from_portfolio:
-            self.retrieve_shares_from_portfolio()
 
+    def connect_degiro_api(self):
+
+        if self.degiro_api is None:
+
+            self.session_model.connect_degiro_api()
+            self.degiro_api = self.session_model.degiro_api
+            self.get_client_details_table = self.session_model.degiro_api.get_client_details
 
     def retrieve_shares_from_favorites(self):
         """
@@ -249,60 +255,75 @@ class RDCFAnal():
             product_list= ids,
             raw=False,
         )
-        
-        self.share_list += [Share( s_dict.__dict__ ,
+
+        self.share_list = []
+        for s_id, s_dict in product_info.data.items():
+            if s_dict.product_type =='STOCK':
+                try :
+                    self.share_list.append(Share( s_dict.__dict__ ,
                                  session_model = self.session_model,
                                  )
-                                 for s_id, s_dict in product_info.data.items() if s_dict.product_type =='STOCK'
-                                 ]
-        
-    def retrieve_shares_from_portfolio(self):
-        """
-        Retrieve stock and fund ids recorded in Degiro account portfolio
-        """
-        
-        account_update = self.degiro_api.get_update(
-        request_list=[
-            UpdateRequest(
-                option=UpdateOption.PORTFOLIO,
-                last_updated=0,
-            ),
-        ],
-        raw=False,
-    )
-        ids = []
-
-
-        for p in account_update.portfolio['value']:
-            if is_int(p['id']) :
-                # select only portfolio value wich position size != 0
-                for value in p['value']:
-                    if value['name']  == "size" and value['value'] != 0:
-                        ids.append(int(p['id']))
-                        break
-        
-        # FETCH PRODUCT INFO
-        product_info = self.degiro_api.get_products_info(
-            product_list= ids,
-            raw=False,
-        )
-
-        self.share_list += [Share( s_dict.__dict__ ,
-                                 session_model = self.session_model,
                                  )
-                                 for s_id, s_dict in product_info.data.items() if s_dict.product_type =='STOCK'
-                                 ]
+                except YahooRetrieveError as e:
+                    self.logger.warning(f'{s_dict.name} : can not retrieve yahoo info, {e}     ')
+        
+        
+    # def retrieve_shares_from_portfolio(self):
+    #     """
+    #     Retrieve stock and fund ids recorded in Degiro account portfolio
+    #     """
+        
+    #     account_update = self.degiro_api.get_update(
+    #     request_list=[
+    #         UpdateRequest(
+    #             option=UpdateOption.PORTFOLIO,
+    #             last_updated=0,
+    #         ),
+    #     ],
+    #     raw=False,
+    # )
+    #     ids = []
+
+
+    #     for p in account_update.portfolio['value']:
+    #         if is_int(p['id']) :
+    #             # select only portfolio value wich position size != 0
+    #             for value in p['value']:
+    #                 if value['name']  == "size" and value['value'] != 0:
+    #                     ids.append(int(p['id']))
+    #                     break
+        
+    #     # FETCH PRODUCT INFO
+    #     product_info = self.degiro_api.get_products_info(
+    #         product_list= ids,
+    #         raw=False,
+    #     )
+
+    #     self.share_list += [Share( s_dict.__dict__ ,
+    #                              session_model = self.session_model,
+    #                              )
+    #                              for s_id, s_dict in product_info.data.items() if s_dict.product_type =='STOCK'
+    #                              ]
 
     def retrieve_data(self ) :
 
         """
         Generate an analysis summary dataframe
         """
+        self.connect_degiro_api()
+
+        if self.session_model.retrieve_shares_from_favorites:
+            self.retrieve_shares_from_favorites()
+        # if self.session_model.retrieve_shares_from_portfolio:
+        #     self.retrieve_shares_from_portfolio()
+
         if not self.share_list:
             self.logger.error('No product to process, retrieve products before')
             return
         
         for s in self.share_list :
+            if not s.valid_init:
+                continue
             try :
                 for retrieve_from in ['degiro', 'yahoo']:
                     s.retrieve_from = retrieve_from
@@ -317,25 +338,38 @@ class RDCFAnal():
                     KeyError,
                     CurlError,
                     RetryError,
+                    IndexError,
                     ) as e:
                 s.error_msg += f"Error while retrieving data {type(e).__name__} : {e}   "
                 self.logger.error(f"{s.name} : {s.error_msg}")
                 continue
 
+
     def process(self) :
 
         valid_share_list = [s for s in self.share_list if s.valid_retrieve]
-
         if not valid_share_list :
             print('no share whith valid data, run retrieve_data() first')
             return
-        
+
+        # Compute unlevered beta and levered beta for each share, based on sector median unlevered beta
+        beta_df = pd.DataFrame.from_dict({s.symbol : {
+                                                      'unlevered_beta' : s.price_history.unlevered_beta,
+                                                      'market_cap_usd' : s.market_cap_usd,
+                                                      'sector' : s.share_params.get('sector', 'Unknown'),
+                                                      } for s in valid_share_list},
+                                         orient= 'index')
+        sector_beta = beta_df.groupby('sector').apply(lambda x: x['unlevered_beta'].median())
+
         for s in valid_share_list :
+            s.sector_unlevered_beta = sector_beta.get(s.share_params.get('sector', 'Unknown'), 1)
+            s.levered_beta = s.sector_unlevered_beta * (1 + (1 - self.session_model.taxe_rate) * s.debt_to_equity)
+
             try :
                 s.compute_share_dcf()
             except (KeyError,
                      TypeError, 
-                    # OptiError,
+                    IndexError,
                     InconsistentStatementsError
                     ) as e:
                 s.error_msg += f"Error while computing dcf {type(e).__name__} : {e}   "
@@ -344,12 +378,21 @@ class RDCFAnal():
 
         self.logger.info("generate summary table")
         
-        attributes = ['name', 'current_price', 'price_currency', 'beta', 'value_to_ebitda',
-                      'market_wacc', 'assumed_g', 'history_growth', 'forcasted_ebitda_growth', 
-                      'forcasted_wacc_multiple', 'forcasted_wacc_perpetual', 'forcasted_capital_cost_multiple', 
-                      'forcasted_capital_cost_perpetual', 'forcasted_capital_cost_multiple' , 
-                      'forcasted_capital_cost_perpetual', 
+        attributes = [
+                    'symbol',
+                    'name', 
+                      'current_price', 
+                      'price_currency', 'unlevered_beta','levered_beta', 'value_to_ebitda',
+                      'wacc', 'assumed_g', 'history_growth', 'forcasted_ebitda_growth', 
+                      'forcasted_wacc_multiple', 
+                      'forcasted_wacc_perpetual', 
+                      'expected_return_multiple', 
+                      'expected_return_perpetual', 
+                      'expected_return_multiple' , 
+                      'expected_return_perpetual', 
+                      'beta_ajusted_expected_return_multiple',
                       'target_market_price_multiple',
+                      'potential_price_evolution',
                       'per', 'price_to_sales', 
                     #   'roe', 
                       'roic', 'debt_to_equity', 
@@ -363,74 +406,22 @@ class RDCFAnal():
                                 getattr(s.price_history, attr, # get attr from price_history if not in statements
                                     getattr(s.forcast, attr,None)) # get attr from forcast if not in statements
                                                              ) 
-                                 ) for attr in attributes} for s in self.share_list]
-        df = pd.DataFrame.from_records(
-            index = [s.symbol for s in self.share_list],
-            data= data
-                              )
+                                 ) for attr in attributes} for s in self.share_list 
+                                #  if s.valid_init
+                                 ]
+        df = pd.DataFrame.from_records(index = "symbol", data= data)
         
-        df.sort_values(by = ['forcasted_capital_cost_multiple',]  , inplace= True, ascending= False)
+        df.sort_values(by = ['potential_price_evolution',]  , inplace= True, ascending= False)
 
         self.degiro_api.logout()
 
 
-        summary = RDCFSummary(df, self.session_model)
+        summary = RDCFSummary(df, self.session_model, 
+                              sector_beta= sector_beta, 
+                              name= self.session_model.config_dict.get('name', None))
         return summary
 
 
-        
-
-    
-
- 
-
-# def upload_file(outfile):
-#     """
-#     Upload a new file in google drive
-#     Returns : Id's of the file uploaded
-
-#     """
-#     creds = None
-#     # The file token.json stores the user's access and refresh tokens, and is
-#     # created automatically when the authorization flow completes for the first
-#     # time.
-#     if os.path.exists("token.json"):
-#         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-#     # If there are no (valid) credentials available, let the user log in.
-#     if not creds or not creds.valid:
-#         if creds and creds.expired and creds.refresh_token:
-#             creds.refresh(Request())
-#         else:
-#             flow = InstalledAppFlow.from_client_secrets_file(
-#                 "credentials.json", SCOPES
-#             )
-#             creds = flow.run_local_server(port=0)
-#         # Save the credentials for the next run
-#         with open("token.json", "w", encoding= "utf-8") as token:
-#             token.write(creds.to_json())
-
-#     try:
-#         # create drive api client
-#         service = build("drive", "v3", credentials=creds)
-
-#         name = "rdcf_"+ str(date.today())
-#         file_metadata = {"name": name}
-#         media = MediaFileUpload(outfile)
-#         # pylint: disable=maybe-no-member
-
-#         print(f"upload {name}.xlsx to google drive")
-#         file = (
-#             service.files()
-#             .create(body=file_metadata, media_body=media, fields="id")
-#             .execute()
-#         )
-#         print(f'File ID: {file.get("id")}')
-
-#     except HttpError as error:
-#         print(f"An error occurred: {error}")
-#         file = None
-
-#     return file.get("id")
 
 def is_int(x):
     try:

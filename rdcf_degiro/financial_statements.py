@@ -7,7 +7,6 @@ from typing import List
 import pandas as pd
 import numpy as np
 from dateutil.relativedelta import relativedelta
-from requests.exceptions import RetryError
 import yfinance as yf
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 
@@ -125,7 +124,7 @@ class CurrencyConvertrer():
             self.currency_convertible_cols = currency_convertible_cols
             
 
-        def convert(self, val: float | pd.DataFrame, statements_currency: str = None, target_currency: str = None) -> pd.DataFrame:
+        def convert(self, val: float | pd.DataFrame, statements_currency: str , target_currency: str = None) -> pd.DataFrame:
             """
             convert a single dataframe currency
             """
@@ -138,8 +137,9 @@ class CurrencyConvertrer():
             rate_factor = 1
 
             if target_currency in  SPECIAL_CURRENCIES :
-                target_currency = SPECIAL_CURRENCIES[target_currency]['real']
-                rate_factor = SPECIAL_CURRENCIES[target_currency]['rate_factor']
+                currency_info = SPECIAL_CURRENCIES[target_currency]
+                target_currency = currency_info['real']
+                rate_factor = currency_info['rate_factor']
     
             rate_symb = None
             if target_currency != statements_currency:
@@ -225,7 +225,6 @@ class FinancialStatements(Statements):
     def __init__(self, *args, **kwargs):
         super().__init__(*args,**kwargs)
         
-        self._history_growth : float = None
         self.y_statements : pd.DataFrame = None
 
         self.q_inc_statements : pd.DataFrame = None
@@ -344,17 +343,9 @@ class FinancialStatements(Statements):
                 -self.session_model.history_avg_nb_year:].sum()
         return payout / self.y_statements.loc[:,'NINC'].iloc[
             -self.session_model.history_avg_nb_year:].sum()
+    
 
-    @property
-    def history_growth(self):
-        """
-        history growth rate
-        """
-        if self._history_growth is None :
-            self._history_growth = self._get_history_growth()
-        return self._history_growth
-
-    def _get_history_growth(self) -> float:
+    def get_history_growth(self) -> float:
         """
         Returns : 
 

@@ -1,3 +1,4 @@
+import pickle
 import os, json, time
 from dataclasses import dataclass
 import requests
@@ -95,7 +96,7 @@ FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
 
 class RateInfos():
     debt_cost : float = None
-    free_risk_rate : float = None
+    risk_free_rate : float = None
     market_rate : float = None
     
     def __init__(self, logger: logging.Logger = None):
@@ -127,12 +128,17 @@ class RateInfos():
 
         ### get free risk rate
         #us treasury ten years yield
-        free_risk_rate = self.fed_request("DGS10")
-        self.free_risk_rate = float(free_risk_rate)/100
-        self.logger.info(f"free risk rate = {self.free_risk_rate*100:.2f}%")
+        risk_free_rate = self.fed_request("DGS10")
+        self.risk_free_rate = float(risk_free_rate)/100
+        self.logger.info(f"free risk rate = {self.risk_free_rate*100:.2f}%")
+
+        sptr_6y = yf.Ticker("^SP500TR").history(period = '6y', interval= "1mo")
+
+        # eval market variance for 5 years
+        self.market_history_chg = sptr_6y.rename(columns={'Close': 'close'})['close'].iloc[-60:].pct_change()
+        self.degiro_market_history_chg :pd.DataFrame = None
 
         ### eval market rate
-        sptr_6y = yf.Ticker("^SP500TR").history(period = '6y', interval= "1mo")
         sptr_6y_rm = sptr_6y.rolling(2).mean()
         # sptr = yf.Ticker("^SP500TR").history(period = '5y', interval= "1mo").loc["^SP500TR"]
 
@@ -150,16 +156,14 @@ class RateInfos():
     
     def save(self,path:str):
         with open(os.path.join(path),
-                        "w", 
-                        encoding= "utf8") as outfile:
+                        "wb") as outfile:
             dic = {k : v for k, v in self.__dict__.items() if not k == "logger"}
-            json.dump(dic, outfile, indent = 4)
+            pickle.dump(dic, outfile)
 
     def read(self,path: str):
         with open(os.path.join(path),
-                        "r", 
-                        encoding= "utf8") as readfile:
-            self.__dict__.update(json.load( readfile))
+                        "rb") as readfile:
+            self.__dict__.update(pickle.load(readfile))
 
 
 class SessionModelDCF():
@@ -218,7 +222,7 @@ class SessionModelDCF():
         
         
         self.rate_info = RateInfos(self.logger)
-        market_info_path = os.path.join(self.output_folder,"market_info.json")
+        market_info_path = os.path.join(self.output_folder,"market_info.pickle")
         if self.update_market_rate_need(market_info_path):
             self.rate_info.retrieve()
             self.rate_info.save(market_info_path)
@@ -229,6 +233,7 @@ class SessionModelDCF():
             raise FileNotFoundError(f"The specified output folder does not exist {self.output_folder}")
 
     def connect_degiro_api(self):
+
         # Connexion
         print("connect to degiro trading API")
         
@@ -245,6 +250,41 @@ class SessionModelDCF():
         self.degiro_api = API(credentials = credentials)
         
         self.degiro_api.connect()
+
+
+        # product_request = ETFsRequest(
+        #     popular_only=False,
+        #     input_aggregate_types='',
+        #     input_aggregate_values='',
+
+        #     search_text='IE00B5BMR087',
+        #     offset=0,
+        #     limit=100,
+        #     require_total=True,
+        #     sort_columns='name',
+        #     sort_types='asc',
+        # )        
+        # product_search = self.degiro_api.product_search(product_request=product_request, raw=False)
+        # print(product_search.products)
+
+        # Get market histroy with degiro index format
+        # degiro_market_info = self.degiro_api.get_products_info(
+        #             product_list= ["4624934"],
+        #             raw=False,
+        #         ).data[4624934]
+        
+        # print(degiro_market_info)
+        # stop
+        # series_id_name = self.vwd_identifier_type
+        # serie_id = self.vwd_id
+        # # try :
+        # price_series_str = f"price:{degiro_market_info.vwd_identifier_type}:{degiro_market_info.vwd_id}"
+
+        # degiro_market_etf = Share(degiro_market_info.data[4624934].__dict__, session_model = self.session_model)
+
+        # degiro_market_etf.price_history.retrieve_price_history_from_degiro()
+        # self.degiro_market_history_chg = degiro_market_etf.price_history.history.pct_change()
+        # self.degiro_market_variance = self.degiro_market_history_chg.var()
     
     def update_rate_dic(self, currency_1, currency_2, ):
         """
