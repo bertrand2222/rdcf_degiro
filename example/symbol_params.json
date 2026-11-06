@@ -99,5 +99,12 @@
     "EC" : {"yahoo_symb" : "EC.PA"},
     "VOW3" : {"yahoo_symb" : "VOW3.DE"},
     "RIGD" : {"yahoo_symb" : "RELIANCE.NS"},
-    "RR." : {"yahoo_symb" : "RR.L"}
+    "RR." : {"yahoo_symb" : "RR.L"},
+    "ML" : {"yahoo_symb" : "ML.PA",
+            "comment" : "Michelin",
+        "sector" : "consumer_cyclical"},
+    "ITX" : {"yahoo_symb" : "ITX.MC"},
+    "BNP" : {"yahoo_symb" : "BNP.PA"},
+    "PAH3" : {"yahoo_symb" : "PAH3.DE"},
+    "BP." : {"yahoo_symb" : "BP.L"}
 }

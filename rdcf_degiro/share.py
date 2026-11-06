@@ -122,6 +122,7 @@ class Share():
         self.statements = None
         self.forcast = None
         self.price_history = None
+        self.sector = None
 
         info_path = os.path.join(self.session_model.output_folder, f"{self.yahoo_symb}_info.pickle")
         if self.session_model.update_statements_need(info_path):
@@ -136,9 +137,10 @@ class Share():
                 info = pickle.load(infile)
 
         self.share_params.update({"price_currency" : info['currency'],
-                                      "sector" : info['sectorKey'],
                                     "yahoo_tk" : self.yahoo_tk,
                                     "name" : info["longName"]})
+        
+        self.sector = self.share_params.get("sector", info.get('sectorKey', "unknown"))
         self.name = info["longName"]
         
         self.price_currency = self.share_params["price_currency"]
@@ -347,6 +349,8 @@ class Share():
                 # TypeError
                 ) as e:
             raise KeyError(f"{self.name} : error while generating values \n {type(e).__name__} : {e}") from e
+
+        self.compute_multiples()
         
         self.valid_retrieve = True
         # self.eval_beta()
@@ -468,8 +472,6 @@ class Share():
         """
 
         self.history_growth = self.statements.get_history_growth()
-
-        self.compute_multiples()
 
         self.logger.info(f'{self.name} : compute dcf values                        ')
         if self.use_fcfe:

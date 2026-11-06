@@ -36,7 +36,7 @@ IS = 0.25
 
 class RDCFSummary():    
 
-    def __init__(self, df: pd.DataFrame, session_model: SessionModelDCF, sector_beta: pd.Series = None, name : str = None):
+    def __init__(self, df: pd.DataFrame, session_model: SessionModelDCF, sector_info: pd.Series = None, name : str = None):
         
         self.df = df
         self.config = pd.DataFrame.from_dict({**session_model.config_dict, 
@@ -44,7 +44,7 @@ class RDCFSummary():
                                               'risk_free_rate' : session_model.rate_info.risk_free_rate}, 
                                                     orient= 'index').iloc[:,0]
         self.name = name
-        self.sector_beta = sector_beta
+        self.sector_beta = sector_info
 
     def save(self, path):
         with open(path, "wb") as f:
@@ -69,7 +69,7 @@ class RDCFSummary():
         """
 
 
-        letters = list(ascii_uppercase)
+        letters = list(ascii_uppercase) + list(['A' + l for l in ascii_uppercase]) + list(['B' + l for l in ascii_uppercase])
         if self.df is None:
             return
         df = self.df
@@ -353,16 +353,19 @@ class RDCFAnal():
             return
 
         # Compute unlevered beta and levered beta for each share, based on sector median unlevered beta
-        beta_df = pd.DataFrame.from_dict({s.symbol : {
-                                                      'unlevered_beta' : s.price_history.unlevered_beta,
-                                                      'market_cap_usd' : s.market_cap_usd,
-                                                      'sector' : s.share_params.get('sector', 'Unknown'),
-                                                      } for s in valid_share_list},
+        info_df = pd.DataFrame.from_dict({s.symbol : {
+                                        'unlevered_beta' : s.price_history.unlevered_beta,
+                                        # 'market_cap_usd' : s.market_cap_usd,
+                                        'value_to_ebitda' : s.value_to_ebitda,
+                                        'sector' : s.sector,
+                                        } for s in valid_share_list},
                                          orient= 'index')
-        sector_beta = beta_df.groupby('sector').apply(lambda x: x['unlevered_beta'].median())
+        # sector_info = info_df.groupby('sector').apply(lambda x: x['unlevered_beta'].median())
+        sector_info = info_df.groupby('sector').median()
 
         for s in valid_share_list :
-            s.sector_unlevered_beta = sector_beta.get(s.share_params.get('sector', 'Unknown'), 1)
+            s.sector_unlevered_beta = sector_info.loc[s.sector, 'unlevered_beta']
+            s.sector_value_to_ebitda = sector_info.loc[s.sector, 'value_to_ebitda']
             s.levered_beta = s.sector_unlevered_beta * (1 + (1 - self.session_model.taxe_rate) * s.debt_to_equity)
 
             try :
@@ -399,6 +402,7 @@ class RDCFAnal():
                       'total_payout_ratio', 
                       'market_cap_usd', 
                       "yahoo_symb",
+                      "sector",
                       'error_msg']
         
         data = [ {attr : getattr(s, attr, 
@@ -417,7 +421,7 @@ class RDCFAnal():
 
 
         summary = RDCFSummary(df, self.session_model, 
-                              sector_beta= sector_beta, 
+                              sector_info= sector_info, 
                               name= self.session_model.config_dict.get('name', None))
         return summary
 
