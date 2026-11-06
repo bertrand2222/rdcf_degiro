@@ -44,7 +44,7 @@ class RDCFSummary():
                                               'risk_free_rate' : session_model.rate_info.risk_free_rate}, 
                                                     orient= 'index').iloc[:,0]
         self.name = name
-        self.sector_beta = sector_info
+        self.sector_info = sector_info
 
     def save(self, path):
         with open(path, "wb") as f:
@@ -96,7 +96,7 @@ class RDCFSummary():
             "unlevered_beta" : {"size" : 0, "format" : number},
             "levered_beta" : {"size" : 0, "format" : number},
             "market_cap_usd" : {"size" : 11, "format" : price},
-            "value_to_ebitda" : {"size" : 0, "format" : number},
+            "value_to_ebitda_adj" : {"size" : 0, "format" : number},
             "wacc" : {"size" : 11, "format" : percent},
             "assumed_g" : {"size" : 11, "format" : bold_percent},
             "history_growth" : {"size" : 0, "format" : percent},
@@ -211,10 +211,16 @@ class RDCFSummary():
         
         
         self.config.to_excel(writer, sheet_name= sheet_name+"_config")
-        self.sector_beta.to_excel(writer, sheet_name= "sector_beta")
         worksheet = writer.sheets[sheet_name+"_config"]
         worksheet.set_column('A:A', 30, l_align)
         
+        self.sector_info.to_excel(writer, sheet_name= "sector_info")
+        worksheet = writer.sheets["sector_info"]
+        worksheet.set_column('A:A', 20, )
+        worksheet.set_column(f"B:C",
+                                20, 
+                                number)
+
         
 class RDCFAnal():
     """
@@ -360,13 +366,19 @@ class RDCFAnal():
                                         'sector' : s.sector,
                                         } for s in valid_share_list},
                                          orient= 'index')
-        # sector_info = info_df.groupby('sector').apply(lambda x: x['unlevered_beta'].median())
+
         sector_info = info_df.groupby('sector').median()
+        # sector_info = info_df.groupby('sector').apply(lambda x: x['unlevered_beta'].median())
+
 
         for s in valid_share_list :
             s.sector_unlevered_beta = sector_info.loc[s.sector, 'unlevered_beta']
-            s.sector_value_to_ebitda = sector_info.loc[s.sector, 'value_to_ebitda']
+            sector_value_to_ebitda = sector_info.loc[s.sector, 'value_to_ebitda']
             s.levered_beta = s.sector_unlevered_beta * (1 + (1 - self.session_model.taxe_rate) * s.debt_to_equity)
+
+            # Ajust value to ebitda with sector
+            self_weight = 0 if (s.value_to_ebitda < 0) else s.share_params.get("multiple_self_weight",2/3)
+            s.value_to_ebitda_adj =  1 / (self_weight/s.value_to_ebitda + (1-self_weight)/sector_value_to_ebitda)
 
             try :
                 s.compute_share_dcf()
@@ -385,7 +397,8 @@ class RDCFAnal():
                     'symbol',
                     'name', 
                       'current_price', 
-                      'price_currency', 'unlevered_beta','levered_beta', 'value_to_ebitda',
+                      'price_currency', 'unlevered_beta','levered_beta', 
+                      'value_to_ebitda_adj',
                       'wacc', 'assumed_g', 'history_growth', 'forcasted_ebitda_growth', 
                       'forcasted_wacc_multiple', 
                       'forcasted_wacc_perpetual', 
