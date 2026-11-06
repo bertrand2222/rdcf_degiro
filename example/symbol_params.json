@@ -2,7 +2,6 @@
     "EMEIS" : {"value_to_ebitda" : 8 ,
                "yahoo_symb": "EMEIS.PA"},
     "CLARI" : {"yahoo_symb": "CLARI.PA"},
-    "BKD" : {"sector" : "Healthcare"},
     "MAU" : {"yahoo_symb" : "MAU.PA"},
     "BY6" : {"yahoo_symb" : "BYDDY"},
     "3CP" : {"yahoo_symb" : "XIACY"},
@@ -38,11 +37,8 @@
     "ORCL" : {
               "yahoo_symb" : "ORCL",
                 "price_from" : "yahoo"},
-    "BFSA" : {"sector" : "Chemicals",
-                  "yahoo_symb" : "BFSA.DE",
-                    "price_from" : "yahoo"},
-    "P911" : {"sector" : "Automotive",
-                      "yahoo_symb" : "P911.DE"},
+    "BFSA" : { "yahoo_symb" : "BFSA.DE",},
+    "P911" : { "yahoo_symb" : "P911.DE"},
     "INTC" : {
               "yahoo_symb" : "INTC",
               "price_from" : "yahoo"},
@@ -56,11 +52,9 @@
     "RHM" : {"yahoo_symb" : "RHM.DE",
                     "sector" : "AerospaceAndDefense"}, 
 
-    "HO" : {"yahoo_symb" : "HO.PA",
-            "sector" : "AerospaceAndDefense"}, 
+    "HO" : {"yahoo_symb" : "HO.PA",}, 
 
-    "CS" : {"yahoo_symb" : "CS.PA",
-                "sector" : "Inssurance"}, 
+    "CS" : {"yahoo_symb" : "CS.PA",}, 
 
     "DSY" : {"yahoo_symb" : "DSY.PA"}, 
 
