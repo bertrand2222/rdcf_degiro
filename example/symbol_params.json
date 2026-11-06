@@ -6,8 +6,7 @@
     "BY6" : {"yahoo_symb" : "BYDDY"},
     "3CP" : {"yahoo_symb" : "XIACY"},
     "UBSG" : {"yahoo_symb" : "UBS"},
-    "SMSN" : {"yahoo_symb" : "005930.KS"
-              },
+    "SMSN" : {"yahoo_symb" : "005930.KS"},
     "SMSD" : {"yahoo_symb" : "005935.KS",
               "price_from" : "yahoo"},
     "HY9H" : {"yahoo_symb" : "000660.KS",
@@ -21,8 +20,7 @@
     "MBI"  : {"yahoo_symb" : "8058.T",  
             "price_from" : "yahoo"},
     "TKY"  : {"yahoo_symb" : "8035.T", 
-            "price_from" : "yahoo"
-            },
+            "price_from" : "yahoo"},
     "VAN"  : {"yahoo_symb" : "6857.T", 
                 "price_from" : "yahoo"},
     "CLS" : {"yahoo_symb" : "CLS",
@@ -37,24 +35,17 @@
     "ORCL" : {
               "yahoo_symb" : "ORCL",
                 "price_from" : "yahoo"},
-    "BFSA" : { "yahoo_symb" : "BFSA.DE",},
+    "BFSA" : { "yahoo_symb" : "BFSA.DE"},
     "P911" : { "yahoo_symb" : "P911.DE"},
-    "INTC" : {
-              "yahoo_symb" : "INTC",
+    "INTC" : {"yahoo_symb" : "INTC",
               "price_from" : "yahoo"},
-    "TE" : {"sector" : "Energy",
-            "yahoo_symb" : "TE.PA"},  
-    "TTE" : {"sector" : "Energy"}, 
-    "XOM" : {"sector" : "Energy"}, 
-    "OXY" : {"sector" : "Energy"}, 
-    "AM" : {"yahoo_symb" : "AM.PA",
-            "sector" : "AerospaceAndDefense"}, 
-    "RHM" : {"yahoo_symb" : "RHM.DE",
-                    "sector" : "AerospaceAndDefense"}, 
+    "TE" : {"yahoo_symb" : "TE.PA"},  
+    "AM" : {"yahoo_symb" : "AM.PA"}, 
+    "RHM" : {"yahoo_symb" : "RHM.DE"}, 
 
-    "HO" : {"yahoo_symb" : "HO.PA",}, 
+    "HO" : {"yahoo_symb" : "HO.PA"}, 
 
-    "CS" : {"yahoo_symb" : "CS.PA",}, 
+    "CS" : {"yahoo_symb" : "CS.PA"}, 
 
     "DSY" : {"yahoo_symb" : "DSY.PA"}, 
 
