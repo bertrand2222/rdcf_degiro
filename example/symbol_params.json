@@ -1,5 +1,5 @@
 {
-    "EMEIS" : {"value_to_ebitda" : 8 ,
+    "EMEIS" : {"multiple_self_weight" : 0,
                "yahoo_symb": "EMEIS.PA"},
     "CLARI" : {"yahoo_symb": "CLARI.PA"},
     "MAU" : {"yahoo_symb" : "MAU.PA"},
@@ -48,6 +48,7 @@
     "CS" : {"yahoo_symb" : "CS.PA"}, 
 
     "DSY" : {"yahoo_symb" : "DSY.PA"}, 
+    "AMZN" : {"multiple_self_weight" : 0.7},
 
     "ENR" : {"yahoo_symb" : "ENR.DE"}, 
     "ALV" : {"yahoo_symb" : "ALV.DE"}, 
@@ -68,7 +69,8 @@
     "VK" : {"yahoo_symb" : "VK.PA"}, 
     "SHELL" : {"yahoo_symb" : "SHELL.AS"}, 
     "8TRA" : {"yahoo_symb" : "8TRA.DE"},
-    "URW" : {"yahoo_symb" : "URW.PA"},
+    "URW" : {"yahoo_symb" : "URW.PA",
+                "multiple_self_weight": 0.3},
     "STLAP" : {"yahoo_symb" : "STLAP.PA"},
     "CAP" : {"yahoo_symb" : "CAP.PA"},
     "AMUN" : {"yahoo_symb" : "AMUN.PA"},
@@ -102,9 +104,12 @@
     "RR." : {"yahoo_symb" : "RR.L"},
     "ML" : {"yahoo_symb" : "ML.PA",
             "comment" : "Michelin",
-        "sector" : "consumer_cyclical"},
+        "sector" : "consumer-cyclical"},
     "ITX" : {"yahoo_symb" : "ITX.MC"},
     "BNP" : {"yahoo_symb" : "BNP.PA"},
+    "VIE" : {"yahoo_symb" : "VIE.PA"},
+    "ETL" : {"yahoo_symb" : "ETL.PA"},
     "PAH3" : {"yahoo_symb" : "PAH3.DE"},
+    "BMW" : {"yahoo_symb" : "BMW.DE"},
     "BP." : {"yahoo_symb" : "BP.L"}
 }

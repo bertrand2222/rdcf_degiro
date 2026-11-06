@@ -415,9 +415,6 @@ class FinancialStatements(Statements):
         """
         self.logger.info(f'{self.name} : retrieves financial statement from yahoo             ')
 
-        if "yahoo_symb" not in self.share_params:
-            raise YahooRetrieveError(f"{self.symbol} : yahoo_symb not defined in share_params")
-
         y_statements = self.get_yahoo_financial_src('y_statements')
         q_statements = self.get_yahoo_financial_src('q_statements')
         q_inc_statements_ttm = self.get_yahoo_financial_src('q_inc_statements_ttm')

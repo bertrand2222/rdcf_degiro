@@ -76,7 +76,7 @@ class Share():
         self.per : float = np.nan
         self.price_to_sales : float = np.nan
         self.value_to_ebitda : float = None
-        self.value_to_ebitda_bounded : float = None
+        self.value_to_ebitda_adj : float = None
 
         self.expected_return_multiple :float = None
         self.expected_return_perpetual :float = None
@@ -315,12 +315,9 @@ class Share():
         self.price_to_ocfe_bounded = max( boud_i, 1 / max(1/self.price_to_ocfe, 1/bound_s))
         self.value_to_ocff_bounded = max( boud_i, 1 / max(1/self.value_to_ocff, 1/bound_s))
 
-        if "value_to_ebitda" in self.share_params:
-            self.value_to_ebitda = self.share_params["value_to_ebitda"]
-            self.value_to_ebitda_bounded = self.share_params["value_to_ebitda"]
-        else :
-            self.value_to_ebitda = len(df_multiple) / (1 / df_multiple['value_to_ebitda']).sum()
-            self.value_to_ebitda_bounded = max( boud_i, 1 / max(1/self.value_to_ebitda, 1/bound_s))
+        self.value_to_ebitda = self.share_params.get(
+            "value_to_ebitda",
+            len(df_multiple) / (1 / df_multiple['value_to_ebitda']).sum())
 
         return(0)
         
@@ -353,7 +350,6 @@ class Share():
         self.compute_multiples()
         
         self.valid_retrieve = True
-        # self.eval_beta()
 
     def _get_cc_from_wacc(self, wacc: float):
             
@@ -402,7 +398,7 @@ class Share():
             vt_multiple = max(self.forcast._forcasted_ocfe[-1]* self.price_to_ocfe_bounded,0)
         else :
             forcasted_ebitda = self.forcast._get_forcasted_ebidta()
-            vt_multiple = max(forcasted_ebitda[-1]* self.value_to_ebitda_bounded,0)
+            vt_multiple = forcasted_ebitda[-1]* self.value_to_ebitda_adj
         fcf = self.forcast.forcasted_fcfe if self.use_fcfe else self.forcast.forcasted_fcff
 
         arr = np.concatenate([np.array([-current_value]), 
@@ -486,7 +482,7 @@ class Share():
         self.wacc = self._get_wacc()
         up_bound = 2 if self.session_model.use_multiple else self.wacc
 
-        if self.session_model.use_multiple and (self.value_to_ebitda_bounded < 0) :
+        if self.session_model.use_multiple and (self.value_to_ebitda_adj < 0) :
             self.logger.info(f"{self.name} negative terminal price to fcf multiple, can not compute RDCF")
             return
 
