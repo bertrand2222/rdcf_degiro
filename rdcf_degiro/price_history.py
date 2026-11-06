@@ -80,16 +80,16 @@ class YahooPriceHistory(PriceHistory):
 
     def _retrieve_price_history(self):
 
-        y_price_path = os.path.join(self.session_model.output_folder,
-                                                         f"{self.symbol}_y_price.pckl")
+        yahoo_hist = self.yahoo_tk.history(period="5y", interval="1mo")[['Close']]
 
-        try :
-            yahoo_hist = self.yahoo_tk.history(period="5y", interval="1mo")[['Close']]
-            yahoo_hist.to_pickle(y_price_path)
-
-        except RetryError as e:
-            self.logger.warning(f'{self.name} : failed to update price history from yahoo {e}')
-            yahoo_hist = pd.read_pickle(y_price_path)
+        # y_price_path = os.path.join(self.session_model.output_folder,
+        #                                                  f"{self.symbol}_y_price.pckl")
+        # try :
+        #     yahoo_hist = self.yahoo_tk.history(period="5y", interval="1mo")[['Close']]
+        #     yahoo_hist.to_pickle(y_price_path)
+        # except RetryError as e:
+        #     self.logger.warning(f'{self.name} : failed to update price history from yahoo {e}')
+        #     yahoo_hist = pd.read_pickle(y_price_path)
 
         yahoo_hist = yahoo_hist.rename(columns={'Close': 'close'})
         self.history = yahoo_hist.tz_localize(None)
@@ -97,83 +97,83 @@ class YahooPriceHistory(PriceHistory):
         self.current_price = yahoo_hist['close'].iloc[-1]
 
 
-class DegiroPriceHistory(PriceHistory):
+# class DegiroPriceHistory(PriceHistory):
 
-    def __init__(self, session_model : SessionModelDCF, share_params : dict):
-        super().__init__(session_model, share_params)
+#     def __init__(self, session_model : SessionModelDCF, share_params : dict):
+#         super().__init__(session_model, share_params)
 
-        if (self.session_model.rate_info.degiro_market_history_chg is None):
-            self.session_model.rate_info.degiro_market_history_chg = self._get_price_history("price:issueid:260011946")['close'].pct_change()
-        self.market_chg = self.session_model.rate_info.degiro_market_history_chg
+#         if (self.session_model.rate_info.degiro_market_history_chg is None):
+#             self.session_model.rate_info.degiro_market_history_chg = self._get_price_history("price:issueid:260011946")['close'].pct_change()
+#         self.market_chg = self.session_model.rate_info.degiro_market_history_chg
 
-    def retrieve_intra_day_price(self):
-        """
-        retrieve current price from charts
-        """
+#     def retrieve_intra_day_price(self):
+#         """
+#         retrieve current price from charts
+#         """
 
-        chart_request = ChartRequest(
-            culture="fr-FR",
-            # culture = "en-US",
+#         chart_request = ChartRequest(
+#             culture="fr-FR",
+#             # culture = "en-US",
         
-            period=Interval.P1D,
-            requestid="1",
-            resolution=Interval.PT5M,        
-            series=[
-                self.price_series_str,
-            ],
-            tz="Europe/Paris",
-            )
-        chart = self.session_model.degiro_chart_fetcher.get_chart(
-            chart_request=chart_request,
-            raw=False,
-        )
-        try :
-            self.current_price = chart.series[0].data[-1][-1]
-        except IndexError :
-            print(f'{self.name} : warning, not enought data to retrieve intra day price')
+#             period=Interval.P1D,
+#             requestid="1",
+#             resolution=Interval.PT5M,        
+#             series=[
+#                 self.price_series_str,
+#             ],
+#             tz="Europe/Paris",
+#             )
+#         chart = self.session_model.degiro_chart_fetcher.get_chart(
+#             chart_request=chart_request,
+#             raw=False,
+#         )
+#         try :
+#             self.current_price = chart.series[0].data[-1][-1]
+#         except IndexError :
+#             print(f'{self.name} : warning, not enought data to retrieve intra day price')
 
-    def _get_price_history(self, serie_str: str) -> pd.DataFrame:
+#     def _get_price_history(self, serie_str: str) -> pd.DataFrame:
     
-        chart_request = ChartRequest(
-                            culture="fr-FR",
-                            # culture = "en-US",
+#         chart_request = ChartRequest(
+#                             culture="fr-FR",
+#                             # culture = "en-US",
                         
-                            period=Interval.P5Y,
-                            requestid="1",
-                            resolution=Interval.P1M,
+#                             period=Interval.P5Y,
+#                             requestid="1",
+#                             resolution=Interval.P1M,
                 
-                            series=[
-                                # "issueid:360148977"+ self.vwd_id ,
-                                # f"issueid:260011946",
-                                # self.price_series_str,
-                                serie_str
-                            ],
-                            tz="Europe/Paris",
-                            )
+#                             series=[
+#                                 # "issueid:360148977"+ self.vwd_id ,
+#                                 # f"issueid:260011946",
+#                                 # self.price_series_str,
+#                                 serie_str
+#                             ],
+#                             tz="Europe/Paris",
+#                             )
                 
-        chart = self.session_model.degiro_chart_fetcher.get_chart(
-            chart_request=chart_request,
-            raw=False,
-        )
+#         chart = self.session_model.degiro_chart_fetcher.get_chart(
+#             chart_request=chart_request,
+#             raw=False,
+#         )
 
-        if chart is None:
-            raise PriceRetrieveError('error while fetching price history chart')
+#         if chart is None:
+#             raise PriceRetrieveError('error while fetching price history chart')
 
-        history = pd.DataFrame(data=chart.series[0].data, columns = ['time', 'close'])
+#         history = pd.DataFrame(data=chart.series[0].data, columns = ['time', 'close'])
 
-        if self.session_model.use_last_intraday_price:
-            self.retrieve_intra_day_price()
+#         if self.session_model.use_last_intraday_price:
+#             self.retrieve_intra_day_price()
 
-        last_day_current_month = last_day_of_month(chart.series[0].expires)
-        history['date'] = [last_day_current_month - relativedelta(months= 60 - i) for i in history['time']]
+#         last_day_current_month = last_day_of_month(chart.series[0].expires)
+#         history['date'] = [last_day_current_month - relativedelta(months= 60 - i) for i in history['time']]
 
-        return history.set_index('date').tz_localize(None)
+#         return history.set_index('date').tz_localize(None)
 
 
-    def _retrieve_price_history(self):
+#     def _retrieve_price_history(self):
     
-        self.history = self._get_price_history(self.price_series_str)
-        self.current_price = self.history['close'].iloc[-1]
+#         self.history = self._get_price_history(self.price_series_str)
+#         self.current_price = self.history['close'].iloc[-1]
 
 
         

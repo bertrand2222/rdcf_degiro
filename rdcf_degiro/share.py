@@ -1,3 +1,4 @@
+import pickle
 import json, os
 import numpy as np
 import pandas as pd
@@ -6,7 +7,8 @@ from scipy.optimize import minimize_scalar
 import yfinance as yf
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 from rdcf_degiro.financial_statements import  CurrencyConvertrer, DegiroRetrieveError, FinancialStatements, YahooRetrieveError
-from rdcf_degiro.price_history import    DegiroPriceHistory, YahooPriceHistory
+from rdcf_degiro.price_history import     YahooPriceHistory
+# from rdcf_degiro.price_history import    DegiroPriceHistory
 from rdcf_degiro.forcast import FinancialForcast
 
 ERROR_QUERRY_PRICE = 2
@@ -121,16 +123,23 @@ class Share():
         self.forcast = None
         self.price_history = None
 
-        try :
+        info_path = os.path.join(self.session_model.output_folder, f"{self.yahoo_symb}_info.pickle")
+        if self.session_model.update_statements_need(info_path):
             info = self.yahoo_tk.info
-            self.share_params.update({"price_currency" : info['currency'],
+            if 'currency' not in info:
+                self.error_msg += f"{self.yahoo_symb} unknown symbol in yahoo finance database, can not instanciate Share object"
+                return
+            with open(info_path, "wb") as outfile:
+                pickle.dump(info, outfile)
+        else:
+            with open(info_path, "rb") as infile:
+                info = pickle.load(infile)
+
+        self.share_params.update({"price_currency" : info['currency'],
                                       "sector" : info['sectorKey'],
                                     "yahoo_tk" : self.yahoo_tk,
                                     "name" : info["longName"]})
-            self.name = info["longName"]
-        except KeyError as e:
-            self.error_msg += f"{self.yahoo_symb} unknown symbol in yahoo finance database, can not instanciate Share: {e}"
-            return
+        self.name = info["longName"]
         
         self.price_currency = self.share_params["price_currency"]
 
