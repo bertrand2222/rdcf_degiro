@@ -54,28 +54,28 @@ class FinancialForcast(Statements):
                 estimates_summaries = json.load(json_file)
 
          ### Retrieve annual data
-        data = []
-        for y in estimates_summaries['annual'] :
-            y_dict = {
-                      "endDate"  :  pd.Timestamp(year = int(y['year']), month = 12, day = 31)}
-            for statement in y['statements']:
-                for  item in  statement['items'] :
-                    if item['code'] in self.FINANCIAL_FCST_CODES:
-                        y_dict[item["code"]] = item["value"]
-            data.append(y_dict)
+        try :
+            data = []
+            for y in estimates_summaries['annual'] :
+                y_dict = {
+                        "endDate"  :  pd.Timestamp(year = int(y['year']), month = 12, day = 31)}
+                for statement in y['statements']:
+                    for  item in  statement['items'] :
+                        if item['code'] in self.FINANCIAL_FCST_CODES:
+                            y_dict[item["code"]] = item["value"]
+                data.append(y_dict)
 
-        self.y_forcasts = pd.DataFrame.from_records(
-            data).set_index('endDate').sort_index()
-        statements_currency = estimates_summaries['currency']
+            self.y_forcasts = pd.DataFrame.from_records(
+                data).set_index('endDate').sort_index()
+            statements_currency = estimates_summaries['currency']
 
-        self.convert_to_price_currency(['y_forcasts'], statements_currency)
+            self.convert_to_price_currency(['y_forcasts'], statements_currency)
 
-        if 'EBT' not in self.y_forcasts:
-            # Set forcasted EBITDA equal to focasted EBIT
-            try :
-                self.y_forcasts['EBT'] = self.y_forcasts['EBI']
-            except KeyError as e:
-                raise MissingDataError(e)
+            if 'EBT' not in self.y_forcasts:
+                # Set forcasted EBITDA equal to focasted EBIT
+                    self.y_forcasts['EBT'] = self.y_forcasts['EBI']
+        except KeyError as e:
+            raise MissingDataError(e)
             
     def _get_forcasted_growth(self, ls : list[str]):
         """

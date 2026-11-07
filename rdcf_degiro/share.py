@@ -252,7 +252,10 @@ class Share():
         self.market_cap_reported = self.info["marketCap"] *1e-6
         self.check_market_cap()
         self.per = self.info.get("trailingPE", self.market_cap / net_income)
-        self.price_to_sales = self.info.get("priceToSalesTrailing12Months",self.market_cap / self.statements.inc_ttm_statements['RTLR'])
+        try :
+            self.price_to_sales = self.info.get("priceToSalesTrailing12Months",self.market_cap / self.statements.inc_ttm_statements['RTLR'])
+        except KeyError :
+            self.price_to_sales =  None
 
         # return on equity
         self.roe = self.info.get("returnOnEquity", net_income / self.statements.stock_equity)
