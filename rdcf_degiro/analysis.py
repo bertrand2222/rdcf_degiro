@@ -46,6 +46,7 @@ class RDCFSummary():
                                                     orient= 'index').iloc[:,0]
         self.name = name
         self.sector_info = sector_info
+        self.debt_cost = session_model.rate_info.debt_cost
 
     def save(self, path):
         with open(path, "wb") as f:
@@ -107,6 +108,7 @@ class RDCFSummary():
             # "target_market_price_perpetual" : {"size" : 11, "format" : number},
             "price_to_sales" : {"size" : 11, "format" : number},
             "debt_to_equity" : {"size" : 0, "format" : number},
+            "debt_cost" : {"size" : 0, "format" : percent},
 
                 }
         for k, f in format_dict.items():
@@ -155,6 +157,22 @@ class RDCFSummary():
                 f"{col_letter[col_s]}2:{col_letter[col_e]}{len(df.index)+1}", format_dic
                 )
 
+        def format_min_max_green_red(ws, col_s : str, col_e : str = None, 
+                                                max_type : str = 'max', 
+                                                mid_type = 'percentile',
+                                                mid_value = 0,
+                                            **kwargs):
+            if col_e is None:
+                col_e = col_s
+            format_dic = {"type": "3_color_scale", 'min_type': 'min',
+                'max_type': max_type, 'mid_type' : mid_type,
+                'max_color' : '#F8696B', "min_color" : '#63BE7B', 
+                "mid_color" : "#FFFFFF", "mid_value" : mid_value,
+                **kwargs}
+            ws.conditional_format(
+                f"{col_letter[col_s]}2:{col_letter[col_e]}{len(df.index)+1}", format_dic
+                )
+
     
         format_max_min_green_red(worksheet, 'history_growth',) 
         format_max_min_green_red(worksheet, 'forcasted_ebitda_growth')
@@ -166,6 +184,7 @@ class RDCFSummary():
         format_max_min_green_red(worksheet, 'potential_price_evolution', max_type='num',  max_value = 2, mid_type= "num", mid_value= 0, min_type='num', min_value= -0.1)
         format_max_min_green_red(worksheet, 'beta_ajusted_expected_return_multiple', max_type='num', max_value= 1, mid_type= "num", mid_value= 0)
         format_max_min_green_red(worksheet, 'roic', max_type='num', max_value= 1, mid_type= "num", mid_value= 0.08, min_type='num', min_value= 0)
+        # format_min_max_green_red(worksheet, 'debt_cost', max_type='num', max_value= 0.1, mid_type='num', mid_value= self.debt_cost, min_type = "num", min_value = 0)
 
 
         # Format debt to equity
@@ -419,7 +438,9 @@ class RDCFAnal():
                       'potential_price_evolution',
                       'per', 'price_to_sales', 
                     #   'roe', 
-                      'roic', 'debt_to_equity', 
+                      'roic', 
+                      'debt_to_equity', 
+                      'debt_cost',
                       'total_payout_ratio', 
                       'market_cap_usd', 
                       "yahoo_symb",
