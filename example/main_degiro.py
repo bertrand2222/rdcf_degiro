@@ -6,6 +6,7 @@ import shutil
 import pandas as pd 
 import subprocess
 import json
+import pickle
 
 sys.path.append(os.environ["HOME"] + "/Documents/rdcf_degiro")
 

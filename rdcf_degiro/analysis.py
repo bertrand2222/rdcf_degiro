@@ -331,13 +331,14 @@ class RDCFAnal():
             if not s.valid_init:
                 continue
             try :
-                for retrieve_from in ['degiro', 'yahoo']:
-                    s.retrieve_from = retrieve_from
-                    try :
-                        s.retrieve_share_data()
-                        break
-                    except MarketCapError as e:
-                        self.logger.warning(f"{e} can not retrieve data from {retrieve_from}")
+                # for retrieve_from in ['degiro', 'yahoo']:
+                #     s.retrieve_from = retrieve_from
+                #     try :
+                #         s.retrieve_share_data()
+                #         break
+                #     except MarketCapError as e:
+                #         self.logger.warning(f"{e} can not retrieve data from {retrieve_from}")
+                s.retrieve_share_data()
 
             except (PriceRetrieveError, YahooRetrieveError, 
                     MissingDataError,
