@@ -3,8 +3,7 @@ import os
 import pandas as pd
 import yfinance as yf
 from dateutil.relativedelta import relativedelta
-from requests.exceptions import RetryError
-from degiro_connector.quotecast.models.chart import ChartRequest, Interval
+# from degiro_connector.quotecast.models.chart import ChartRequest, Interval
 from datetime import  timedelta, datetime
 
 from rdcf_degiro.financial_statements import CurrencyConvertrer

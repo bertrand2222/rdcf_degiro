@@ -8,9 +8,10 @@ import pandas as pd
 import pickle
 # from importlib import reload
 # from colorama import Fore
-from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
+from degiro_connector.core.exceptions import DeGiroConnectionError
+# from degiro_connector.trading.models.account import UpdateOption, UpdateRequest
 from rdcf_degiro.forcast import InconsistentStatementsError
-from rdcf_degiro.share import MarketCapError, OptiError, Share
+from rdcf_degiro.share import  Share
 from rdcf_degiro.session_model_dcf import SessionModelDCF
 from rdcf_degiro.financial_statements import MissingDataError, YahooRetrieveError
 from rdcf_degiro.price_history import PriceRetrieveError
@@ -243,35 +244,41 @@ class RDCFAnal():
 
     def connect_degiro_api(self):
 
-        if self.degiro_api is None:
+        if self.degiro_api is None:        
+            try :
+                self.session_model.connect_degiro_api()
+                self.degiro_api = self.session_model.degiro_api
+                self.get_client_details_table = self.session_model.degiro_api.get_client_details
 
-            self.session_model.connect_degiro_api()
-            self.degiro_api = self.session_model.degiro_api
-            self.get_client_details_table = self.session_model.degiro_api.get_client_details
+            except DeGiroConnectionError :
+                self.logger.warning('Can not connect to degiro API currently')
+                self.session_model.degiro_connexion_issue = True
 
     def retrieve_shares_from_favorites(self):
         """
         Retrieve stock and fund ids recorded in Degiro account favorite list
         """
-        favorite_batch = self.degiro_api.get_favorite(raw=False)
-        ids = favorite_batch.data[0].product_ids
+        if not self.session_model.degiro_connexion_issue :
+            favorite_batch = self.degiro_api.get_favorite(raw=False)
+            ids = favorite_batch.data[0].product_ids
 
-        # FETCH PRODUCT INFO
-        product_info = self.degiro_api.get_products_info(
-            product_list= ids,
-            raw=False,
-        )
+            # FETCH PRODUCT INFO
+            product_info = self.degiro_api.get_products_info(
+                product_list= ids,
+                raw=False,
+            )
+            share_dicts = [dg_dict.__dict__ for _, dg_dict  in product_info.data.items() if dg_dict.product_type =='STOCK']
+        else :
+            share_dicts = [{"symbol" : s, **d} for s, d in self.session_model.symbol_params.items()]
 
         self.share_list = []
-        for s_id, s_dict in product_info.data.items():
-            if s_dict.product_type =='STOCK':
-                try :
-                    self.share_list.append(Share( s_dict.__dict__ ,
-                                 session_model = self.session_model,
-                                 )
-                                 )
-                except YahooRetrieveError as e:
-                    self.logger.warning(f'{s_dict.name} : can not retrieve yahoo info, {e}     ')
+        for s_dict in share_dicts:
+            self.share_list.append(Share( s_dict ,
+                                session_model = self.session_model,
+                                )
+                                )
+        
+        # self.share_list = [ s for s in self.share_list if s.symbol in [ "SMSD",] ] # For single share debug purpose
         
         
     # def retrieve_shares_from_portfolio(self):
@@ -331,17 +338,18 @@ class RDCFAnal():
             if not s.valid_init:
                 continue
             try :
-                for retrieve_from in ['degiro', 'yahoo']:
-                    s.retrieve_from = retrieve_from
-                    try :
-                        s.retrieve_share_data()
-                        break
-                    except MarketCapError as e:
-                        self.logger.warning(f"{e} can not retrieve data from {retrieve_from}")
+                # for retrieve_from in ['degiro', 'yahoo']:
+                #     s.retrieve_from = retrieve_from
+                #     try :
+                #         s.retrieve_share_data()
+                #         break
+                #     except MarketCapError as e:
+                #         self.logger.warning(f"{e} can not retrieve data from {retrieve_from}")
+                s.retrieve_share_data()
 
             except (PriceRetrieveError, YahooRetrieveError, 
                     MissingDataError,
-                    KeyError,
+                    # KeyError,
                     CurlError,
                     RetryError,
                     IndexError,
@@ -377,7 +385,7 @@ class RDCFAnal():
             s.levered_beta = s.sector_unlevered_beta * (1 + (1 - self.session_model.taxe_rate) * s.debt_to_equity)
 
             # Ajust value to ebitda with sector
-            self_weight = 0 if (s.value_to_ebitda < 0) else s.share_params.get("multiple_self_weight",2/3)
+            self_weight = 0 if (s.value_to_ebitda < 0) else s.share_params.get("multiple_self_weight",1/3)
             s.value_to_ebitda_adj =  1 / (self_weight/s.value_to_ebitda + (1-self_weight)/sector_value_to_ebitda)
 
             try :
@@ -430,7 +438,8 @@ class RDCFAnal():
         
         df.sort_values(by = ['potential_price_evolution',]  , inplace= True, ascending= False)
 
-        self.degiro_api.logout()
+        if not self.session_model.degiro_connexion_issue:
+            self.degiro_api.logout()
 
 
         summary = RDCFSummary(df, self.session_model, 

@@ -6,7 +6,7 @@ import numpy_financial as npf
 from scipy.optimize import minimize_scalar
 import yfinance as yf
 from rdcf_degiro.session_model_dcf import SessionModelDCF
-from rdcf_degiro.financial_statements import  CurrencyConvertrer, DegiroRetrieveError, FinancialStatements, YahooRetrieveError
+from rdcf_degiro.financial_statements import  CurrencyConvertrer, DegiroRetrieveError, FinancialStatements, MissingDataError, YahooRetrieveError
 from rdcf_degiro.price_history import     YahooPriceHistory
 # from rdcf_degiro.price_history import    DegiroPriceHistory
 from rdcf_degiro.forcast import FinancialForcast
@@ -87,6 +87,7 @@ class Share():
 
         self.use_fcfe = False
         self.error_msg = ""
+        self.warning_msg = ""
         
         self.__dict__.update(s_dict)
 
@@ -105,7 +106,6 @@ class Share():
         
         self.share_params :dict = {"name" : self.name, 
                                    "symbol" : self.symbol, 
-                                   "price_currency" : s_dict['currency'], 
                                    "price_from" : None,
                                 #    "price_series_str" : self.price_series_str,
                                    "isin" : self.isin
@@ -126,22 +126,22 @@ class Share():
 
         info_path = os.path.join(self.session_model.output_folder, f"{self.yahoo_symb}_info.pickle")
         if self.session_model.update_statements_need(info_path):
-            info = self.yahoo_tk.info
-            if 'currency' not in info:
+            self.info = self.yahoo_tk.info
+            if 'currency' not in self.info:
                 self.error_msg += f"{self.yahoo_symb} unknown symbol in yahoo finance database, can not instanciate Share object"
                 return
             with open(info_path, "wb") as outfile:
-                pickle.dump(info, outfile)
+                pickle.dump(self.info, outfile)
         else:
             with open(info_path, "rb") as infile:
-                info = pickle.load(infile)
+                self.info = pickle.load(infile)
 
-        self.share_params.update({"price_currency" : info['currency'],
+        self.share_params.update({"price_currency" : self.info['currency'],
                                     "yahoo_tk" : self.yahoo_tk,
-                                    "name" : info["longName"]})
+                                    "name" : self.info["longName"]})
         
-        self.sector = self.share_params.get("sector", info.get('sectorKey', "unknown"))
-        self.name = info["longName"]
+        self.sector = self.share_params.get("sector", self.info.get('sectorKey', "unknown"))
+        self.name = self.info["longName"]
         
         self.price_currency = self.share_params["price_currency"]
 
@@ -159,12 +159,12 @@ class Share():
         """
         retrieve ratio values
         """
-        if self.retrieve_from == "degiro" :
-            try:
-                self.degiro_values_retrieve()
-            except DegiroRetrieveError as e:
-                self.logger.warning(f'{self.name} : can not retrieve value ratios from degiro api, {e}     ')
-                self.yahoo_values_retrieve()
+        # if self.retrieve_from == "degiro" :
+        #     try:
+        #         self.degiro_values_retrieve()
+        #     except DegiroRetrieveError as e:
+        #         self.logger.warning(f'{self.name} : can not retrieve value ratios from degiro api, {e}     ')
+        self.yahoo_values_retrieve()
         
         self.market_cap_usd = self.currency_convertrer.convert(self.market_cap, self.price_currency, "USD")
         self.enterprise_value = self.market_cap + self.statements.net_debt
@@ -177,68 +177,66 @@ class Share():
     def check_market_cap(self):
         """ Check consistency between reported market cap and price calculated maket cap """
 
-        if self.statements.statements_currency == "EUR":
-            self.market_cap_reliable = True
-            return
 
         err_market_cap = abs(self.market_cap - self.market_cap_reported)/min(self.market_cap_reported, self.market_cap )
         if err_market_cap > 0.8 :
             msg = f"{self.name}  err_market_cap: {err_market_cap:.2f} reported: {self.market_cap_reported:.2f} calculated: {self.market_cap:.2f} nb shares {self.statements.nb_shares}"
-            self.market_cap_reliable = False
-            raise MarketCapError(msg)
+            self.warning_msg += msg
+            # self.market_cap_reliable = False
+            # raise MarketCapError(msg)
 
-        self.market_cap_reliable = True
+        # self.market_cap_reliable = True
 
     
-    def degiro_values_retrieve(self):
-        """
-        retrieve company ratios fom degiro api
-        """
-        self.logger.info(f'{self.name} : retrieves ratio from degiro              ')
+    # def degiro_values_retrieve(self):
+    #     """
+    #     retrieve company ratios fom degiro api
+    #     """
+    #     self.logger.info(f'{self.name} : retrieves ratio from degiro              ')
 
-        statement_path = os.path.join(self.session_model.output_folder, 
-                                    f"{self.symbol}_company_ratio.json")
-        if self.session_model.update_statements_need(statement_path):
-            _ratios = self.session_model.degiro_api.get_company_ratios(
-                product_isin=self.isin, 
-                raw = True
-            )
-            if (not _ratios) or ('data' not in _ratios):
-                raise DegiroRetrieveError(f'ratio data not available for isin {self.isin}')
-            ratios = _ratios['data']
-            with open(statement_path, "w", 
-                        encoding= "utf8") as outfile:
-                json.dump(ratios, outfile, indent = 4)
-        else:
-            with open(statement_path, "r", encoding= "utf8") as json_file:
-                ratios = json.load(json_file)
+    #     statement_path = os.path.join(self.session_model.output_folder, 
+    #                                 f"{self.symbol}_company_ratio.json")
+    #     if self.session_model.update_statements_need(statement_path):
+    #         _ratios = self.session_model.degiro_api.get_company_ratios(
+    #             product_isin=self.isin, 
+    #             raw = True
+    #         )
+    #         if (not _ratios) or ('data' not in _ratios):
+    #             raise DegiroRetrieveError(f'ratio data not available for isin {self.isin}')
+    #         ratios = _ratios['data']
+    #         with open(statement_path, "w", 
+    #                     encoding= "utf8") as outfile:
+    #             json.dump(ratios, outfile, indent = 4)
+    #     else:
+    #         with open(statement_path, "r", encoding= "utf8") as json_file:
+    #             ratios = json.load(json_file)
 
-        self.market_cap = self.statements.nb_shares * self.price_history.current_price
+    #     self.market_cap = self.statements.nb_shares * self.price_history.current_price / self.share_params.get("adr_ratio", 1)
 
-        ratio_dic = {}
-        for rg in ratios['currentRatios']['ratiosGroups'] :
-            for item in rg['items']:
-                if item['id'] in RATIO_CODES:
-                    if 'value' in item:
-                        ratio_dic[item['id']] = item['value']
-                    # else:
-                    #     self.logger.warning(f"{self.name} : Warning {item['id']} value not found")
+    #     ratio_dic = {}
+    #     for rg in ratios['currentRatios']['ratiosGroups'] :
+    #         for item in rg['items']:
+    #             if item['id'] in RATIO_CODES:
+    #                 if 'value' in item:
+    #                     ratio_dic[item['id']] = item['value']
+    #                 # else:
+    #                 #     self.logger.warning(f"{self.name} : Warning {item['id']} value not found")
 
 
-        # if 'BETA' in ratio_dic:
-        #     self.beta    = float(ratio_dic['BETA'])
+    #     # if 'BETA' in ratio_dic:
+    #     #     self.beta    = float(ratio_dic['BETA'])
 
-        self.per  = float(ratio_dic.get("PEEXCLXOR", self.per))  # "P/E excluding extraordinary items - TTM",
-        self.price_to_sales = float(ratio_dic.get('TTMPR2REV', self.price_to_sales))
+    #     self.per  = float(ratio_dic.get("PEEXCLXOR", self.per))  # "P/E excluding extraordinary items - TTM",
+    #     self.price_to_sales = float(ratio_dic.get('TTMPR2REV', self.price_to_sales))
 
-        if "TTMROEPCT" in ratio_dic : 
-            self.roe = float(ratio_dic['TTMROEPCT']) / 100 # return on equity - TTM
+    #     if "TTMROEPCT" in ratio_dic : 
+    #         self.roe = float(ratio_dic['TTMROEPCT']) / 100 # return on equity - TTM
 
-        # statement_currency = ratios['currentRatios']['priceCurrency']
-        if "MKTCAP" in ratio_dic : 
-            self.market_cap_reported = float(ratio_dic['MKTCAP']) *1e-6# market cap
-            # self.currency_convertrer.convert(self.market_cap_reported, statement_currency)
-            # self.check_market_cap()
+    #     # statement_currency = ratios['currentRatios']['priceCurrency']
+    #     if "MKTCAP" in ratio_dic : 
+    #         self.market_cap_reported = float(ratio_dic['MKTCAP']) *1e-6# market cap
+    #         # self.currency_convertrer.convert(self.market_cap_reported, statement_currency)
+    #         # self.check_market_cap()
                 
 
     def yahoo_values_retrieve(self):
@@ -250,14 +248,14 @@ class Share():
         # self.logger.info(f'{self.name} : retrieves ratio from yahoo              ', flush= True, end = "\r")
         net_income = self.statements.inc_ttm_statements['NINC']
 
-        self.market_cap = self.statements.nb_shares * self.price_history.current_price
+        self.market_cap = self.statements.nb_shares * self.price_history.current_price / self.share_params.get("adr_ratio", 1)
+        self.market_cap_reported = self.info["marketCap"] *1e-6
         self.check_market_cap()
-        self.per = self.market_cap / net_income
-        self.price_to_sales = self.market_cap / self.statements.inc_ttm_statements['RTLR']
+        self.per = self.info.get("trailingPE", self.market_cap / net_income)
+        self.price_to_sales = self.info.get("priceToSalesTrailing12Months",self.market_cap / self.statements.inc_ttm_statements['RTLR'])
 
         # return on equity
-        if self.statements.stock_equity > 0 :
-            self.roe = net_income / self.statements.stock_equity
+        self.roe = self.info.get("returnOnEquity", net_income / self.statements.stock_equity)
     
     
     @property
@@ -292,10 +290,12 @@ class Share():
 
         y_statements = self.statements.y_statements
 
-        df_multiple = pd.concat([self.price_history.history_in_financial_currency, 
+        try :
+            df_multiple = pd.concat([self.price_history.history_in_financial_currency, 
                                 y_statements[["QTCO" , 'EBITDA', 'STLD', 'OCFE', 'OCFF'] + self.statements.cash_code]
                                 ], axis = 0).sort_index().ffill().dropna()
-
+        except KeyError as e:
+            raise MissingDataError(e)
         
         df_multiple['ENT_PRICE'] = df_multiple['QTCO'] * df_multiple['close']
         df_multiple['ENT_VALUE'] = df_multiple['ENT_PRICE'] + df_multiple['STLD'] - df_multiple[self.statements.cash_code].sum(axis = 1)
@@ -334,15 +334,15 @@ class Share():
         ## forcast
         try :
             self.forcast.retrieve_forcasts()
-        except KeyError as e:
-            self.logger.error(f'{self.name} : can not retrieve financial forcast from degiro, {e}')
+        except DegiroRetrieveError as e:
+            self.logger.error(f'{self.name} : can not retrieve financial forcast from degiro : {e}')
 
         self.price_history.retrieve_price_history()
         
         try :
             self.retrieve_values()
         except (
-            KeyError, 
+            # KeyError, 
                 # TypeError
                 ) as e:
             raise KeyError(f"{self.name} : error while generating values \n {type(e).__name__} : {e}") from e

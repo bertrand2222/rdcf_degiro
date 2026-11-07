@@ -49,6 +49,7 @@
 
     "DSY" : {"yahoo_symb" : "DSY.PA"}, 
     "AMZN" : {"multiple_self_weight" : 0.7},
+    "JD" : {"adr_ratio" : 2},
 
     "ENR" : {"yahoo_symb" : "ENR.DE"}, 
     "ALV" : {"yahoo_symb" : "ALV.DE"}, 
@@ -63,6 +64,7 @@
     "SU" : {"yahoo_symb" : "SU.PA",
             "comment" : "Schneider Electric"}, 
     "RMS" : {"yahoo_symb" : "RMS.PA"}, 
+    "PBR" : {"adr_ratio" : 2}, 
     "KER" : {"yahoo_symb" : "KER.PA"}, 
     "ENI" : {"yahoo_symb" : "ENI.MI"}, 
     "SPM" : {"yahoo_symb" : "SPM.MI"}, 
