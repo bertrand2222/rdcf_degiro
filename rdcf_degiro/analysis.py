@@ -385,7 +385,7 @@ class RDCFAnal():
             s.levered_beta = s.sector_unlevered_beta * (1 + (1 - self.session_model.taxe_rate) * s.debt_to_equity)
 
             # Ajust value to ebitda with sector
-            self_weight = 0 if (s.value_to_ebitda < 0) else s.share_params.get("multiple_self_weight",2/3)
+            self_weight = 0 if (s.value_to_ebitda < 0) else s.share_params.get("multiple_self_weight",1/3)
             s.value_to_ebitda_adj =  1 / (self_weight/s.value_to_ebitda + (1-self_weight)/sector_value_to_ebitda)
 
             try :
