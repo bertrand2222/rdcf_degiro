@@ -6,7 +6,7 @@ import numpy_financial as npf
 from scipy.optimize import minimize_scalar
 import yfinance as yf
 from rdcf_degiro.session_model_dcf import SessionModelDCF
-from rdcf_degiro.financial_statements import  CurrencyConvertrer, DegiroRetrieveError, FinancialStatements, YahooRetrieveError
+from rdcf_degiro.financial_statements import  CurrencyConvertrer, DegiroRetrieveError, FinancialStatements, MissingDataError, YahooRetrieveError
 from rdcf_degiro.price_history import     YahooPriceHistory
 # from rdcf_degiro.price_history import    DegiroPriceHistory
 from rdcf_degiro.forcast import FinancialForcast
@@ -106,7 +106,6 @@ class Share():
         
         self.share_params :dict = {"name" : self.name, 
                                    "symbol" : self.symbol, 
-                                   "price_currency" : s_dict['currency'], 
                                    "price_from" : None,
                                 #    "price_series_str" : self.price_series_str,
                                    "isin" : self.isin
@@ -291,10 +290,12 @@ class Share():
 
         y_statements = self.statements.y_statements
 
-        df_multiple = pd.concat([self.price_history.history_in_financial_currency, 
+        try :
+            df_multiple = pd.concat([self.price_history.history_in_financial_currency, 
                                 y_statements[["QTCO" , 'EBITDA', 'STLD', 'OCFE', 'OCFF'] + self.statements.cash_code]
                                 ], axis = 0).sort_index().ffill().dropna()
-
+        except KeyError as e:
+            raise MissingDataError(e)
         
         df_multiple['ENT_PRICE'] = df_multiple['QTCO'] * df_multiple['close']
         df_multiple['ENT_VALUE'] = df_multiple['ENT_PRICE'] + df_multiple['STLD'] - df_multiple[self.statements.cash_code].sum(axis = 1)
@@ -333,15 +334,15 @@ class Share():
         ## forcast
         try :
             self.forcast.retrieve_forcasts()
-        except KeyError as e:
-            self.logger.error(f'{self.name} : can not retrieve financial forcast from degiro, {e}')
+        except DegiroRetrieveError as e:
+            self.logger.error(f'{self.name} : can not retrieve financial forcast from degiro : {e}')
 
         self.price_history.retrieve_price_history()
         
         try :
             self.retrieve_values()
         except (
-            KeyError, 
+            # KeyError, 
                 # TypeError
                 ) as e:
             raise KeyError(f"{self.name} : error while generating values \n {type(e).__name__} : {e}") from e

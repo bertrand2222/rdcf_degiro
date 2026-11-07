@@ -104,7 +104,6 @@ if __name__ == "__main__":
 
 
     rdcf_fcff_anal.retrieve_data()
-    # rdcf_fcff_anal.share_list = [ s for s in rdcf_fcff_anal.share_list if s.symbol in [ "INTC", 'CRWV', 'ORCL', 'RR.'] ]
     summary = rdcf_fcff_anal.process()
     summary.save(os.path.join(config_dict['output_folder'],'FCFF.pkl'))
 

@@ -2,7 +2,7 @@ import json
 import os
 import pandas as pd
 import numpy as np
-from rdcf_degiro.financial_statements import FinancialStatements, Statements
+from rdcf_degiro.financial_statements import DegiroRetrieveError, FinancialStatements, MissingDataError, Statements
 
 class InconsistentStatementsError(Exception):
     """ Error retrived when Forcast and Histrory statement are not consistant"""
@@ -33,7 +33,7 @@ class FinancialForcast(Statements):
         self.logger.info(f'{self.name} : retrieves forcast                    ')
         statement_path = os.path.join(self.session_model.output_folder,
                                     f"{self.symbol}_company_forcast.json")
-        if self.session_model.update_statements_need(statement_path):
+        if self.session_model.update_degiro_statements_need(statement_path):
             try:
                 estimates_summaries = self.session_model.degiro_api.get_estimates_summaries(
                 product_isin= self.isin,
@@ -41,13 +41,15 @@ class FinancialForcast(Statements):
                 )['data']
 
             except KeyError as e:
-                raise KeyError(f'no forcast statement found for isin {self.isin}') from e
+                raise DegiroRetrieveError(f'no forcast statement found for isin {self.isin}') from e
 
             with open(statement_path,
                         "w", 
                         encoding= "utf8") as json_file: 
                 json.dump(estimates_summaries, json_file, indent = 4)
         else :
+            if not os.path.isfile(statement_path):
+                raise DegiroRetrieveError("can not connecto to degiro, and forcast statement file not allready saved")
             with open(statement_path, "r", encoding= "utf8") as json_file:
                 estimates_summaries = json.load(json_file)
 
@@ -70,8 +72,11 @@ class FinancialForcast(Statements):
 
         if 'EBT' not in self.y_forcasts:
             # Set forcasted EBITDA equal to focasted EBIT
-            self.y_forcasts['EBT'] = self.y_forcasts['EBI']
-
+            try :
+                self.y_forcasts['EBT'] = self.y_forcasts['EBI']
+            except KeyError as e:
+                raise MissingDataError(e)
+            
     def _get_forcasted_growth(self, ls : list[str]):
         """
         Get the fitted growth rate of a forcasted variable

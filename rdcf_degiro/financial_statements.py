@@ -257,7 +257,7 @@ class FinancialStatements(Statements):
                 self.degiro_financial_retrieve()
                 return
             except DegiroRetrieveError as e:
-                self.logger.warning(f'{self.name} : can not retrieve financial data from degiro, {e}')
+                self.logger.warning(f'{self.name} : can not retrieve financial data from degiro: {e}')
 
         self.yahoo_financial_retrieve()
         
@@ -425,17 +425,21 @@ class FinancialStatements(Statements):
         for st in [y_statements, q_statements]:
             if 'TotalDebt' not in st:
                 st['TotalDebt'] = st['CurrentLiabilities']
-
             st.rename(columns= RENAME_DIC_YAHOO, inplace = True)
-            st['OCFF'] = st['OTLO']
-            st['OCFE'] = st['OTLO']
-            if 'SNIN' in st:
-                st['OCFF'] -= st['SNIN'] * (1-self.session_model.taxe_rate)
-            st['FCFE'] = st['OCFE'] + st['SCEX']
-            st['FCFF'] = st['OCFF'] + st['SCEX']
-
+            try :
+                st['OCFF'] = st['OTLO']
+                st['OCFE'] = st['OTLO']
+                if 'SNIN' in st:
+                    st['OCFF'] -= st['SNIN'] * (1-self.session_model.taxe_rate)
+                st['FCFE'] = st['OCFE'] + st['SCEX']
+                st['FCFF'] = st['OCFF'] + st['SCEX']
+            except KeyError as e:
+                raise MissingDataError(e)
         y_statements = multiply_df_scalar(y_statements, 1e-6, exclude_cols = ['TaxRateForCalcs'])
         q_statements = multiply_df_scalar(q_statements, 1e-6, exclude_cols = ['TaxRateForCalcs'])
+
+        for st in [q_inc_statements_ttm, q_cas_statements_ttm]:
+            st.rename(columns= RENAME_DIC_YAHOO, inplace = True)
 
         self._inc_ttm_statements_df = multiply_df_scalar(q_inc_statements_ttm, 1e-6, exclude_cols = ['TaxRateForCalcs'])
         self._cas_ttm_statements_df = multiply_df_scalar(q_cas_statements_ttm, 1e-6, exclude_cols = ['TaxRateForCalcs'])
@@ -480,7 +484,7 @@ class FinancialStatements(Statements):
         statement_path = os.path.join(self.session_model.output_folder, 
                                     f"{self.symbol}_company_financial.json")
         # print(os.path.isfile(statement_path))
-        if self.session_model.update_statements_need(statement_path):
+        if self.session_model.update_degiro_statements_need(statement_path):
 
             r_financial_st = self.session_model.degiro_api.get_financial_statements(
                         product_isin= self.isin,
@@ -498,6 +502,8 @@ class FinancialStatements(Statements):
                         encoding= "utf8") as outfile: 
                 json.dump(financial_st, outfile, indent = 4)
         else :
+            if not os.path.isfile(statement_path):
+                raise DegiroRetrieveError(f'can not connect to Degiro and Degiro financial statement file not allready saved')
             with open(statement_path, "r", encoding= "utf8") as json_file:
                 financial_st = json.load(json_file)
 

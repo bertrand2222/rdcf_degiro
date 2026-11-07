@@ -184,7 +184,7 @@ class SessionModelDCF():
         self.output_folder = os.getenv("TEMP")
         self.taxe_rate = 0.25
         self.output_name = "rdcf"
-        self.symbol_params = None
+        self.symbol_params : dict = None
         self.retrieve_shares_from_favorites = True
         self.retrieve_shares_from_portfolio = True
         self.update_market_rate = False
@@ -195,6 +195,7 @@ class SessionModelDCF():
         self.nb_days_update : int = 20
         self.current_timestamp = time.time()
         self.degiro_api = None
+        self.degiro_connexion_issue = False
 
         self.config_dict = config_dict
 
@@ -327,6 +328,13 @@ class SessionModelDCF():
         if self.update_statements:
             return True
         return self.update_file_date_need(path)
+
+    def update_degiro_statements_need(self, path):
+        if not self.update_statements_need(path):
+            return False
+        if self.degiro_connexion_issue:
+            return False
+        return True
     
     def update_market_rate_need(self, path : str) -> bool:
         """
