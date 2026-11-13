@@ -1,3 +1,4 @@
+from abc import abstractmethod
 from dataclasses import dataclass
 import os
 import json
@@ -115,61 +116,61 @@ class MissingDataError(Exception):
 
 
 class CurrencyConvertrer():
-        def __init__(self, session_model : SessionModelDCF,
-                     share_params : dict,
-                     currency_convertible_cols : list[str] = None):
-            
-            self.session_model = session_model
-            self.price_currency : str = share_params.get("price_currency")
-            self.currency_convertible_cols = currency_convertible_cols
-            
+    def __init__(self, session_model : SessionModelDCF,
+                    share_params : dict,
+                    currency_convertible_cols : list[str] = None):
+        
+        self.session_model = session_model
+        self.price_currency : str = share_params.get("price_currency")
+        self.currency_convertible_cols = currency_convertible_cols
+        
 
-        def convert(self, val: float | pd.DataFrame, statements_currency: str , target_currency: str = None) -> pd.DataFrame:
-            """
-            convert a single dataframe currency
-            """
+    def convert(self, val: float | pd.DataFrame, statements_currency: str , target_currency: str = None) -> pd.DataFrame:
+        """
+        convert a single dataframe currency
+        """
 
-            if target_currency is None:
-                target_currency = self.price_currency
+        if target_currency is None:
+            target_currency = self.price_currency
 
-            if statements_currency == target_currency:
-                return val
-            rate_factor = 1
-
-            if target_currency in  SPECIAL_CURRENCIES :
-                currency_info = SPECIAL_CURRENCIES[target_currency]
-                target_currency = currency_info['real']
-                rate_factor = currency_info['rate_factor']
-    
-            rate_symb = None
-            if target_currency != statements_currency:
-                self.session_model.update_rate_dic(  statements_currency, target_currency
-                                                                )
-                rate_symb = statements_currency +  target_currency   + "=X"
-    
-            if isinstance(val, float):
-                if  rate_symb:
-                    return val * self.session_model.rate_history_dic[rate_symb]['change_rate'].iloc[-1] / rate_factor
-                return val / rate_factor
-
-            convert_value_cols = [c for c in val.columns if c in self.currency_convertible_cols]
-            if not convert_value_cols:
-                return val
-            if  rate_symb :
-                new_df  = pd.concat([
-                        val,
-                        self.session_model.rate_history_dic[rate_symb] / rate_factor
-                        ], axis = 0
-                        )
-                new_df = new_df.sort_index()
-                new_df['change_rate'] = new_df['change_rate'].ffill()
-                new_df = new_df.dropna(axis=0, subset= convert_value_cols, how = "all" )
-                new_df[convert_value_cols] = new_df[convert_value_cols].multiply(
-                    new_df['change_rate'], axis= 0)
-                return new_df
-    
-            val.loc[:,convert_value_cols] /= rate_factor
+        if statements_currency == target_currency:
             return val
+        rate_factor = 1
+
+        if target_currency in  SPECIAL_CURRENCIES :
+            currency_info = SPECIAL_CURRENCIES[target_currency]
+            target_currency = currency_info['real']
+            rate_factor = currency_info['rate_factor']
+
+        rate_symb = None
+        if target_currency != statements_currency:
+            self.session_model.update_rate_dic(  statements_currency, target_currency
+                                                            )
+            rate_symb = statements_currency +  target_currency   + "=X"
+
+        if isinstance(val, float):
+            if  rate_symb:
+                return val * self.session_model.rate_history_dic[rate_symb]['change_rate'].iloc[-1] / rate_factor
+            return val / rate_factor
+
+        convert_value_cols = [c for c in val.columns if c in self.currency_convertible_cols]
+        if not convert_value_cols:
+            return val
+        if  rate_symb :
+            new_df  = pd.concat([
+                    val,
+                    self.session_model.rate_history_dic[rate_symb] / rate_factor
+                    ], axis = 0
+                    )
+            new_df = new_df.sort_index()
+            new_df['change_rate'] = new_df['change_rate'].ffill()
+            new_df = new_df.dropna(axis=0, subset= convert_value_cols, how = "all" )
+            new_df[convert_value_cols] = new_df[convert_value_cols].multiply(
+                new_df['change_rate'], axis= 0)
+            return new_df
+
+        val.loc[:,convert_value_cols] /= rate_factor
+        return val
 
 
 class Statements():
@@ -243,30 +244,35 @@ class FinancialStatements(Statements):
         self.last_bal_statements : pd.Series = None 
         self.q_cashflow_available : bool = None
         self._y_inc_complete_statements : pd.DataFrame = None
+        self.interest_expense_income : float = None
 
 
     @property
     def stock_equity(self):
         return self.last_bal_statements['QTLE']
 
-    
-    def _retrive_financials_src(self):
-        
-        if (self.retrieve_from == "degiro") and (self.share_params.get("finance_from", "degiro") == "degiro"):
-            try :
-                self.degiro_financial_retrieve()
-                return
-            except DegiroRetrieveError as e:
-                self.logger.warning(f'{self.name} : can not retrieve financial data from degiro: {e}')
+    @abstractmethod
+    def _retrieve_financial_data(self):
+        pass
 
-        self.yahoo_financial_retrieve()
+    # def _retrive_financials_src(self):
+        
+    #     if (self.retrieve_from == "degiro") and (self.share_params.get("finance_from", "degiro") == "degiro"):
+    #         try :
+    #             self.degiro_financial_retrieve()
+    #             return
+    #         except DegiroRetrieveError as e:
+    #             self.logger.warning(f'{self.name} : can not retrieve financial data from degiro: {e}')
+
+    #     self.yahoo_financial_retrieve()
+
         
     def retrieve_financials(self):
         """
         Retrieve financial statements
         """
 
-        self._retrive_financials_src()
+        self._retrieve_financial_data()
 
         self.y_statements.loc[:,'periodLength'] = 12
         self.y_statements.loc[:,'periodType'] = 'M'
@@ -278,9 +284,7 @@ class FinancialStatements(Statements):
 
         self.compute_avg_values()
 
-        self.total_debt =  self.last_bal_statements['STLD']
         self.net_debt = self.total_debt - self.last_bal_statements[self.cash_code].sum()
-        self.debt_cost = - self.interest_expense_income / self.net_debt 
 
         if 'EBIT' in self.inc_ttm_statements:
             self.roic = self.inc_ttm_statements['EBIT'] * (1-self.session_model.taxe_rate) / (self.stock_equity + self.net_debt)  
@@ -369,114 +373,59 @@ class FinancialStatements(Statements):
         z = np.polyfit(df['year'],y, deg = 1)
         return np.exp(z[0]) - 1
 
-    def yahoo_q_inc_statements_ttm_update(self):
-        return self.yahoo_tk.get_income_stmt(pretty=False, freq='trailing').T
-    
-    def yahoo_q_cas_statements_ttm_update(self):
-        return self.yahoo_tk.get_cash_flow(pretty=False, freq='trailing').T
-    
-    def yahoo_y_statements_update(self) -> pd.DataFrame:
-        return  pd.concat([self.yahoo_tk.get_income_stmt(pretty=False), 
-                                          self.yahoo_tk.get_balance_sheet(pretty=False),
-                                          self.yahoo_tk.get_cash_flow(pretty=False)
-                                          ], axis = 0).T
+    def _compute_free_cash_flow(self, st : pd.DataFrame):
+        # st['FCFF'] = st[op_keys[0]] * (1-self.session_model.taxe_rate) + da  # Free cash flow to firm
+        if "OTLO" not in st:
+            return
+        try :
+            st['OCFF'] = st["OTLO"]
+            st['OCFE'] = st["OTLO"]
+            for info in ["SNIN", "SONT"]:
+                if info in st:
+                    # Add net non operating interest
+                    st['OCFF'] -= st[info] * (1-self.session_model.taxe_rate)
 
-    def yahoo_q_statements_update(self) -> pd.DataFrame :
-        return pd.concat([self.yahoo_tk.get_income_stmt(pretty=False, freq='quarterly'), 
-                                        self.yahoo_tk.get_balance_sheet(pretty=False, freq='quarterly'),
-                                        self.yahoo_tk.get_cash_flow(pretty=False, freq='quarterly')
-                                                          ], axis = 0).T
+            st['FCFF'] = st['OCFF']
+            st['FCFE'] = st["OCFE"]
 
-    def get_yahoo_financial_src(self, stm :str) -> dict[str, pd.DataFrame]:
-        """
-        Returns :
-
-            pd.DataFrame : the statement 
-        """
-
-        path = os.path.join(self.session_model.output_folder,
-                                    f"{self.symbol}_{stm}.pckl")
-
-        if self.session_model.update_statements_need(path):
-            df : pd.DataFrame = getattr(self, f"yahoo_{stm}_update")()
-            df.to_pickle(path) 
-        else : 
-            df : pd.DataFrame = pd.read_pickle(path)
-        
-        if not isinstance(df, pd.DataFrame):
-            raise YahooRetrieveError(f"{stm} retrieved from yahoo is not a valid DataFrame")
-        
-        return df.sort_index()
-
-    def yahoo_financial_retrieve(self):
-
-        """
-        Get the share associated financial infos from yahoo finance api 
-        """
-        self.logger.info(f'{self.name} : retrieves financial statement from yahoo             ')
-
-        y_statements = self.get_yahoo_financial_src('y_statements')
-        q_statements = self.get_yahoo_financial_src('q_statements')
-        q_inc_statements_ttm = self.get_yahoo_financial_src('q_inc_statements_ttm')
-        q_cas_statements_ttm = self.get_yahoo_financial_src('q_cas_statements_ttm')
-
-        y_statements = y_statements.ffill(axis = 0)
-
-        for st in [y_statements, q_statements]:
-            if 'TotalDebt' not in st:
-                st['TotalDebt'] = st['CurrentLiabilities']
-            st.rename(columns= RENAME_DIC_YAHOO, inplace = True)
-            try :
-                st['OCFF'] = st['OTLO']
-                st['OCFE'] = st['OTLO']
-                if 'SNIN' in st:
-                    st['OCFF'] -= st['SNIN'] * (1-self.session_model.taxe_rate)
-                st['FCFE'] = st['OCFE'] + st['SCEX']
-                st['FCFF'] = st['OCFF'] + st['SCEX']
-            except KeyError as e:
+            if "SCEX" in st:
+                st['FCFF'] += st["SCEX"]
+                st['FCFE'] += st["SCEX"]
+        except KeyError as e:
                 raise MissingDataError(e)
-        y_statements = multiply_df_scalar(y_statements, 1e-6, exclude_cols = ['TaxRateForCalcs'])
-        q_statements = multiply_df_scalar(q_statements, 1e-6, exclude_cols = ['TaxRateForCalcs'])
+def remove_overlapping_data(p_df:pd.DataFrame):
+    """
+    correct period length dependant data in dataframe if period  of one row is overlapping previous
+    """
+    value_cols = ["periodLength"] + [c for c in p_df.columns if c in FINANCIAL_ST_CODES]
 
-        for st in [q_inc_statements_ttm, q_cas_statements_ttm]:
-            st.rename(columns= RENAME_DIC_YAHOO, inplace = True)
+    #### eval coresponding startDate from end date and periodLength
+    p_df['startDate'] = p_df.apply(lambda x : get_date_shift_back(
+            x.endDate,
+            months = (x.periodType == 'M') * x.periodLength,
+            weeks = (x.periodType == 'W') * x.periodLength,
+            ), axis = 1)
+    p_df['startDate_shift'] = p_df['startDate'].shift()
+    #### apply overlaping tolerance of OVERLAPING_DAYS_TOL days
+    p_df['startDate_shift'] = p_df['startDate_shift'].apply(
+        lambda x : x + relativedelta(days= OVERLAPING_DAYS_TOL ) if not pd.isnull(x) else x,)
 
-        self._inc_ttm_statements_df = multiply_df_scalar(q_inc_statements_ttm, 1e-6, exclude_cols = ['TaxRateForCalcs'])
-        self._cas_ttm_statements_df = multiply_df_scalar(q_cas_statements_ttm, 1e-6, exclude_cols = ['TaxRateForCalcs'])
+    ### mark as overlaping line for which the period cover the one of previous line
+    p_df["overlaping"] = p_df['startDate'] < p_df['startDate_shift']
 
-        if isinstance(q_statements, pd.DataFrame) :
-            q_statements.ffill(axis = 0, inplace = True)
-            last_date_y = y_statements.index[-1]
-            last_date_q = q_statements.index[-1]
+    ### correct overlaping line by substracting from it periodLength and values from previous line
+    p_df.loc[p_df["overlaping"], value_cols] -= p_df[value_cols].shift()
+    p_df.drop(['startDate', 'startDate_shift', 'overlaping'], inplace = True, axis = 1)
 
-            for d in YA_BALANCE_INFOS:
-                if d in q_statements.columns :
-                    y_statements.loc[last_date_y , d] = q_statements.loc[last_date_q , d]
+    return p_df
 
-        self.y_statements = y_statements
+def get_date_shift_back(end_date : datetime, months : int = 0, weeks :int = 0):
+    return end_date - relativedelta(months= months, weeks= weeks )
+
+class DegiroFinancialStatements(FinancialStatements):
 
 
-        self.q_inc_statements = q_statements[list(set(INC_CODES) & set(q_statements.columns))]
-        self.q_bal_statements = q_statements[list(set(BAL_CODES) & set(q_statements.columns))]
-        self.q_cas_statements = q_statements[list(set(CASH_CODES) & set(q_statements.columns))]
-
-        self.nb_shares = self.y_statements["QTCO"].iloc[-1]
-        self.statements_currency = self.yahoo_tk.info['financialCurrency']
-
-        self.convert_to_price_currency(['y_statements',
-                                            'q_inc_statements',
-                                            'q_bal_statements', 
-                                            'q_cas_statements',
-                                            '_inc_ttm_statements_df',
-                                            '_cas_ttm_statements_df'
-                                            ], self.statements_currency )
-
-        self.last_bal_statements = self.q_bal_statements.iloc[-1]
-
-        y_period_ratio = pd.Timedelta(days=365) / self.q_inc_statements.index.diff()[-1]
-        self.interest_expense_income = self.q_inc_statements["SNIN"].iloc[-1] * y_period_ratio
-
-    def degiro_financial_retrieve(self):
+    def _retrieve_financial_data(self):
         """
         Retrieve financial statements from degiro api
         """
@@ -522,6 +471,7 @@ class FinancialStatements(Statements):
                                         ], self.statements_currency)
 
         self.last_bal_statements = self.q_bal_statements.iloc[-1]
+        self.total_debt =  self.last_bal_statements['STLD']
 
         perod_interest = 0
         for info in ["SNIN", "SONT"]:
@@ -529,21 +479,7 @@ class FinancialStatements(Statements):
                 perod_interest += self.q_inc_statements[info].iloc[-1]
         self.interest_expense_income = perod_interest * 12 / self.q_inc_statements['periodLength'].iloc[-1]
 
-    def _compute_free_cash_flow(self, st : pd.DataFrame):
-        # st['FCFF'] = st[op_keys[0]] * (1-self.session_model.taxe_rate) + da  # Free cash flow to firm
-        st['OCFF'] = st["OTLO"]
-        st['OCFE'] = st["OTLO"]
-        for info in ["SNIN", "SONT"]:
-            if info in st:
-                # Add net non operating interest
-                st['OCFF'] -= st[info] * (1-self.session_model.taxe_rate)
 
-        st['FCFF'] = st['OCFF']
-        st['FCFE'] = st["OCFE"]
-
-        if "SCEX" in st:
-            st['FCFF'] += st["SCEX"]
-            st['FCFE'] += st["SCEX"]
 
     def degiro_retrieve_annual(self, financial_st : dict):
         """
@@ -552,7 +488,7 @@ class FinancialStatements(Statements):
         data = []
         for y in financial_st['annual'] :
             y_dict = {
-                      "endDate"  :  y['endDate']}
+                        "endDate"  :  y['endDate']}
             for statement in y['statements']:
                 for  item in  statement['items'] :
                     if item['code'] in FINANCIAL_ST_CODES:
@@ -593,6 +529,7 @@ class FinancialStatements(Statements):
         self.y_statements = y_statements
 
     def degiro_retrieve_quarterly(self, financial_st :dict[str, list[dict[str, list[dict[str, str]]]]]):
+        
         """
         Retrieve quarterly data
         """
@@ -678,31 +615,135 @@ class FinancialStatements(Statements):
 
         self.q_cas_statements = q_cas_statements
 
-def remove_overlapping_data(p_df:pd.DataFrame):
-    """
-    correct period length dependant data in dataframe if period  of one row is overlapping previous
-    """
-    value_cols = ["periodLength"] + [c for c in p_df.columns if c in FINANCIAL_ST_CODES]
+class YahooFinancialStatements(FinancialStatements):
 
-    #### eval coresponding startDate from end date and periodLength
-    p_df['startDate'] = p_df.apply(lambda x : get_date_shift_back(
-            x.endDate,
-            months = (x.periodType == 'M') * x.periodLength,
-            weeks = (x.periodType == 'W') * x.periodLength,
-            ), axis = 1)
-    p_df['startDate_shift'] = p_df['startDate'].shift()
-    #### apply overlaping tolerance of OVERLAPING_DAYS_TOL days
-    p_df['startDate_shift'] = p_df['startDate_shift'].apply(
-        lambda x : x + relativedelta(days= OVERLAPING_DAYS_TOL ) if not pd.isnull(x) else x,)
+    def yahoo_q_inc_statements_ttm_update(self):
+            return self.yahoo_tk.get_income_stmt(pretty=False, freq='trailing').T
+        
+    def yahoo_q_cas_statements_ttm_update(self):
+        return self.yahoo_tk.get_cash_flow(pretty=False, freq='trailing').T
+    
+    def yahoo_y_statements_update(self) -> pd.DataFrame:
+        return  pd.concat([self.yahoo_tk.get_income_stmt(pretty=False), 
+                                            self.yahoo_tk.get_balance_sheet(pretty=False),
+                                            self.yahoo_tk.get_cash_flow(pretty=False)
+                                            ], axis = 0).T
+    
+    def yahoo_q_bal_statements_update(self) -> pd.DataFrame:
+        return self.yahoo_tk.get_balance_sheet(pretty=False, freq='quarterly').T
 
-    ### mark as overlaping line for which the period cover the one of previous line
-    p_df["overlaping"] = p_df['startDate'] < p_df['startDate_shift']
+    def yahoo_q_statements_update(self) -> pd.DataFrame :
+        return pd.concat([self.yahoo_tk.get_income_stmt(pretty=False, freq='quarterly'), 
+                        self.yahoo_tk.get_cash_flow(pretty=False, freq='quarterly')
+                                                            ], axis = 0).T
 
-    ### correct overlaping line by substracting from it periodLength and values from previous line
-    p_df.loc[p_df["overlaping"], value_cols] -= p_df[value_cols].shift()
-    p_df.drop(['startDate', 'startDate_shift', 'overlaping'], inplace = True, axis = 1)
+    def get_yahoo_financial_src(self, stm :str) ->  pd.DataFrame:
+        """
+        Returns :
 
-    return p_df
+            pd.DataFrame : the statement 
+        """
 
-def get_date_shift_back(end_date : datetime, months : int = 0, weeks :int = 0):
-    return end_date - relativedelta(months= months, weeks= weeks )
+        path = os.path.join(self.session_model.output_folder,
+                                    f"{self.symbol}_{stm}.pckl")
+
+        if self.session_model.update_statements_need(path):
+            df : pd.DataFrame = getattr(self, f"yahoo_{stm}_update")()
+            df.to_pickle(path) 
+        else : 
+            df : pd.DataFrame = pd.read_pickle(path)
+        
+        if not isinstance(df, pd.DataFrame):
+            raise YahooRetrieveError(f"{stm} retrieved from yahoo is not a valid DataFrame")
+        
+        return df.sort_index()
+
+
+    def _retrieve_financial_data(self):
+    
+        """
+        Get the share associated financial infos from yahoo finance api 
+        """
+        self.logger.info(f'{self.name} : retrieves financial statement from yahoo             ')
+
+        y_statements = self.get_yahoo_financial_src('y_statements')
+        q_bal_statements = self.get_yahoo_financial_src('q_bal_statements')
+        q_statements = self.get_yahoo_financial_src('q_statements')
+        ttm_inc_statements = self.get_yahoo_financial_src('q_inc_statements_ttm')
+        ttm_cas_statements = self.get_yahoo_financial_src('q_cas_statements_ttm')
+
+        y_statements = y_statements.ffill(axis = 0)
+        try :
+            if 'TotalDebt' not in y_statements:
+                y_statements['TotalDebt'] = y_statements['CurrentLiabilities']
+            if 'TotalDebt' not in q_bal_statements:
+                q_bal_statements['TotalDebt'] = q_bal_statements['CurrentLiabilities']
+        except KeyError as e:
+            raise MissingDataError(e)
+        q_bal_statements = q_bal_statements.rename(columns= RENAME_DIC_YAHOO)
+        for st in [y_statements, q_statements]:
+            st.rename(columns= RENAME_DIC_YAHOO, inplace = True)
+            self._compute_free_cash_flow(st)
+            # if 'OTLO' not in st:
+            #     continue
+            # try :
+            #     st['OCFF'] = st['OTLO']
+            #     st['OCFE'] = st['OTLO']
+            #     if 'SNIN' in st:
+            #         st['OCFF'] -= st['SNIN'] * (1-self.session_model.taxe_rate)
+            #     st['FCFE'] = st['OCFE'] + st['SCEX']
+            #     st['FCFF'] = st['OCFF'] + st['SCEX']
+            # except KeyError as e:
+            #     raise MissingDataError(e)
+        y_statements = multiply_df_scalar(y_statements, 1e-6, exclude_cols = ['TaxRateForCalcs'])
+        q_statements = multiply_df_scalar(q_statements, 1e-6, exclude_cols = ['TaxRateForCalcs'])
+        q_bal_statements = multiply_df_scalar(q_bal_statements, 1e-6, exclude_cols = ['TaxRateForCalcs'])
+
+        for st in [ttm_inc_statements, ttm_cas_statements]:
+            st.rename(columns= RENAME_DIC_YAHOO, inplace = True)
+        self._inc_ttm_statements_df = multiply_df_scalar(ttm_inc_statements, 1e-6, exclude_cols = ['TaxRateForCalcs'])
+        self._cas_ttm_statements_df = multiply_df_scalar(ttm_cas_statements, 1e-6, exclude_cols = ['TaxRateForCalcs'])
+        q_bal_statements.ffill(axis = 0, inplace = True)
+        last_date_y = y_statements.index[-1]
+        last_date_q = q_bal_statements.index[-1]
+
+        for d in YA_BALANCE_INFOS:
+            if d in q_bal_statements.columns :
+                y_statements.loc[last_date_y , d] = q_bal_statements.loc[last_date_q , d]
+
+        self.y_statements = y_statements
+
+
+        self.q_inc_statements = q_statements[list(set(INC_CODES) & set(q_statements.columns))]
+        self.q_bal_statements = q_bal_statements
+        self.q_cas_statements = q_statements[list(set(CASH_CODES) & set(q_statements.columns))]
+
+        self.nb_shares = self.y_statements["QTCO"].iloc[-1]
+        self.statements_currency = self.yahoo_tk.info['financialCurrency']
+
+        self.convert_to_price_currency(['y_statements',
+                                            'q_inc_statements',
+                                            'q_bal_statements', 
+                                            'q_cas_statements',
+                                            '_inc_ttm_statements_df',
+                                            '_cas_ttm_statements_df'
+                                            ], self.statements_currency )
+
+        self.last_bal_statements = self.q_bal_statements.iloc[-1]
+
+        if "SNIN" in self.q_inc_statements:
+            y_period_ratio = pd.Timedelta(days=365) / self.q_inc_statements.index.diff()[-1]
+            self.interest_expense_income = self.q_inc_statements["SNIN"].iloc[-1] * y_period_ratio
+        elif "SNIN" in self._inc_ttm_statements_df:
+            self.interest_expense_income = self._inc_ttm_statements_df['SNIN'].iloc[0]
+        else :
+            raise MissingDataError('Missing SNIN')
+
+        self.total_debt =  self.last_bal_statements['STLD']
+        if 'InterestExpense' in self._inc_ttm_statements_df:
+            self.debt_cost =  self._inc_ttm_statements_df['InterestExpense'].iloc[0] / self.total_debt 
+        elif 'InterestExpense' in self.y_statements :
+            self.debt_cost =  self.y_statements['InterestExpense'].iloc[-1] / self.y_statements['STLD'].iloc[-1] 
+        else :
+            raise MissingDataError('Missing InterestExpense')
+
