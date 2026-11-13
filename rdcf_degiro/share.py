@@ -6,7 +6,7 @@ import numpy_financial as npf
 from scipy.optimize import minimize_scalar
 import yfinance as yf
 from rdcf_degiro.session_model_dcf import SessionModelDCF
-from rdcf_degiro.financial_statements import  CurrencyConvertrer, DegiroRetrieveError, FinancialStatements, MissingDataError, YahooRetrieveError
+from rdcf_degiro.financial_statements import  CurrencyConvertrer, DegiroFinancialStatements, DegiroRetrieveError, YahooFinancialStatements, MissingDataError, YahooRetrieveError
 from rdcf_degiro.price_history import     YahooPriceHistory
 # from rdcf_degiro.price_history import    DegiroPriceHistory
 from rdcf_degiro.forcast import FinancialForcast
@@ -138,16 +138,14 @@ class Share():
 
         self.share_params.update({"price_currency" : self.info['currency'],
                                     "yahoo_tk" : self.yahoo_tk,
-                                    "name" : self.info["longName"]})
+                                    "name" : self.info.get("longName",self.info.get("shortName",self.symbol))})
         
         self.sector = self.share_params.get("sector", self.info.get('sectorKey', "unknown"))
-        self.name = self.info["longName"]
+        self.name = self.share_params["name"]
         
         self.price_currency = self.share_params["price_currency"]
 
         self.currency_convertrer = CurrencyConvertrer(session_model, self.share_params)
-        self.statements = FinancialStatements(session_model, self.share_params)
-        self.forcast = FinancialForcast(self.statements, session_model, self.share_params)
 
         # if self.share_params.get("price_from", None) == "yahoo":
         self.price_history = YahooPriceHistory(session_model, self.share_params)
@@ -274,11 +272,10 @@ class Share():
         eq = self.market_cap
         debt = self.statements.net_debt
         if debt < 0:
-            eq = self.enterprise_value
             debt = self.statements.total_debt
         
         tr = self.session_model.taxe_rate
-        dc = self.statements.debt_cost
+        dc = self.debt_cost
 
         return cc * eq/(debt + eq) +  dc * (1-tr) * debt/(debt + eq)
         
@@ -331,10 +328,19 @@ class Share():
         """
 
         self.valid_retrieve = False
+
+        self.statements = DegiroFinancialStatements(self.session_model, self.share_params)
+        yahoo_statements = YahooFinancialStatements(self.session_model, self.share_params)
         
-        self.statements.retrieve_financials()
+        yahoo_statements.retrieve_financials()
+        self.debt_cost = yahoo_statements.debt_cost
+        try:
+            self.statements.retrieve_financials()
+        except DegiroRetrieveError:
+            self.statements = yahoo_statements
 
         ## forcast
+        self.forcast = FinancialForcast(self.statements, self.session_model, self.share_params)
         try :
             self.forcast.retrieve_forcasts()
         except DegiroRetrieveError as e:
@@ -363,10 +369,9 @@ class Share():
         eq = self.market_cap
         debt = self.statements.net_debt
         if debt < 0:
-            eq = self.enterprise_value
             debt = self.statements.total_debt
         tr = self.session_model.taxe_rate
-        dc = self.statements.debt_cost
+        dc = self.debt_cost
 
         return (wacc - dc * (1-tr) * debt/(debt + eq)) * (debt + eq)/eq
 

@@ -297,7 +297,7 @@ class RDCFAnal():
                                 )
                                 )
         
-        # self.share_list = [ s for s in self.share_list if s.symbol in [ "SMSD",] ] # For single share debug purpose
+        # self.share_list = [ s for s in self.share_list if s.symbol in ["TSM"] ] # For single share debug purpose
         
         
     # def retrieve_shares_from_portfolio(self):
