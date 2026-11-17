@@ -246,6 +246,8 @@ class FinancialStatements(Statements):
         self._y_inc_complete_statements : pd.DataFrame = None
         self.interest_expense_income : float = None
 
+        self.retrieve_success = False
+
 
     @property
     def stock_equity(self):
@@ -288,7 +290,8 @@ class FinancialStatements(Statements):
 
         if 'EBIT' in self.inc_ttm_statements:
             self.roic = self.inc_ttm_statements['EBIT'] * (1-self.session_model.taxe_rate) / (self.stock_equity + self.net_debt)  
-
+        
+        self.retrieve_success = True
 
     def compute_avg_values(self):
         """
@@ -658,6 +661,15 @@ class YahooFinancialStatements(FinancialStatements):
         
         return df.sort_index()
 
+    def get_debt_cost(self):
+
+        if 'InterestExpense' in self._inc_ttm_statements_df:
+            return  self._inc_ttm_statements_df['InterestExpense'].iloc[0] / self.total_debt 
+        elif 'InterestExpense' in self.y_statements :
+            return  self.y_statements['InterestExpense'].iloc[-1] / self.y_statements['STLD'].iloc[-1] 
+
+        raise MissingDataError("Missing InterestExpense data, can not compute debt cost")
+        
 
     def _retrieve_financial_data(self):
     
@@ -740,10 +752,5 @@ class YahooFinancialStatements(FinancialStatements):
             raise MissingDataError('Missing SNIN')
 
         self.total_debt =  self.last_bal_statements['STLD']
-        if 'InterestExpense' in self._inc_ttm_statements_df:
-            self.debt_cost =  self._inc_ttm_statements_df['InterestExpense'].iloc[0] / self.total_debt 
-        elif 'InterestExpense' in self.y_statements :
-            self.debt_cost =  self.y_statements['InterestExpense'].iloc[-1] / self.y_statements['STLD'].iloc[-1] 
-        else :
-            raise MissingDataError('Missing InterestExpense')
+        
 

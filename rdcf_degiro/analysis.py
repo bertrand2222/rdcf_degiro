@@ -445,7 +445,8 @@ class RDCFAnal():
                       'market_cap_usd', 
                       "yahoo_symb",
                       "sector",
-                      'error_msg']
+                      'error_msg',
+                      'warning_msg']
         
         data = [ {attr : getattr(s, attr, 
                             getattr(s.statements, attr, # get attr from statements if not in share

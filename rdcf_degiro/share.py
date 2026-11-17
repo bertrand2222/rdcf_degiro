@@ -151,6 +151,10 @@ class Share():
         self.price_history = YahooPriceHistory(session_model, self.share_params)
         # else :
         #     self.price_history = DegiroPriceHistory(session_model, self.share_params)
+
+        self.degiro_statements = DegiroFinancialStatements(self.session_model, self.share_params)
+        self.yahoo_statements = YahooFinancialStatements(self.session_model, self.share_params)
+        self.statements = self.yahoo_statements
         self.valid_init = True
 
     def retrieve_values(self):
@@ -320,7 +324,21 @@ class Share():
             len(df_multiple) / (1 / df_multiple['value_to_ebitda']).sum())
 
         return(0)
+
+    def compute_debt_cost(self):
+
+        self.debt_cost = self.session_model.rate_info.debt_cost
+        fail_msg = "Debt cost was set equal to fund rate"
+
+        if not self.yahoo_statements.retrieve_success :
+            self.warning_msg += f"Warning could not retrieve yahoo data: {fail_msg}"
+            return
         
+        try:
+            self.debt_cost = self.yahoo_statements.get_debt_cost()
+            return
+        except MissingDataError as e:
+            self.warning_msg += f"Missing Data {e} : {fail_msg}"
 
     def retrieve_share_data(self,):
         """
@@ -329,15 +347,24 @@ class Share():
 
         self.valid_retrieve = False
 
-        self.statements = DegiroFinancialStatements(self.session_model, self.share_params)
-        yahoo_statements = YahooFinancialStatements(self.session_model, self.share_params)
-        
-        yahoo_statements.retrieve_financials()
-        self.debt_cost = yahoo_statements.debt_cost
+        try :
+            self.yahoo_statements.retrieve_financials()
+            self.statements = self.yahoo_statements
+        except (YahooRetrieveError, MissingDataError, KeyError) as e:
+            self.warning_msg += f"Error while retriving yahoo financial data {e}"
         try:
-            self.statements.retrieve_financials()
-        except DegiroRetrieveError:
-            self.statements = yahoo_statements
+            self.degiro_statements.retrieve_financials()
+            self.statements = self.degiro_statements # degiro statement more complete than yahoo except debt info
+        except DegiroRetrieveError as e:
+            self.warning_msg += f"Error while retriving degiro financial data {e}"
+
+        if not self.statements.retrieve_success:
+            msg = "Error : can not retrieve financial statement from any source"
+            self.error_msg += msg
+            self.logger.error(msg)
+            return
+
+        self.compute_debt_cost()
 
         ## forcast
         self.forcast = FinancialForcast(self.statements, self.session_model, self.share_params)
