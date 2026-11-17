@@ -22,16 +22,6 @@ urllib3.disable_warnings()
 from requests.exceptions import RetryError
 
 
-# import google.auth
-# from googleapiclient.discovery import build
-# from googleapiclient.errors import HttpError
-# from googleapiclient.http import MediaFileUpload
-# from google.auth.transport.requests import Request
-# from google.oauth2.credentials import Credentials
-# from google_auth_oauthlib.flow import InstalledAppFlow
-
-# SCOPES =  ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
-
 PKL_NAME = "df_save.pkl"
 IS = 0.25
 
@@ -297,7 +287,7 @@ class RDCFAnal():
                                 )
                                 )
         
-        # self.share_list = [ s for s in self.share_list if s.symbol in [ "SMSD",] ] # For single share debug purpose
+        # self.share_list = [ s for s in self.share_list if s.symbol in ["AAPL"] ] # For single share debug purpose
         
         
     # def retrieve_shares_from_portfolio(self):
@@ -357,17 +347,11 @@ class RDCFAnal():
             if not s.valid_init:
                 continue
             try :
-                # for retrieve_from in ['degiro', 'yahoo']:
-                #     s.retrieve_from = retrieve_from
-                #     try :
-                #         s.retrieve_share_data()
-                #         break
-                #     except MarketCapError as e:
-                #         self.logger.warning(f"{e} can not retrieve data from {retrieve_from}")
                 s.retrieve_share_data()
 
             except (PriceRetrieveError, YahooRetrieveError, 
                     MissingDataError,
+                    # AttributeError,
                     # KeyError,
                     CurlError,
                     RetryError,
@@ -412,6 +396,7 @@ class RDCFAnal():
             except (KeyError,
                      TypeError, 
                     IndexError,
+                    AttributeError,
                     InconsistentStatementsError
                     ) as e:
                 s.error_msg += f"Error while computing dcf {type(e).__name__} : {e}   "
@@ -445,7 +430,8 @@ class RDCFAnal():
                       'market_cap_usd', 
                       "yahoo_symb",
                       "sector",
-                      'error_msg']
+                      'error_msg',
+                      'warning_msg']
         
         data = [ {attr : getattr(s, attr, 
                             getattr(s.statements, attr, # get attr from statements if not in share

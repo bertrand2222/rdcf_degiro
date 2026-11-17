@@ -113,5 +113,7 @@
     "ETL" : {"yahoo_symb" : "ETL.PA"},
     "PAH3" : {"yahoo_symb" : "PAH3.DE"},
     "BMW" : {"yahoo_symb" : "BMW.DE"},
-    "BP." : {"yahoo_symb" : "BP.L"}
+    "BP." : {"yahoo_symb" : "BP.L"},
+    "CCO" : {"yahoo_symb" : "CCJ"},
+    "IREN" : {"sector" : "technology"}
 }

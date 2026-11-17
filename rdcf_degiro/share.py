@@ -6,7 +6,7 @@ import numpy_financial as npf
 from scipy.optimize import minimize_scalar
 import yfinance as yf
 from rdcf_degiro.session_model_dcf import SessionModelDCF
-from rdcf_degiro.financial_statements import  CurrencyConvertrer, DegiroRetrieveError, FinancialStatements, MissingDataError, YahooRetrieveError
+from rdcf_degiro.financial_statements import  CurrencyConvertrer, DegiroFinancialStatements, DegiroRetrieveError, YahooFinancialStatements, MissingDataError, YahooRetrieveError
 from rdcf_degiro.price_history import     YahooPriceHistory
 # from rdcf_degiro.price_history import    DegiroPriceHistory
 from rdcf_degiro.forcast import FinancialForcast
@@ -137,38 +137,36 @@ class Share():
                 self.info = pickle.load(infile)
 
         self.share_params.update({"price_currency" : self.info['currency'],
+                                  "financial_currency" : self.info['financialCurrency'],
                                     "yahoo_tk" : self.yahoo_tk,
-                                    "name" : self.info["longName"]})
+                                    "name" : self.info.get("longName",self.info.get("shortName",self.symbol))})
         
         self.sector = self.share_params.get("sector", self.info.get('sectorKey', "unknown"))
-        self.name = self.info["longName"]
+        self.name = self.share_params["name"]
         
         self.price_currency = self.share_params["price_currency"]
 
         self.currency_convertrer = CurrencyConvertrer(session_model, self.share_params)
-        self.statements = FinancialStatements(session_model, self.share_params)
-        self.forcast = FinancialForcast(self.statements, session_model, self.share_params)
 
         # if self.share_params.get("price_from", None) == "yahoo":
         self.price_history = YahooPriceHistory(session_model, self.share_params)
         # else :
         #     self.price_history = DegiroPriceHistory(session_model, self.share_params)
+
+        self.degiro_statements = DegiroFinancialStatements(self.session_model, self.share_params)
+        self.yahoo_statements = YahooFinancialStatements(self.session_model, self.share_params)
+        self.statements = self.yahoo_statements
         self.valid_init = True
 
     def retrieve_values(self):
         """
         retrieve ratio values
         """
-        # if self.retrieve_from == "degiro" :
-        #     try:
-        #         self.degiro_values_retrieve()
-        #     except DegiroRetrieveError as e:
-        #         self.logger.warning(f'{self.name} : can not retrieve value ratios from degiro api, {e}     ')
         self.yahoo_values_retrieve()
         
         self.market_cap_usd = self.currency_convertrer.convert(self.market_cap, self.price_currency, "USD")
         self.enterprise_value = self.market_cap + self.statements.net_debt
-        self.debt_to_equity = self.statements.net_debt / self.market_cap
+        self.debt_to_equity = self.yahoo_statements.net_debt / self.market_cap
 
         # if enterprise value is negative or very low use cash flow to equity
         self.use_fcfe = (self.enterprise_value / self.market_cap) < 0.05 
@@ -182,10 +180,6 @@ class Share():
         if err_market_cap > 0.8 :
             msg = f"{self.name}  err_market_cap: {err_market_cap:.2f} reported: {self.market_cap_reported:.2f} calculated: {self.market_cap:.2f} nb shares {self.statements.nb_shares}"
             self.warning_msg += msg
-            # self.market_cap_reliable = False
-            # raise MarketCapError(msg)
-
-        # self.market_cap_reliable = True
 
     
     # def degiro_values_retrieve(self):
@@ -274,11 +268,10 @@ class Share():
         eq = self.market_cap
         debt = self.statements.net_debt
         if debt < 0:
-            eq = self.enterprise_value
             debt = self.statements.total_debt
         
         tr = self.session_model.taxe_rate
-        dc = self.statements.debt_cost
+        dc = self.debt_cost
 
         return cc * eq/(debt + eq) +  dc * (1-tr) * debt/(debt + eq)
         
@@ -323,7 +316,6 @@ class Share():
             len(df_multiple) / (1 / df_multiple['value_to_ebitda']).sum())
 
         return(0)
-        
 
     def retrieve_share_data(self,):
         """
@@ -331,10 +323,35 @@ class Share():
         """
 
         self.valid_retrieve = False
-        
-        self.statements.retrieve_financials()
+
+        try :
+            self.yahoo_statements.retrieve_financials()
+            self.statements = self.yahoo_statements
+        except (YahooRetrieveError, 
+                MissingDataError, 
+                KeyError
+                ) as e:
+            self.warning_msg += f"Error while retriving yahoo financial data {e}"
+        try:
+            self.degiro_statements.retrieve_financials()
+            self.statements = self.degiro_statements # degiro statement more complete than yahoo except debt info
+        except DegiroRetrieveError as e:
+            self.warning_msg += f"Error while retriving degiro financial data {e}"
+
+        if not self.statements.retrieve_success:
+            msg = "Error : can not retrieve financial statement from any source"
+            self.error_msg += msg
+            self.logger.error(msg)
+            return
+
+        self.debt_cost = self.yahoo_statements.debt_cost
+        self.warning_msg += self.yahoo_statements.warning_msg
 
         ## forcast
+        self.forcast = FinancialForcast(self.statements, 
+                                        self.yahoo_statements,
+                                        self.session_model, 
+                                        self.share_params)
         try :
             self.forcast.retrieve_forcasts()
         except DegiroRetrieveError as e:
@@ -363,10 +380,9 @@ class Share():
         eq = self.market_cap
         debt = self.statements.net_debt
         if debt < 0:
-            eq = self.enterprise_value
             debt = self.statements.total_debt
         tr = self.session_model.taxe_rate
-        dc = self.statements.debt_cost
+        dc = self.debt_cost
 
         return (wacc - dc * (1-tr) * debt/(debt + eq)) * (debt + eq)/eq
 
