@@ -2,7 +2,7 @@ import json
 import os
 import pandas as pd
 import numpy as np
-from rdcf_degiro.financial_statements import DegiroRetrieveError, FinancialStatements, MissingDataError, Statements
+from rdcf_degiro.financial_statements import DegiroRetrieveError, FinancialStatements, MissingDataError, Statements, YahooFinancialStatements
 
 class InconsistentStatementsError(Exception):
     """ Error retrived when Forcast and Histrory statement are not consistant"""
@@ -14,9 +14,11 @@ class FinancialForcast(Statements):
     FINANCIAL_FCST_CODES =  ['NET', 'SAL', 'PRE', 'CPX', 'CPS', 'EBT']
     currency_convertible_cols = FINANCIAL_FCST_CODES
 
-    def __init__(self, statements : FinancialStatements, *args, **kwargs):
+    def __init__(self, statements : FinancialStatements, 
+                 yahoo_statements : YahooFinancialStatements, *args, **kwargs):
         super().__init__(*args,**kwargs)
         self.statements = statements
+        self.yahoo_statements = yahoo_statements
 
         self._forcasted_ocf_growth : float = None
         self._forcasted_capex_growth : float = None
@@ -73,7 +75,7 @@ class FinancialForcast(Statements):
 
             if 'EBT' not in self.y_forcasts:
                 # Set forcasted EBITDA equal to focasted EBIT
-                    self.y_forcasts['EBT'] = self.y_forcasts['EBI']
+                self.y_forcasts['EBT'] = self.y_forcasts['EBI']
         except KeyError as e:
             raise MissingDataError(e)
             
@@ -118,12 +120,9 @@ class FinancialForcast(Statements):
         self._forcasted_ocfe = None
         if self.y_forcasts is None:
             return
-        net_interest_exp = 0
-        last_ocfe = self.statements.y_statements['OCFE'].iloc[-1]
 
-        if 'SNIN' in self.statements.y_statements:
-            # interest expense assumed constant
-            net_interest_exp = self.statements.interest_expense_income * (1 - self.session_model.taxe_rate)
+        net_interest_exp = - self.yahoo_statements.debt_cost * self.yahoo_statements.net_debt * (1 - self.session_model.taxe_rate)
+        last_ocfe = self.statements.y_statements['OCFE'].iloc[-1]
 
         if 'CPS'  in self.y_forcasts:
             ratio = last_ocfe/self.y_forcasts['CPS'].iloc[0]

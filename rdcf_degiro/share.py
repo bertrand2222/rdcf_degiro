@@ -137,6 +137,7 @@ class Share():
                 self.info = pickle.load(infile)
 
         self.share_params.update({"price_currency" : self.info['currency'],
+                                  "financial_currency" : self.info['financialCurrency'],
                                     "yahoo_tk" : self.yahoo_tk,
                                     "name" : self.info.get("longName",self.info.get("shortName",self.symbol))})
         
@@ -161,16 +162,11 @@ class Share():
         """
         retrieve ratio values
         """
-        # if self.retrieve_from == "degiro" :
-        #     try:
-        #         self.degiro_values_retrieve()
-        #     except DegiroRetrieveError as e:
-        #         self.logger.warning(f'{self.name} : can not retrieve value ratios from degiro api, {e}     ')
         self.yahoo_values_retrieve()
         
         self.market_cap_usd = self.currency_convertrer.convert(self.market_cap, self.price_currency, "USD")
         self.enterprise_value = self.market_cap + self.statements.net_debt
-        self.debt_to_equity = self.statements.net_debt / self.market_cap
+        self.debt_to_equity = self.yahoo_statements.net_debt / self.market_cap
 
         # if enterprise value is negative or very low use cash flow to equity
         self.use_fcfe = (self.enterprise_value / self.market_cap) < 0.05 
@@ -184,10 +180,6 @@ class Share():
         if err_market_cap > 0.8 :
             msg = f"{self.name}  err_market_cap: {err_market_cap:.2f} reported: {self.market_cap_reported:.2f} calculated: {self.market_cap:.2f} nb shares {self.statements.nb_shares}"
             self.warning_msg += msg
-            # self.market_cap_reliable = False
-            # raise MarketCapError(msg)
-
-        # self.market_cap_reliable = True
 
     
     # def degiro_values_retrieve(self):
@@ -325,21 +317,6 @@ class Share():
 
         return(0)
 
-    def compute_debt_cost(self):
-
-        self.debt_cost = self.session_model.rate_info.debt_cost
-        fail_msg = "Debt cost was set equal to fund rate"
-
-        if not self.yahoo_statements.retrieve_success :
-            self.warning_msg += f"Warning could not retrieve yahoo data: {fail_msg}"
-            return
-        
-        try:
-            self.debt_cost = self.yahoo_statements.get_debt_cost()
-            return
-        except MissingDataError as e:
-            self.warning_msg += f"Missing Data {e} : {fail_msg}"
-
     def retrieve_share_data(self,):
         """
         Get all the share associated financial infos from degiro api 
@@ -350,7 +327,10 @@ class Share():
         try :
             self.yahoo_statements.retrieve_financials()
             self.statements = self.yahoo_statements
-        except (YahooRetrieveError, MissingDataError, KeyError) as e:
+        except (YahooRetrieveError, 
+                MissingDataError, 
+                KeyError
+                ) as e:
             self.warning_msg += f"Error while retriving yahoo financial data {e}"
         try:
             self.degiro_statements.retrieve_financials()
@@ -364,10 +344,14 @@ class Share():
             self.logger.error(msg)
             return
 
-        self.compute_debt_cost()
+        self.debt_cost = self.yahoo_statements.debt_cost
+        self.warning_msg += self.yahoo_statements.warning_msg
 
         ## forcast
-        self.forcast = FinancialForcast(self.statements, self.session_model, self.share_params)
+        self.forcast = FinancialForcast(self.statements, 
+                                        self.yahoo_statements,
+                                        self.session_model, 
+                                        self.share_params)
         try :
             self.forcast.retrieve_forcasts()
         except DegiroRetrieveError as e:

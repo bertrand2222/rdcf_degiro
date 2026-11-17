@@ -225,7 +225,7 @@ class FinancialStatements(Statements):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args,**kwargs)
-        
+        self.warning_msg = ''
         self.y_statements : pd.DataFrame = None
 
         self.q_inc_statements : pd.DataFrame = None
@@ -247,7 +247,7 @@ class FinancialStatements(Statements):
         self.interest_expense_income : float = None
 
         self.retrieve_success = False
-
+        self.debt_cost = self.session_model.rate_info.debt_cost # default debt cost
 
     @property
     def stock_equity(self):
@@ -257,16 +257,6 @@ class FinancialStatements(Statements):
     def _retrieve_financial_data(self):
         pass
 
-    # def _retrive_financials_src(self):
-        
-    #     if (self.retrieve_from == "degiro") and (self.share_params.get("finance_from", "degiro") == "degiro"):
-    #         try :
-    #             self.degiro_financial_retrieve()
-    #             return
-    #         except DegiroRetrieveError as e:
-    #             self.logger.warning(f'{self.name} : can not retrieve financial data from degiro: {e}')
-
-    #     self.yahoo_financial_retrieve()
 
         
     def retrieve_financials(self):
@@ -285,8 +275,6 @@ class FinancialStatements(Statements):
                                          self._inc_ttm_statements_df],axis= 0)
 
         self.compute_avg_values()
-
-        self.net_debt = self.total_debt - self.last_bal_statements[self.cash_code].sum()
 
         if 'EBIT' in self.inc_ttm_statements:
             self.roic = self.inc_ttm_statements['EBIT'] * (1-self.session_model.taxe_rate) / (self.stock_equity + self.net_debt)  
@@ -482,7 +470,7 @@ class DegiroFinancialStatements(FinancialStatements):
                 perod_interest += self.q_inc_statements[info].iloc[-1]
         self.interest_expense_income = perod_interest * 12 / self.q_inc_statements['periodLength'].iloc[-1]
 
-
+        self.net_debt = self.total_debt - self.last_bal_statements[self.cash_code].sum()
 
     def degiro_retrieve_annual(self, financial_st : dict):
         """
@@ -651,6 +639,7 @@ class YahooFinancialStatements(FinancialStatements):
                                     f"{self.symbol}_{stm}.pckl")
 
         if self.session_model.update_statements_need(path):
+            self.logger.info("Update yahoo statements")
             df : pd.DataFrame = getattr(self, f"yahoo_{stm}_update")()
             df.to_pickle(path) 
         else : 
@@ -661,14 +650,24 @@ class YahooFinancialStatements(FinancialStatements):
         
         return df.sort_index()
 
-    def get_debt_cost(self):
-
+    def compute_debt_cost(self):
+        
+        if "InterestExpense" in self.q_inc_statements:
+            s = pd.concat([self.q_inc_statements['InterestExpense'],
+                    self.q_bal_statements['STLD']], axis = 1).dropna().iloc[-1]
+            self.debt_cost = s['InterestExpense'] * 4 / s['STLD']
+            if not np.isnan(self.debt_cost):
+                return
         if 'InterestExpense' in self._inc_ttm_statements_df:
-            return  self._inc_ttm_statements_df['InterestExpense'].iloc[0] / self.total_debt 
-        elif 'InterestExpense' in self.y_statements :
-            return  self.y_statements['InterestExpense'].iloc[-1] / self.y_statements['STLD'].iloc[-1] 
-
-        raise MissingDataError("Missing InterestExpense data, can not compute debt cost")
+            self.debt_cost = self._inc_ttm_statements_df['InterestExpense'].iloc[0] / self.total_debt 
+            if not np.isnan(self.debt_cost):
+                return
+        if 'InterestExpense' in self.y_statements :
+            self.debt_cost = self.y_statements['InterestExpense'].iloc[-1] / self.y_statements['STLD'].iloc[-1] 
+            if not np.isnan(self.debt_cost):
+                return
+            
+        self.warning_msg += "Missing InterestExpense data, can not compute debt cost, debt cost set equal to fed fund rate"
         
 
     def _retrieve_financial_data(self):
@@ -696,17 +695,7 @@ class YahooFinancialStatements(FinancialStatements):
         for st in [y_statements, q_statements]:
             st.rename(columns= RENAME_DIC_YAHOO, inplace = True)
             self._compute_free_cash_flow(st)
-            # if 'OTLO' not in st:
-            #     continue
-            # try :
-            #     st['OCFF'] = st['OTLO']
-            #     st['OCFE'] = st['OTLO']
-            #     if 'SNIN' in st:
-            #         st['OCFF'] -= st['SNIN'] * (1-self.session_model.taxe_rate)
-            #     st['FCFE'] = st['OCFE'] + st['SCEX']
-            #     st['FCFF'] = st['OCFF'] + st['SCEX']
-            # except KeyError as e:
-            #     raise MissingDataError(e)
+
         y_statements = multiply_df_scalar(y_statements, 1e-6, exclude_cols = ['TaxRateForCalcs'])
         q_statements = multiply_df_scalar(q_statements, 1e-6, exclude_cols = ['TaxRateForCalcs'])
         q_bal_statements = multiply_df_scalar(q_bal_statements, 1e-6, exclude_cols = ['TaxRateForCalcs'])
@@ -725,13 +714,12 @@ class YahooFinancialStatements(FinancialStatements):
 
         self.y_statements = y_statements
 
-
-        self.q_inc_statements = q_statements[list(set(INC_CODES) & set(q_statements.columns))]
+        self.q_inc_statements = q_statements.copy()
         self.q_bal_statements = q_bal_statements
-        self.q_cas_statements = q_statements[list(set(CASH_CODES) & set(q_statements.columns))]
+        self.q_cas_statements = q_statements.copy()
 
         self.nb_shares = self.y_statements["QTCO"].iloc[-1]
-        self.statements_currency = self.yahoo_tk.info['financialCurrency']
+        self.statements_currency = self.share_params['financial_currency']
 
         self.convert_to_price_currency(['y_statements',
                                             'q_inc_statements',
@@ -743,14 +731,13 @@ class YahooFinancialStatements(FinancialStatements):
 
         self.last_bal_statements = self.q_bal_statements.iloc[-1]
 
-        if "SNIN" in self.q_inc_statements:
-            y_period_ratio = pd.Timedelta(days=365) / self.q_inc_statements.index.diff()[-1]
-            self.interest_expense_income = self.q_inc_statements["SNIN"].iloc[-1] * y_period_ratio
-        elif "SNIN" in self._inc_ttm_statements_df:
-            self.interest_expense_income = self._inc_ttm_statements_df['SNIN'].iloc[0]
-        else :
-            raise MissingDataError('Missing SNIN')
 
-        self.total_debt =  self.last_bal_statements['STLD']
+        self.total_debt =  self.q_bal_statements['STLD'].dropna().iloc[-1]
+        if "NetDebt" in  self.q_bal_statements:
+            self.net_debt = self.q_bal_statements['NetDebt'].dropna().iloc[-1]
+        else:
+            self.net_debt = self.total_debt - self.q_bal_statements[self.cash_code].dropna().iloc[-1].sum()
+
+        self.compute_debt_cost()
         
 
