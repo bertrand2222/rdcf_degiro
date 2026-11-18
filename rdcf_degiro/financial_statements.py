@@ -44,6 +44,7 @@ BAL_CASH_CODES = [
     "ACAE", # "Cash & Equivalents" 
     "ACDB", # "Cash and due from bank"
     "ACSH", # "Cash"
+    "ShortTermInvestments",
 ]
 BAL_CODES = BAL_CASH_CODES + [
     "STLD", # 'TotalDebt',
@@ -745,6 +746,8 @@ class YahooFinancialStatements(FinancialStatements):
                                             ], self.statements_currency )
 
         self.last_bal_statements = self.q_bal_statements.iloc[-1]
+        
+        self.cash_code = [key for key in BAL_CASH_CODES if key  in q_bal_statements.columns]
 
 
         self.total_debt =  self.q_bal_statements['STLD'].dropna().iloc[-1]
