@@ -165,7 +165,7 @@ class Share():
         self.yahoo_values_retrieve()
         
         self.market_cap_usd = self.currency_convertrer.convert(self.market_cap, self.price_currency, "USD")
-        self.enterprise_value = self.market_cap + self.statements.net_debt
+        self.enterprise_value = self.market_cap + self.yahoo_statements.net_debt
         self.debt_to_equity = self.yahoo_statements.net_debt / self.market_cap
 
         # if enterprise value is negative or very low use cash flow to equity
@@ -266,9 +266,9 @@ class Share():
         if self.use_fcfe :
             return cc
         eq = self.market_cap
-        debt = self.statements.net_debt
+        debt = self.yahoo_statements.net_debt
         if debt < 0:
-            debt = self.statements.total_debt
+            debt = self.yahoo_statements.total_debt
         
         tr = self.session_model.taxe_rate
         dc = self.debt_cost
@@ -378,9 +378,9 @@ class Share():
         if self.use_fcfe :
             return wacc        
         eq = self.market_cap
-        debt = self.statements.net_debt
+        debt = self.yahoo_statements.net_debt
         if debt < 0:
-            debt = self.statements.total_debt
+            debt = self.yahoo_statements.total_debt
         tr = self.session_model.taxe_rate
         dc = self.debt_cost
 
@@ -439,7 +439,7 @@ class Share():
         target_current_value = fcf_act_sum + vt_act
         target_market_value = target_current_value
         if not self.use_fcfe :
-            target_market_value -= self.statements.net_debt
+            target_market_value -= self.yahoo_statements.net_debt
         self.target_market_price_multiple = target_market_value / self.statements.nb_shares
         self.potential_price_evolution = (self.target_market_price_multiple - self.price_history.current_price) / self.price_history.current_price
 
@@ -522,7 +522,6 @@ class Share():
             self.beta_ajusted_expected_return_multiple = self.expected_return_multiple - (rf + self.levered_beta * (rm - rf))
         self.expected_return_perpetual = self._get_cc_from_wacc(self.forcasted_wacc_perpetual)
 
-        # compute taget price from market capital cost
         # self.target_market_value_perpetual = (self._compute_value_perpetual(self.wacc)    -  self.net_debt
         #                                       ) / self.nb_shares
 
