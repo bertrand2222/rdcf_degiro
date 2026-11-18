@@ -287,19 +287,18 @@ class Share():
         before dcf calculation
         """
         self.logger.info(f'{self.name} : compute complementary values                     ')
-        # self.logger.info(f'{self.name} : compute complementary values                     ', flush= True, end='\r')
 
-        y_statements = self.statements.y_statements
+        y_statements = self.yahoo_statements.y_statements
 
         try :
             df_multiple = pd.concat([self.price_history.history_in_financial_currency, 
-                                y_statements[["QTCO" , 'EBITDA', 'STLD', 'OCFE', 'OCFF'] + self.statements.cash_code]
+                                y_statements[["QTCO" , 'EBITDA', 'STLD', 'OCFE', 'OCFF'] + self.yahoo_statements.cash_code]
                                 ], axis = 0).sort_index().ffill().dropna()
         except KeyError as e:
             raise MissingDataError(e)
         
         df_multiple['ENT_PRICE'] = df_multiple['QTCO'] * df_multiple['close']
-        df_multiple['ENT_VALUE'] = df_multiple['ENT_PRICE'] + df_multiple['STLD'] - df_multiple[self.statements.cash_code].sum(axis = 1)
+        df_multiple['ENT_VALUE'] = df_multiple['ENT_PRICE'] + df_multiple['STLD'] - df_multiple[self.yahoo_statements.cash_code].sum(axis = 1)
         
         df_multiple['value_to_ebitda'] = df_multiple['ENT_VALUE'] / df_multiple['EBITDA']
         df_multiple['value_to_ocff'] = df_multiple['ENT_VALUE'] / df_multiple['OCFF']
