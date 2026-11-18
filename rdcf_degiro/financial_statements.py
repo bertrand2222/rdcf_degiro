@@ -84,7 +84,8 @@ RENAME_DIC_YAHOO = {
 RENAME_DIC_DEGIRO = {
     "SOPI" : "EBIT",}
 SPECIAL_CURRENCIES = {
-    'GBX' : {'real' : 'GBP', 'rate_factor' : 0.01}
+    'GBX' : {'real' : 'GBP', 'rate_factor' : 0.01},
+    'GBp' : {'real' : 'GBP', 'rate_factor' : 0.01}
 }
 
 def multiply_df_scalar(df: pd.DataFrame, scalar: float, exclude_cols: List[str] = None) -> pd.DataFrame:
@@ -124,6 +125,15 @@ class CurrencyConvertrer():
         self.price_currency : str = share_params.get("price_currency")
         self.currency_convertible_cols = currency_convertible_cols
         
+    @staticmethod
+    def get_real_currency_rate(currency : str):
+        rate_factor = 1
+        if currency in  SPECIAL_CURRENCIES :
+            currency_info = SPECIAL_CURRENCIES[currency]
+            currency = currency_info['real']
+            rate_factor = currency_info['rate_factor']
+        return currency, rate_factor
+
 
     def convert(self, val: float | pd.DataFrame, statements_currency: str , target_currency: str = None) -> pd.DataFrame:
         """
@@ -137,10 +147,11 @@ class CurrencyConvertrer():
             return val
         rate_factor = 1
 
-        if target_currency in  SPECIAL_CURRENCIES :
-            currency_info = SPECIAL_CURRENCIES[target_currency]
-            target_currency = currency_info['real']
-            rate_factor = currency_info['rate_factor']
+        target_currency, r = self.get_real_currency_rate(target_currency)
+        rate_factor *=r
+        
+        statements_currency ,r = self.get_real_currency_rate(statements_currency)
+        rate_factor /=r
 
         rate_symb = None
         if target_currency != statements_currency:
