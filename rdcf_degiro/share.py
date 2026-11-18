@@ -159,6 +159,10 @@ class Share():
     def debt_cost(self):
         return self.yahoo_statements.debt_cost
 
+    @property
+    def roic(self):
+        return self.yahoo_statements.roic
+
     def retrieve_values(self):
         """
         retrieve ratio values
