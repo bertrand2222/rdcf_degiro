@@ -30,8 +30,9 @@
     "INFY" : {"yahoo_symb" : "INFY.NS", 
               "price_from" : "yahoo"},
     "CRWV" : {
-              "yahoo_symb" : "CRWV",
-                "price_from" : "yahoo"},
+        "debt_cost" : 0.09,
+        "yahoo_symb" : "CRWV",
+        "price_from" : "yahoo"},
     "ORCL" : {
               "yahoo_symb" : "ORCL",
                 "price_from" : "yahoo"},

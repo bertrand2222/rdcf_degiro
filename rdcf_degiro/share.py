@@ -148,15 +148,16 @@ class Share():
 
         self.currency_convertrer = CurrencyConvertrer(session_model, self.share_params)
 
-        # if self.share_params.get("price_from", None) == "yahoo":
         self.price_history = YahooPriceHistory(session_model, self.share_params)
-        # else :
-        #     self.price_history = DegiroPriceHistory(session_model, self.share_params)
 
         self.degiro_statements = DegiroFinancialStatements(self.session_model, self.share_params)
         self.yahoo_statements = YahooFinancialStatements(self.session_model, self.share_params)
         self.statements = self.yahoo_statements
         self.valid_init = True
+
+    @property
+    def debt_cost(self):
+        return self.yahoo_statements.debt_cost
 
     def retrieve_values(self):
         """
@@ -344,7 +345,6 @@ class Share():
             self.logger.error(msg)
             return
 
-        self.debt_cost = self.yahoo_statements.debt_cost
         self.warning_msg += self.yahoo_statements.warning_msg
 
         ## forcast

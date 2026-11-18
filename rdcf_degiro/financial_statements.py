@@ -651,6 +651,10 @@ class YahooFinancialStatements(FinancialStatements):
         return df.sort_index()
 
     def compute_debt_cost(self):
+
+        if "debt_cost" in self.share_params:
+            self.debt_cost = self.share_params['debt_cost']
+            return
         
         if "InterestExpense" in self.q_inc_statements:
             s = pd.concat([self.q_inc_statements['InterestExpense'],
