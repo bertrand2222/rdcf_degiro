@@ -38,7 +38,8 @@ INC_CODES = [
     "EIBT", # "Net Income Before Taxes",
     "NINC", # "NetIncome", 
     "SNIN", # "Non operating net interest income"
-    "EBITDA"
+    "EBITDA",
+    'EBIT'
 ]
 
 BAL_CASH_CODES = [
@@ -60,7 +61,10 @@ CASH_CODES = [
     "SCEX", # Capital Expenditures,
     "FCDP", # Total Cash Dividends Paid
     "FPSS", # Issuance (Retirement) of Stock, Net,
-    "FCFF"
+    "FCFF",
+    "OCFF", 
+    "OCFE",
+    "FCFE"
             ]
 PAYOUT_INFOS = ["FCDP", "FPSS" ]
 

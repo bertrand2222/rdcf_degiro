@@ -295,8 +295,9 @@ class Share():
                                 ], axis = 0).sort_index().ffill().dropna()
         except KeyError as e:
             raise MissingDataError(e)
-        
-        df_multiple['ENT_PRICE'] = df_multiple['QTCO'] * df_multiple['close']
+        # share_number_ratio = self.statements.nb_shares / df_multiple['QTCO'].iloc[-1]
+        share_number_ratio = 1
+        df_multiple['ENT_PRICE'] = df_multiple['QTCO'] * df_multiple['close'] * share_number_ratio#ajust shares number in case of recent split
         df_multiple['ENT_VALUE'] = df_multiple['ENT_PRICE'] + df_multiple['STLD'] - df_multiple[self.yahoo_statements.cash_code].sum(axis = 1)
         
         df_multiple['value_to_ebitda'] = df_multiple['ENT_VALUE'] / df_multiple['EBITDA']

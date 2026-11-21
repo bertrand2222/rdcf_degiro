@@ -11,7 +11,7 @@ class FinancialForcast(Statements):
     """
     Class computing and containing fincancial forcast
     """
-    FINANCIAL_FCST_CODES =  ['NET', 'SAL', 'PRE', 'CPX', 'CPS', 'EBT']
+    FINANCIAL_FCST_CODES =  ['NET', 'SAL', 'PRE', 'CPX', 'CPS', 'EBT', 'EBI']
     currency_convertible_cols = FINANCIAL_FCST_CODES
 
     def __init__(self, statements : FinancialStatements, 
@@ -66,7 +66,6 @@ class FinancialForcast(Statements):
                         if item['code'] in self.FINANCIAL_FCST_CODES:
                             y_dict[item["code"]] = item["value"]
                 data.append(y_dict)
-
             self.y_forcasts = pd.DataFrame.from_records(
                 data).set_index('endDate').sort_index()
             statements_currency = estimates_summaries['currency']
