@@ -126,6 +126,7 @@ class CurrencyConvertrer():
         self.session_model = session_model
         self.price_currency : str = share_params.get("price_currency")
         self.currency_convertible_cols = currency_convertible_cols
+        self.real_price_currency , self.real_currency_rate =  self.get_real_currency_rate(self.price_currency)
         
     @staticmethod
     def get_real_currency_rate(currency : str):
@@ -279,9 +280,7 @@ class FinancialStatements(Statements):
 
         self._retrieve_financial_data()
 
-        # self.nb_shares = self.y_statements["QTCO"].iloc[-1]
-        # self.nb_shares = self.share_params['nb_shares'] *1e-6
-        # print(self.nb_shares, nb_shares)
+        self.nb_shares = self.share_params['info']['impliedSharesOutstanding']*1e-6
 
         self.y_statements.loc[:,'periodLength'] = 12
         self.y_statements.loc[:,'periodType'] = 'M'
@@ -578,8 +577,6 @@ class DegiroFinancialStatements(FinancialStatements):
         q_inc_statements.set_index('endDate', inplace= True)
         q_bal_statements.set_index('endDate', inplace= True)
 
-        self.nb_shares = q_bal_statements["QTCO"].iloc[-1]
-
         # TTM values
         ### income
         ttm_start_time = q_inc_statements.index[-1] - relativedelta(years= 1)
@@ -742,7 +739,6 @@ class YahooFinancialStatements(FinancialStatements):
         self.q_bal_statements = q_bal_statements
         self.q_cas_statements = q_statements.copy()
 
-        self.nb_shares = self.y_statements["QTCO"].iloc[-1]
         self.statements_currency = self.share_params['financial_currency']
 
         self.convert_to_price_currency(['y_statements',
