@@ -38,6 +38,7 @@ INC_CODES = [
     "EIBT", # "Net Income Before Taxes",
     "NINC", # "NetIncome", 
     "SNIN", # "Non operating net interest income"
+    "EBITDA"
 ]
 
 BAL_CASH_CODES = [
@@ -278,6 +279,10 @@ class FinancialStatements(Statements):
 
         self._retrieve_financial_data()
 
+        # self.nb_shares = self.y_statements["QTCO"].iloc[-1]
+        # self.nb_shares = self.share_params['nb_shares'] *1e-6
+        # print(self.nb_shares, nb_shares)
+
         self.y_statements.loc[:,'periodLength'] = 12
         self.y_statements.loc[:,'periodType'] = 'M'
 
@@ -289,7 +294,10 @@ class FinancialStatements(Statements):
         self.compute_avg_values()
 
         if 'EBIT' in self.inc_ttm_statements:
-            self.roic = self.inc_ttm_statements['EBIT'] * (1-self.session_model.taxe_rate) / (self.stock_equity + self.net_debt)  
+            self.roic = self.inc_ttm_statements['EBIT'] * (1-self.session_model.taxe_rate) / (self.stock_equity + self.net_debt)
+        if "RTLR" in self.y_statements:  
+            # ratio between change in working capital and revenue
+            self.nwc_ratio = self.y_statements['SOCF'].sum()/self.y_statements['RTLR'].sum()
         
         self.retrieve_success = True
 
@@ -476,11 +484,11 @@ class DegiroFinancialStatements(FinancialStatements):
         self.last_bal_statements = self.q_bal_statements.iloc[-1]
         self.total_debt =  self.last_bal_statements['STLD']
 
-        perod_interest = 0
-        for info in ["SNIN", "SONT"]:
-            if info in self.q_inc_statements:
-                perod_interest += self.q_inc_statements[info].iloc[-1]
-        self.interest_expense_income = perod_interest * 12 / self.q_inc_statements['periodLength'].iloc[-1]
+        # perod_interest = 0
+        # for info in ["SNIN", "SONT"]:
+        #     if info in self.q_inc_statements:
+        #         perod_interest += self.q_inc_statements[info].iloc[-1]
+        # self.interest_expense_income = perod_interest * 12 / self.q_inc_statements['periodLength'].iloc[-1]
 
         self.net_debt = self.total_debt - self.last_bal_statements[self.cash_code].sum()
 
