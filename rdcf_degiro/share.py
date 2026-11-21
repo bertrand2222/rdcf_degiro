@@ -138,6 +138,7 @@ class Share():
 
         self.share_params.update({"price_currency" : self.info['currency'],
                                   "financial_currency" : self.info['financialCurrency'],
+                                #   "nb_shares" : self.info['sharesOutstanding'],
                                     "yahoo_tk" : self.yahoo_tk,
                                     "name" : self.info.get("longName",self.info.get("shortName",self.symbol))})
         
