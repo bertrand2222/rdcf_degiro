@@ -297,10 +297,10 @@ class Share():
             raise MissingDataError(e)
         
         df_multiple['ENT_PRICE'] = df_multiple['QTCO'] * df_multiple['close']
-        print(df_multiple['ENT_PRICE'])
         df_multiple['ENT_VALUE'] = df_multiple['ENT_PRICE'] + df_multiple['STLD'] - df_multiple[self.yahoo_statements.cash_code].sum(axis = 1)
         
         df_multiple['value_to_ebitda'] = df_multiple['ENT_VALUE'] / df_multiple['EBITDA']
+        print(df_multiple['value_to_ebitda'], df_multiple['ENT_VALUE'], df_multiple['EBITDA'])
         df_multiple['value_to_ocff'] = df_multiple['ENT_VALUE'] / df_multiple['OCFF']
         df_multiple['price_to_ocfe'] = df_multiple['ENT_PRICE'] / df_multiple['OCFE']
 
