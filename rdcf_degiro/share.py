@@ -136,9 +136,10 @@ class Share():
             with open(info_path, "rb") as infile:
                 self.info = pickle.load(infile)
 
-        self.share_params.update({"price_currency" : self.info['currency'],
+        self.share_params.update({
+            "info" : self.info,
+            "price_currency" : self.info['currency'],
                                   "financial_currency" : self.info['financialCurrency'],
-                                #   "nb_shares" : self.info['sharesOutstanding'],
                                     "yahoo_tk" : self.yahoo_tk,
                                     "name" : self.info.get("longName",self.info.get("shortName",self.symbol))})
         
@@ -170,7 +171,7 @@ class Share():
         """
         self.yahoo_values_retrieve()
         
-        self.market_cap_usd = self.currency_convertrer.convert(self.market_cap, self.price_currency, "USD")
+        self.market_cap_usd = self.currency_convertrer.convert(self.market_cap, self.currency_convertrer.price_currency, "USD")
         self.enterprise_value = self.market_cap + self.yahoo_statements.net_debt
         self.debt_to_equity = self.yahoo_statements.net_debt / self.market_cap
 
@@ -181,10 +182,10 @@ class Share():
     def check_market_cap(self):
         """ Check consistency between reported market cap and price calculated maket cap """
 
-
-        err_market_cap = abs(self.market_cap - self.market_cap_reported)/min(self.market_cap_reported, self.market_cap )
+        real_currency_market_cap  = self.market_cap * self.currency_convertrer.real_currency_rate 
+        err_market_cap = abs(real_currency_market_cap - self.market_cap_reported)/min(self.market_cap_reported, self.market_cap )
         if err_market_cap > 0.8 :
-            msg = f"{self.name}  err_market_cap: {err_market_cap:.2f} reported: {self.market_cap_reported:.2f} calculated: {self.market_cap:.2f} nb shares {self.statements.nb_shares}"
+            msg = f"{self.name}  err_market_cap: {err_market_cap:.2f} reported: {self.market_cap_reported:.2f} calculated: {real_currency_market_cap:.2f} nb shares {self.statements.nb_shares}"
             self.warning_msg += msg
 
     
@@ -210,9 +211,6 @@ class Share():
     #     else:
     #         with open(statement_path, "r", encoding= "utf8") as json_file:
     #             ratios = json.load(json_file)
-
-    #     self.market_cap = self.statements.nb_shares * self.price_history.current_price / self.share_params.get("adr_ratio", 1)
-
     #     ratio_dic = {}
     #     for rg in ratios['currentRatios']['ratiosGroups'] :
     #         for item in rg['items']:
@@ -248,7 +246,7 @@ class Share():
         # self.logger.info(f'{self.name} : retrieves ratio from yahoo              ', flush= True, end = "\r")
         net_income = self.statements.inc_ttm_statements['NINC']
 
-        self.market_cap = self.statements.nb_shares * self.price_history.current_price / self.share_params.get("adr_ratio", 1)
+        self.market_cap = self.statements.nb_shares * self.price_history.current_price
         self.market_cap_reported = self.info["marketCap"] *1e-6
         self.check_market_cap()
         self.per = self.info.get("trailingPE", self.market_cap / net_income)
