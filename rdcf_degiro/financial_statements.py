@@ -39,7 +39,8 @@ INC_CODES = [
     "NINC", # "NetIncome", 
     "SNIN", # "Non operating net interest income"
     "EBITDA",
-    'EBIT'
+    'EBIT',
+    'InterestExpense'
 ]
 
 BAL_CASH_CODES = [
@@ -52,7 +53,8 @@ BAL_CODES = BAL_CASH_CODES + [
     "STLD", # 'TotalDebt',
     "QTLE", # "Total Equity"
     "QTCO", # "Total Common Shares Outstanding",
-    'InvestedCapital'
+    'InvestedCapital',
+    "NetDebt"
 ]
 CASH_CODES = [
     "OTLO", # "Cash from Operating Activities",
@@ -765,5 +767,6 @@ class YahooFinancialStatements(FinancialStatements):
             self.net_debt = self.total_debt - self.q_bal_statements[self.cash_code].dropna().iloc[-1].sum()
 
         self.compute_debt_cost()
-        
+
+        self.net_interest_exp = - self.debt_cost * self.net_debt * (1 - self.session_model.taxe_rate)
 

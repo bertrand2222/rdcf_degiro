@@ -111,49 +111,58 @@ class FinancialForcast(Statements):
             self._forcasted_ocf_growth = self._get_forcasted_growth(['CPS', 'EBT',  'PRE', 'SAL', 'NET'])
         return self._forcasted_ocf_growth
 
+    def _get_forcasted_data(self) -> list[pd.Series]:
+
+        net_interest_exp =  self.yahoo_statements.net_interest_exp
+        last_ocfe = self.statements.y_statements['OCFE'].iloc[-1]
+
+        if ('EBT' in self.y_forcasts) and ('EBI' in self.y_forcasts) :
+            # compute forcasted ocf from forcasted ebitda and ebit
+            _forcasted_ocff = (self.y_forcasts['EBT'] - self.session_model.taxe_rate * self.y_forcasts['EBI']
+                                    + self.y_forcasts['SAL'] * self.statements.nwc_ratio).dropna()
+            # last_ocff = self.statements.y_statements['OCFF'].iloc[-1]
+            # self._forcasted_ocff *= last_ocff/self._forcasted_ocff.iloc[0]
+            _forcasted_ocfe = _forcasted_ocff + net_interest_exp
+            return _forcasted_ocff, _forcasted_ocfe
+         
+        if 'CPS'  in self.y_forcasts:
+            ratio = last_ocfe/self.y_forcasts['CPS'].iloc[0]
+            # compute forcasted ocf from forcasted cash flow per share
+            _forcasted_ocfe = self.y_forcasts['CPS'].dropna() * ratio
+            _forcasted_ocff = _forcasted_ocfe - net_interest_exp
+            return _forcasted_ocff, _forcasted_ocfe
+
+        # compute forcasted ocf from forcasted ebitda, ebt, net income, pretax income or sales growth
+        for val in ['EBT', 'EBI', 'NET', 'PRE', 'SAL' ] :
+            if val not in self.y_forcasts:
+                continue
+            ys = self.y_forcasts[val].dropna()
+
+            # rescale variable array to ratio between last stated ocf 
+            # and first variable value  
+            ratio = last_ocfe/ys.iloc[0]
+            if (ys.index[0].year == self.statements.y_statements.index[-1].year) and ratio > 0:
+                ys *= ratio
+                _forcasted_ocfe = ys
+                _forcasted_ocff = self._forcasted_ocfe - net_interest_exp
+                return _forcasted_ocff, _forcasted_ocfe
+            
+        self.logger.warning(f"{self.name} Forcasted cash flow could not be computed from forcast data")
+        _forcasted_ocfe = self.statements.ocfe * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
+        self._forcasted_ocff = _forcasted_ocfe - net_interest_exp
+        return _forcasted_ocff, _forcasted_ocfe
+
 
     def _set_forcasted_ocf(self):
         """
         retruned forcasted ocf array
         """
         self._forcasted_ocfe = None
+        self._forcasted_ocff = None
         if self.y_forcasts is None:
             return
 
-        net_interest_exp = - self.yahoo_statements.debt_cost * self.yahoo_statements.net_debt * (1 - self.session_model.taxe_rate)
-        last_ocfe = self.statements.y_statements['OCFE'].iloc[-1]
-
-        if ('EBT' in self.y_forcasts) and ('EBI' in self.y_forcasts) :
-            # compute forcasted ocf from forcasted ebitda and ebit
-            self._forcasted_ocff = (self.y_forcasts['EBT'] - self.session_model.taxe_rate * self.y_forcasts['EBI']
-                                    + self.y_forcasts['SAL'] * self.statements.nwc_ratio).dropna()
-            # last_ocff = self.statements.y_statements['OCFF'].iloc[-1]
-            # self._forcasted_ocff *= last_ocff/self._forcasted_ocff.iloc[0]
-            self._forcasted_ocfe = self._forcasted_ocff + net_interest_exp
-        elif 'CPS'  in self.y_forcasts:
-            ratio = last_ocfe/self.y_forcasts['CPS'].iloc[0]
-            # compute forcasted ocf from forcasted cash flow per share
-            self._forcasted_ocfe = self.y_forcasts['CPS'].dropna() * ratio
-            self._forcasted_ocff = self._forcasted_ocfe - net_interest_exp
-        else:
-            # compute forcasted ocf from forcasted ebitda, ebt, net income, pretax income or sales growth
-            for val in ['EBT', 'EBI', 'NET', 'PRE', 'SAL' ] :
-                if val not in self.y_forcasts:
-                    continue
-                ys = self.y_forcasts[val].dropna()
-
-                # rescale variable array to ratio between last stated ocf 
-                # and first variable value  
-                ratio = last_ocfe/ys.iloc[0]
-                if (ys.index[0].year == self.statements.y_statements.index[-1].year) and ratio > 0:
-                    ys *= ratio
-                    self._forcasted_ocfe = ys
-            
-        if self._forcasted_ocfe is None:
-            self.logger.warning(f"{self.name} Forcasted cash flow could not be computed from forcast data")
-            self._forcasted_ocfe = self.statements.ocfe * (1 + self.forcasted_ocf_growth)**np.arange(1,1 +self.session_model.nb_year_dcf)
-            self._forcasted_ocff = self._forcasted_ocfe - net_interest_exp
-            return
+        self._forcasted_ocff, self._forcasted_ocfe = self._get_forcasted_data()
 
         # Set forcast array lenght equal to dcf model nb year
         if len(self._forcasted_ocfe) >= self.session_model.nb_year_dcf:
@@ -166,7 +175,7 @@ class FinancialForcast(Statements):
                         1,
                         1 + self.session_model.nb_year_dcf - len(self._forcasted_ocfe))])
         
-        self._forcasted_ocff = self._forcasted_ocfe - net_interest_exp
+        self._forcasted_ocff = self._forcasted_ocfe - self.yahoo_statements.net_interest_exp
 
     def _get_forcasted_ebidta(self):
         """

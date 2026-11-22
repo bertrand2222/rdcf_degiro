@@ -94,7 +94,7 @@ config_dict = {
     'symbol_params'              : symbol_params,
     "update_market_rate"            : True,
     'update_statements'             : False,
-    'nb_year_dcf'                   : 8
+    'nb_year_dcf'                   : 7
 }
 # outfile = os.path.join(os.environ["USERPROFILE"], r"Documents\rdcf.xlsx")
 
