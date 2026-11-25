@@ -267,6 +267,7 @@ class FinancialStatements(Statements):
         self.interest_expense_income : float = None
 
         self.retrieve_success = False
+        self.tax_rate = self.session_model.tax_rate # default taxe rate
         self.debt_cost = self.session_model.rate_info.debt_cost # default debt cost
 
     @property
@@ -299,7 +300,7 @@ class FinancialStatements(Statements):
         self.compute_avg_values()
 
         if 'EBIT' in self.inc_ttm_statements:
-            self.roic = self.inc_ttm_statements['EBIT'] * (1-self.session_model.taxe_rate) / (self.stock_equity + self.net_debt)
+            self.roic = self.inc_ttm_statements['EBIT'] * (1-self.tax_rate) / (self.stock_equity + self.net_debt)
         if "RTLR" in self.y_statements:  
             # ratio between change in working capital and revenue
             self.nwc_ratio = self.y_statements['SOCF'].sum()/self.y_statements['RTLR'].sum()
@@ -390,7 +391,7 @@ class FinancialStatements(Statements):
         return np.exp(z[0]) - 1
 
     def _compute_free_cash_flow(self, st : pd.DataFrame):
-        # st['FCFF'] = st[op_keys[0]] * (1-self.session_model.taxe_rate) + da  # Free cash flow to firm
+        # st['FCFF'] = st[op_keys[0]] * (1-self.tax_rate) + da  # Free cash flow to firm
         if "OTLO" not in st:
             return
         try :
@@ -399,7 +400,7 @@ class FinancialStatements(Statements):
             for info in ["SNIN", "SONT"]:
                 if info in st:
                     # Add net non operating interest
-                    st['OCFF'] -= st[info] * (1-self.session_model.taxe_rate)
+                    st['OCFF'] -= st[info] * (1-self.tax_rate)
 
             st['FCFF'] = st['OCFF']
             st['FCFE'] = st["OCFE"]
@@ -607,7 +608,6 @@ class DegiroFinancialStatements(FinancialStatements):
         q_cas_statements = remove_overlapping_data(q_cas_statements)
 
         # free cash flow            = Cash from Operating Activities - Capital Expenditures,
-        # q_cas_statements['FCFF'] = q_cas_statements[op_keys[0]] * (1-self.session_model.taxe_rate) + da  # Free cash flow to firm
         q_cas_statements['FCFF'] = q_cas_statements["OTLO"] 
         if "SCEX" in q_cas_statements:
             # q_cas_statements['FCFF'] += q_cas_statements["SCEX"]
@@ -694,7 +694,31 @@ class YahooFinancialStatements(FinancialStatements):
             if not np.isnan(self.debt_cost):
                 return
             
+        self.debt_cost = self.session_model.rate_info.debt_cost
         self.warning_msg += "Missing InterestExpense data, can not compute debt cost, debt cost set equal to fed fund rate"
+
+    def compute_tax_rate(self):
+
+        if "tax_rate" in self.share_params:
+            self.tax_rate = self.share_params['tax_rate']
+            return
+        if ('TaxRateForCalcs' in self.y_statements) and ('TaxRateForCalcs' in self._inc_ttm_statements_df):
+            # compute taxe rate as mean weighted by PretaxIncome
+            s = pd.concat([self.y_statements[['TaxRateForCalcs','PretaxIncome']] , 
+                            self._inc_ttm_statements_df[['TaxRateForCalcs', 'PretaxIncome']]]).dropna()
+            self.tax_rate = (s['TaxRateForCalcs'] * s['PretaxIncome'].abs()).sum() / s['PretaxIncome'].abs().sum()
+            return
+        if "TaxRateForCalcs" in self.q_inc_statements:
+            self.tax_rate = self.q_inc_statements['TaxRateForCalcs'].dropna().mean()
+            if not np.isnan(self.tax_rate):
+                return
+        if 'TaxRateForCalcs' in self._inc_ttm_statements_df:
+            self.tax_rate = self._inc_ttm_statements_df['TaxRateForCalcs'].iloc[0]
+            if not np.isnan(self.tax_rate):
+                return
+            
+        self.tax_rate = self.session_model.tax_rate
+        self.warning_msg += f"Missing TaxRateForCalcs data, can not compute taxe rate, taxe rate set equal to {self.tax_rate}"
         
 
     def _retrieve_financial_data(self):
@@ -767,6 +791,6 @@ class YahooFinancialStatements(FinancialStatements):
             self.net_debt = self.total_debt - self.q_bal_statements[self.cash_code].dropna().iloc[-1].sum()
 
         self.compute_debt_cost()
-
-        self.net_interest_exp = - self.debt_cost * self.net_debt * (1 - self.session_model.taxe_rate)
+        self.compute_tax_rate()
+        self.net_interest_exp = - self.debt_cost * self.net_debt * (1 - self.tax_rate)
 

@@ -90,7 +90,7 @@ config_dict = {
     'history_avg_nb_year'           : 3,
     'use_last_intraday_price'       : True,
     'output_folder'                 : os.environ['HOME'] + "/Documents/rdcf_degiro_out",
-    'taxe_rate'                     : 0.25,
+    'tax_rate'                     : 0.25,
     'symbol_params'              : symbol_params,
     "update_market_rate"            : True,
     'update_statements'             : False,

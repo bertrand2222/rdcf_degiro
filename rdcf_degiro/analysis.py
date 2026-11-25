@@ -99,6 +99,7 @@ class RDCFSummary():
             "price_to_sales" : {"size" : 11, "format" : number},
             "debt_to_equity" : {"size" : 0, "format" : number},
             "debt_cost" : {"size" : 0, "format" : percent},
+            "tax_rate" : {"size" : 0, "format" : percent},
 
                 }
         for k, f in format_dict.items():
@@ -126,8 +127,8 @@ class RDCFSummary():
                                                         percent)
         worksheet.set_column(f"{col_letter['expected_return_multiple']}:{col_letter['beta_ajusted_expected_return_multiple']}",
                                 11, bold_percent)
-        worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}",
-                                11, percent )
+        # worksheet.set_column(f"{col_letter['total_payout_ratio']}:{col_letter['total_payout_ratio']}",
+        #                         11, percent )
         worksheet.set_column(f"{col_letter['roic']}:{col_letter['roic']}", 0, percent )
         # worksheet.set_column(f"{col_letter['mean_g_fcf']}:{col_letter['diff_g']}", 13, percent )
 
@@ -287,7 +288,7 @@ class RDCFAnal():
                                 )
                                 )
         
-        # self.share_list = [ s for s in self.share_list if s.symbol in ["SNDK"] ] # For single share debug purpose
+        # self.share_list = [ s for s in self.share_list if s.symbol in [ 'ORCL'] ] # For single share debug purpose
         
         
     # def retrieve_shares_from_portfolio(self):
@@ -385,7 +386,7 @@ class RDCFAnal():
         for s in valid_share_list :
             s.sector_unlevered_beta = sector_info.loc[s.sector, 'unlevered_beta']
             sector_value_to_ebitda = sector_info.loc[s.sector, 'value_to_ebitda']
-            s.levered_beta = s.sector_unlevered_beta * (1 + (1 - self.session_model.taxe_rate) * s.debt_to_equity)
+            s.levered_beta = s.sector_unlevered_beta * (1 + (1 - s.yahoo_statements.tax_rate) * s.debt_to_equity)
 
             # Ajust value to ebitda with sector
             self_weight = 0 if (s.value_to_ebitda < 0) else s.share_params.get("multiple_self_weight",1/3)
@@ -426,7 +427,8 @@ class RDCFAnal():
                       'roic', 
                       'debt_to_equity', 
                       'debt_cost',
-                      'total_payout_ratio', 
+                      'tax_rate',
+                    #   'total_payout_ratio', 
                       'market_cap_usd', 
                       "yahoo_symb",
                       "sector",

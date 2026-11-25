@@ -182,7 +182,7 @@ class SessionModelDCF():
         self.use_last_intraday_price : bool = False
         self.terminal_value_to_ebitda_bounds = [1, 40]
         self.output_folder = os.getenv("TEMP")
-        self.taxe_rate = 0.25
+        self.tax_rate = 0.25
         self.output_name = "rdcf"
         self.symbol_params : dict = None
         self.retrieve_shares_from_favorites = True

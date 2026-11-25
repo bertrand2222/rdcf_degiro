@@ -33,7 +33,7 @@
         "debt_cost" : 0.09,
         "yahoo_symb" : "CRWV",
         "price_from" : "yahoo"},
-    "ORCL" : {
+    "ORCL" : {"debt_cost" : 0.075,
               "yahoo_symb" : "ORCL",
                 "price_from" : "yahoo"},
     "BFSA" : { "yahoo_symb" : "BFSA.DE"},

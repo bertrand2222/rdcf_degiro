@@ -118,7 +118,7 @@ class FinancialForcast(Statements):
 
         if ('EBT' in self.y_forcasts) and ('EBI' in self.y_forcasts) :
             # compute forcasted ocf from forcasted ebitda and ebit
-            _forcasted_ocff = (self.y_forcasts['EBT'] - self.session_model.taxe_rate * self.y_forcasts['EBI']
+            _forcasted_ocff = (self.y_forcasts['EBT'] - self.yahoo_statements.tax_rate * self.y_forcasts['EBI']
                                     + self.y_forcasts['SAL'] * self.statements.nwc_ratio).dropna()
             # last_ocff = self.statements.y_statements['OCFF'].iloc[-1]
             # self._forcasted_ocff *= last_ocff/self._forcasted_ocff.iloc[0]

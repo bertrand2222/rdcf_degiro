@@ -160,6 +160,10 @@ class Share():
     @property
     def debt_cost(self):
         return self.yahoo_statements.debt_cost
+    
+    @property
+    def tax_rate(self):
+        return self.yahoo_statements.tax_rate
 
     @property
     def roic(self):
@@ -274,7 +278,7 @@ class Share():
         if debt < 0:
             debt = self.yahoo_statements.total_debt
         
-        tr = self.session_model.taxe_rate
+        tr = self.yahoo_statements.tax_rate
         dc = self.debt_cost
 
         return cc * eq/(debt + eq) +  dc * (1-tr) * debt/(debt + eq)
@@ -384,7 +388,7 @@ class Share():
         debt = self.yahoo_statements.net_debt
         if debt < 0:
             debt = self.yahoo_statements.total_debt
-        tr = self.session_model.taxe_rate
+        tr = self.yahoo_statements.tax_rate
         dc = self.debt_cost
 
         return (wacc - dc * (1-tr) * debt/(debt + eq)) * (debt + eq)/eq
